@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import 'new_home_screen.dart';
 import 'medicine_listing_screen.dart';
+import 'product_catalog_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'wishlist_screen.dart';
 import 'order_tracking_screen.dart';
@@ -52,9 +53,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       NewHomeScreen(onTabChange: _onTabChanged),
-      const DoctorConsultationScreen(),
+      const ProductCatalogScreen(),
       const MedicineListingScreen(),
-      const WishlistScreen(),
+      const DoctorConsultationScreen(),
       _buildAccountTab(),
     ];
 
@@ -84,19 +85,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
             label: 'Home',
           ),
           const BottomNavigationBarItem(
+            icon: Icon(Icons.grid_view_outlined),
+            activeIcon: Icon(Icons.grid_view),
+            label: 'Products',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.medication_outlined),
+            activeIcon: Icon(Icons.medication),
+            label: 'Medicines',
+          ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.local_hospital_outlined),
             activeIcon: Icon(Icons.local_hospital),
             label: 'Consult',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.storefront_outlined),
-            activeIcon: Icon(Icons.storefront),
-            label: 'Shop',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'Wishlist',
           ),
           BottomNavigationBarItem(
             icon: Stack(
@@ -109,7 +110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     top: -6,
                     child: Container(
                       padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: AppColors.error,
                         shape: BoxShape.circle,
                       ),
@@ -435,6 +436,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             child: Column(
               children: [
+                _buildListTile(
+                  Icons.favorite_outline,
+                  'My Wishlist',
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const WishlistScreen()),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
                 _buildListTile(
                   Icons.medical_services_outlined,
                   'Digital Health Record',

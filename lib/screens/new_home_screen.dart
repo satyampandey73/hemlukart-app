@@ -352,6 +352,54 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
           const SizedBox(height: 20),
 
+          // Our Brands
+          _buildSectionHeader(
+            'Our Brands',
+            'Pick from our favorite brands',
+            () => widget.onTabChange(2),
+          ),
+          SizedBox(
+            height: 150,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+                _buildBrandCard(
+                  'Sugar Free',
+                  '',
+                  onTap: () => widget.onTabChange(2),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // Quick Actions Grid (mobile-friendly layout instead of desktop side-bar)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -367,21 +415,21 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   'Order Medicines',
                   'Genuine products',
                   Icons.medication_liquid,
-                  Colors.teal[50]!,
+                  const Color.fromARGB(255, 255, 255, 255),
                   () => widget.onTabChange(2),
                 ),
                 _buildQuickActionCard(
                   'Book a Doctor',
-                  'Consult practitioners',
+                  'Expert Consulting',
                   Icons.local_hospital,
-                  Colors.blue[50]!,
+                  const Color.fromARGB(255, 255, 255, 255),
                   () => widget.onTabChange(1),
                 ),
                 _buildQuickActionCard(
                   'Track Your Order',
                   'Real-time tracking',
                   Icons.local_shipping_outlined,
-                  Colors.amber[50]!,
+                  const Color.fromARGB(255, 255, 255, 255),
                   () {
                     if (_appState.orders.isNotEmpty) {
                       Navigator.push(
@@ -407,7 +455,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   'View Prescriptions',
                   'Digital health vaults',
                   Icons.receipt_long,
-                  Colors.purple[50]!,
+                  const Color.fromARGB(255, 255, 255, 255),
                   () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -420,28 +468,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
           ),
 
-          // Our Brands
-          _buildSectionHeader(
-            'Our Brands',
-            'Pick from our favorite brands',
-            () => widget.onTabChange(2),
-          ),
-          SizedBox(
-            height: 90,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _buildBrandCard('Dabur', const Color(0xFFFFF1F2)),
-                _buildBrandCard('Baidyanath', const Color(0xFFECFDF5)),
-                _buildBrandCard('Patanjali', const Color(0xFFEFF6FF)),
-                _buildBrandCard('Himalaya', const Color(0xFFFDF4FF)),
-                _buildBrandCard('Tata 1mg', const Color(0xFFFFFBEB)),
-                _buildBrandCard('Jiva', const Color(0xFFF5F3FF)),
-              ],
-            ),
-          ),
-
           // Featured Doctors
           _buildSectionHeader(
             'Featured Doctors',
@@ -449,7 +475,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             () => widget.onTabChange(1),
           ),
           SizedBox(
-            height: 185,
+            height: 220,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -468,7 +494,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             () => widget.onTabChange(2),
           ),
           SizedBox(
-            height: 100,
+            height: 150,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -509,13 +535,34 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               crossAxisCount: 2,
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
-              childAspectRatio: 0.68,
+              childAspectRatio: 0.60,
             ),
             itemCount: _appState.mockProducts.take(4).length,
             itemBuilder: (context, idx) {
               final prod = _appState.mockProducts[idx];
               return _buildProductCard(prod);
             },
+          ),
+
+          const SizedBox(height: 24),
+
+          // Blog Section
+          _buildSectionHeader('Our Blogs', 'Health Articles', () {}),
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: 5,
+              separatorBuilder: (context, idx) => const SizedBox(width: 16),
+              itemBuilder: (context, idx) {
+                return _buildBlogCard(
+                  title:
+                      'Smog: What Is It, Causes and Ways To Protect Yourself From',
+                  imagePath: 'assets/img2.png',
+                );
+              },
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -820,23 +867,156 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildBrandCard(String name, Color cardColor) {
-    return Container(
-      width: 100,
-      margin: const EdgeInsets.only(right: 12),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border.withOpacity(0.3)),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        name,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: AppColors.textDark,
-          fontSize: 13,
+  Widget _buildBrandCard(String title, String subtitle, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 144,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              child: Stack(
+                children: [
+                  Image.asset(
+                    'assets/img2.png',
+                    width: 144,
+                    height: 104,
+                    fit: BoxFit.cover,
+                  ),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        // color: AppColors.secondary,
+                        color: const Color.fromRGBO(140, 244, 235, 1.0),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        '15% OFF',
+                        style: TextStyle(
+                          color: Color.fromARGB(255, 12, 112, 93),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBlogCard({required String title, required String imagePath}) {
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withOpacity(0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Image.asset(imagePath, height: 140, fit: BoxFit.cover),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Health Articles',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -862,18 +1042,61 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  image: DecorationImage(
-                    image: AssetImage(
-                      doc.image.isNotEmpty
-                          ? doc.image
-                          : 'assets/doctor_profile.png',
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: AssetImage(
+                          doc.image.isNotEmpty
+                              ? doc.image
+                              : 'assets/doctor_profile.png',
+                        ),
+                        fit: BoxFit.cover,
+                      ),
                     ),
-                    fit: BoxFit.cover,
                   ),
-                ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            color: AppColors.primary,
+                            size: 10,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${doc.rating}',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
@@ -895,28 +1118,35 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
             const SizedBox(height: 4),
             Row(
+              children: [
+                const Icon(
+                  Icons.work_outline,
+                  size: 10,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${doc.experienceYears} Yrs Exp.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textLight,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '₹${doc.consultationFee.toInt()}',
+                  '₹${doc.consultationFee.toInt()}/Consultation',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     color: AppColors.primary,
                   ),
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 10),
-                    const SizedBox(width: 2),
-                    Text(
-                      '${doc.rating}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
@@ -962,26 +1192,75 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
   Widget _buildCategoryCard(String name, IconData icon, Color color) {
     return Container(
-      width: 85,
+      width: 144,
       margin: const EdgeInsets.only(right: 12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: color.withOpacity(0.12),
-            child: Icon(icon, color: color, size: 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textDark,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: Stack(
+              children: [
+                Image.asset(
+                  'assets/img2.png',
+                  width: 144,
+                  height: 104,
+                  fit: BoxFit.cover,
+                ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color.fromRGBO(140, 244, 235, 1.0),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      '15% OFF',
+                      style: TextStyle(
+                        color: Color.fromARGB(255, 12, 112, 93),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+            child: Text(
+              name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textDark,
+              ),
             ),
           ),
         ],
@@ -1109,6 +1388,38 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.secondary, width: 1.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text(
+                      '450ml',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.secondary,
+                      ),
+                    ),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 14,
+                      color: AppColors.secondary,
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             Row(
