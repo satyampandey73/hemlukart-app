@@ -20,6 +20,7 @@ class _WishlistScreenState extends State<WishlistScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _appState.fetchUserWishlistProducts();
   }
 
   @override
@@ -31,7 +32,7 @@ class _WishlistScreenState extends State<WishlistScreen>
   @override
   Widget build(BuildContext context) {
     // Gather wishlist items
-    final wishProducts = _appState.mockProducts
+    final wishProducts = _appState.products
         .where((p) => _appState.wishlistProductIds.contains(p.id))
         .toList();
     final wishDoctors = _appState.mockDoctors
@@ -148,11 +149,14 @@ class _WishlistScreenState extends State<WishlistScreen>
                       color: AppColors.backgroundLight.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: AssetImage(
-                          prod.image.isNotEmpty
-                              ? prod.image
-                              : 'assets/img2.png',
-                        ),
+                        image: (prod.image.startsWith('http://') ||
+                                prod.image.startsWith('https://'))
+                            ? NetworkImage(prod.image) as ImageProvider
+                            : AssetImage(
+                                prod.image.isNotEmpty
+                                    ? prod.image
+                                    : 'assets/img2.png',
+                              ),
                         fit: BoxFit.contain,
                       ),
                     ),

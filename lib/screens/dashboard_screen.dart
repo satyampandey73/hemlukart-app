@@ -12,6 +12,7 @@ import 'login_screen.dart';
 import 'digital_health_record_screen.dart';
 import 'saved_cards_wallet_screen.dart';
 import 'account_settings_screen.dart';
+import 'shipping_addresses_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int initialTab;
@@ -31,6 +32,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _currentIndex = widget.initialTab;
     // Redraw screen when state shifts (e.g. cart badge increases)
     _appState.addListener(_rebuild);
+    if (_appState.isLoggedIn) {
+      _appState.fetchUserProfile();
+      _appState.fetchMyOrders();
+    }
   }
 
   @override
@@ -197,7 +202,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
@@ -215,46 +223,98 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Profile Banner
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.secondary],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.person, color: AppColors.primary, size: 36),
+          Builder(
+            builder: (context) {
+              final user = _appState.currentUser;
+              final name = user?.fullName ?? 'User Profile';
+              final email = user?.email ?? '';
+              final mobile = user?.mobile ?? '';
+              final role = user?.role ?? 'customer';
+              final isVerified = user?.isMobileVerified ?? false;
+
+              return Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppColors.primary, AppColors.secondary],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Rahul Sharma',
-                        style: TextStyle(
-                          color: Colors.white,
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: AppColors.primary,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          fontSize: 24,
                         ),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'rahul@example.com • Patient',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 17,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (isVerified) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.verified,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            email.isNotEmpty && mobile.isNotEmpty
+                                ? '$email • +91 $mobile'
+                                : (email.isNotEmpty
+                                      ? email
+                                      : (mobile.isNotEmpty
+                                            ? '+91 $mobile'
+                                            : 'Logged In')),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Role: ${role.toUpperCase()}',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
 
           const SizedBox(height: 24),
@@ -327,103 +387,131 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const SizedBox(height: 24),
 
           // Orders list
-          const Text(
-            'Order History',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: AppColors.textDark,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Order History',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: AppColors.textDark,
+                ),
+              ),
+              IconButton(
+                onPressed: () => _appState.fetchMyOrders(),
+                icon: const Icon(
+                  Icons.sync,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+                tooltip: 'Refresh Orders',
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          _appState.orders.isEmpty
-              ? _buildEmptyStateCard(
-                  'No orders placed yet.',
-                  Icons.shopping_bag_outlined,
-                )
-              : Column(
-                  children: _appState.orders.map((order) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppColors.border.withOpacity(0.5),
+          const SizedBox(height: 6),
+          if (_appState.isLoadingMyOrders)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20.0),
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            )
+          else if (_appState.orders.isEmpty)
+            _buildEmptyStateCard(
+              'No orders placed yet.',
+              Icons.shopping_bag_outlined,
+            )
+          else
+            Column(
+              children: _appState.orders.map((order) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.border.withOpacity(0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: AppColors.backgroundLight,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.receipt_long,
+                          color: AppColors.primary,
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppColors.backgroundLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.receipt_long,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Order ${order.id}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: AppColors.textDark,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${order.items.length} items • ₹${order.totalAmount.toInt()}',
-                                  style: const TextStyle(
-                                    color: AppColors.textLight,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      OrderTrackingScreen(order: order),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            child: const Text(
-                              'Track',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              order.orderNo != null && order.orderNo!.isNotEmpty
+                                  ? order.orderNo!
+                                  : 'Order ${order.id}',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: AppColors.textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${order.items.length} items • ₹${order.totalAmount.toStringAsFixed(2)} • ${order.status}',
+                              style: const TextStyle(
+                                color: AppColors.textLight,
+                                fontSize: 11,
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    );
-                  }).toList(),
-                ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OrderTrackingScreen(
+                                order: order,
+                                orderId: order.id,
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text(
+                          'Track',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
 
           const SizedBox(height: 24),
 
@@ -436,49 +524,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             child: Column(
               children: [
+                _buildListTile(Icons.favorite_outline, 'My Wishlist', () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const WishlistScreen()),
+                  );
+                }),
+                const Divider(height: 1),
+
                 _buildListTile(
-                  Icons.favorite_outline,
-                  'My Wishlist',
+                  Icons.location_on_outlined,
+                  'Saved Shipping Addresses',
                   () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const WishlistScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ShippingAddressesScreen(),
+                      ),
                     );
                   },
                 ),
                 const Divider(height: 1),
-                _buildListTile(
-                  Icons.medical_services_outlined,
-                  'Digital Health Record',
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const DigitalHealthRecordScreen()),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                _buildListTile(
-                  Icons.payment,
-                  'Saved Cards & Wallets',
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const SavedCardsWalletScreen()),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                _buildListTile(
-                  Icons.settings,
-                  'Account Settings',
-                  () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AccountSettingsScreen()),
-                    );
-                  },
-                ),
+
+                _buildListTile(Icons.settings, 'Account Settings', () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AccountSettingsScreen(),
+                    ),
+                  );
+                }),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.logout, color: AppColors.error),
@@ -493,7 +568,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onTap: () {
                     _appState.logout();
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const DashboardScreen(initialTab: 0)),
+                      MaterialPageRoute(
+                        builder: (_) => const DashboardScreen(initialTab: 0),
+                      ),
                       (route) => false,
                     );
                   },

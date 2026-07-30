@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
 
 class DigitalHealthRecordScreen extends StatelessWidget {
   const DigitalHealthRecordScreen({super.key});
@@ -67,24 +68,24 @@ class DigitalHealthRecordScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
+                    children:  [
                       CircleAvatar(
                         radius: 24,
                         backgroundColor: Colors.white24,
                         child: Icon(Icons.favorite, color: Colors.white, size: 24),
                       ),
-                      SizedBox(width: 12),
+                      const SizedBox(width: 12),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Rahul Sharma',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            AppState().currentUser?.fullName ?? 'User Profile',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
-                            'ID: MHR-8890251',
-                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                            'ID: ${AppState().currentUser?.id.substring(0, 8).toUpperCase() ?? 'MHR-8890251'}',
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
                           ),
                         ],
                       ),

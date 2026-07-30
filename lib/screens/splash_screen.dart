@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
 import 'dashboard_screen.dart';
+import 'doctor_dashboard_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -102,9 +104,11 @@ class _SplashScreenState extends State<SplashScreen>
     // Navigate to next screen after delay
     Timer(const Duration(milliseconds: 3800), () {
       if (mounted) {
+        final isDoctor = AppState().isDoctorLoggedIn;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const DashboardScreen(),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                isDoctor ? const DoctorDashboardScreen() : const DashboardScreen(),
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               final double scaleVal = 0.95 + (0.05 * animation.value);
               return FadeTransition(

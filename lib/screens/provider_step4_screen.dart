@@ -1,9 +1,37 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
+import '../services/doctor_auth_service.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/step_indicator.dart';
 import 'provider_step5_screen.dart';
+
+const List<Map<String, String>> areasOfExpertiseOptions = [
+  {'value': 'Diabetes', 'label': 'Diabetes'},
+  {'value': 'Arthritis', 'label': 'Arthritis'},
+  {'value': 'Skin', 'label': 'Skin Diseases'},
+  {'value': 'Thyroid', 'label': 'Thyroid Disorders'},
+  {'value': 'Digestive Issues', 'label': 'Digestive Issues'},
+  {'value': 'Respiratory Problems', 'label': 'Respiratory Problems'},
+  {'value': "Women's Health", 'label': "Women's Health"},
+  {'value': 'Mental Wellness', 'label': 'Mental Wellness'},
+  {'value': 'Pain Management', 'label': 'Pain Management'},
+  {'value': 'Weight Management', 'label': 'Weight Management'},
+];
+
+const List<Map<String, String>> consultationLanguagesOptions = [
+  {'value': 'English', 'label': 'English'},
+  {'value': 'Hindi', 'label': 'Hindi'},
+  {'value': 'Spanish', 'label': 'Spanish'},
+  {'value': 'French', 'label': 'French'},
+  {'value': 'Marathi', 'label': 'Marathi'},
+  {'value': 'Tamil', 'label': 'Tamil'},
+  {'value': 'Telugu', 'label': 'Telugu'},
+  {'value': 'Bengali', 'label': 'Bengali'},
+  {'value': 'Gujarati', 'label': 'Gujarati'},
+  {'value': 'Kannada', 'label': 'Kannada'},
+];
 
 class ProviderStep4Screen extends StatefulWidget {
   const ProviderStep4Screen({super.key});
@@ -14,36 +42,163 @@ class ProviderStep4Screen extends StatefulWidget {
 
 class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
   final Map<String, bool> expertise = {
-    'Diabetes': false,
-    'Arthritis': false,
-    'Skin': false,
-    'Thyroid': false,
+    for (var item in areasOfExpertiseOptions) item['value']!: false,
   };
 
   final Map<String, bool> languages = {
-    'English': false,
-    'Hindi': false,
-    'Spanish': false,
-    'French': false,
+    for (var item in consultationLanguagesOptions) item['value']!: false,
   };
 
+  final TextEditingController _accountHolderController = TextEditingController(
+    text: 'Dr. John Doe',
+  );
+  final TextEditingController _bankNameController = TextEditingController(
+    text: 'HDFC Bank',
+  );
+  final TextEditingController _accountNumberController = TextEditingController(
+    text: '123456789012',
+  );
+  final TextEditingController _ifscCodeController = TextEditingController(
+    text: 'HDFC0001234',
+  );
+  final TextEditingController _panNumberController = TextEditingController(
+    text: 'ABCDE1234F',
+  );
+
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default initial selections
+    expertise['Diabetes'] = true;
+    expertise['Arthritis'] = true;
+    expertise['Skin'] = true;
+
+    languages['English'] = true;
+    languages['Hindi'] = true;
+    languages['Marathi'] = true;
+  }
+
+  @override
+  void dispose() {
+    _accountHolderController.dispose();
+    _bankNameController.dispose();
+    _accountNumberController.dispose();
+    _ifscCodeController.dispose();
+    _panNumberController.dispose();
+    super.dispose();
+  }
+
   Widget _buildCheckbox(
-    String title,
+    String label,
     bool value,
     ValueChanged<bool?> onChanged,
   ) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Checkbox(
-          value: value,
-          onChanged: onChanged,
-          activeColor: AppColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: onChanged,
+              activeColor: AppColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            ),
+            Text(label, style: const TextStyle(color: AppColors.textDark, fontSize: 13)),
+          ],
         ),
-        Text(title, style: const TextStyle(color: AppColors.textDark)),
-      ],
+      ),
     );
+  }
+
+  Future<void> _handleSaveExpertiseAndBank() async {
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Session token missing. Please verify mobile OTP again.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final selectedExpertise = areasOfExpertiseOptions
+        .where((opt) => expertise[opt['value']] == true)
+        .map((opt) => opt['value']!)
+        .toList();
+
+    final selectedLanguages = consultationLanguagesOptions
+        .where((opt) => languages[opt['value']] == true)
+        .map((opt) => opt['value']!)
+        .toList();
+
+    // Call Expertise API
+    final expertiseRes = await DoctorAuthService.registerExpertise(
+      token: token,
+      areasOfExpertise: selectedExpertise.isEmpty ? ['Diabetes'] : selectedExpertise,
+      consultationLanguages: selectedLanguages.isEmpty ? ['English'] : selectedLanguages,
+    );
+
+    if (!expertiseRes.success) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(expertiseRes.message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
+
+    // Call Bank Details API
+    final bankRes = await DoctorAuthService.registerBank(
+      token: token,
+      accountHolderName: _accountHolderController.text,
+      bankName: _bankNameController.text,
+      accountNumber: _accountNumberController.text,
+      ifscCode: _ifscCodeController.text,
+      panNumber: _panNumberController.text,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (bankRes.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(bankRes.message),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProviderStep5Screen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(bankRes.message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
   }
 
   @override
@@ -60,7 +215,7 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
               const StepIndicator(
                 currentStep: 4,
                 totalSteps: 7,
-                title: 'Experience',
+                title: 'Expertise & Bank',
               ),
               const SizedBox(height: 32),
               Container(
@@ -74,7 +229,7 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Professional Profile & Payout',
+                      'Expertise & Payout Information',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -95,7 +250,7 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                         Icon(Icons.work_outline, color: AppColors.primary),
                         SizedBox(width: 8),
                         Text(
-                          'Experience & Expertise',
+                          'Expertise & Languages',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -105,22 +260,6 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    const CustomTextField(
-                      label: 'Total Experience (Years)',
-                      hintText: 'e.g. 10',
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Current Designation',
-                      hintText: 'e.g. Senior Consultant',
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Current Clinic/Hospital Name',
-                      hintText: 'e.g. City Wellness Clinic',
-                    ),
-                    const SizedBox(height: 20),
                     const Text(
                       'Areas of Expertise (Multi-select)',
                       style: TextStyle(
@@ -131,15 +270,17 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                     ),
                     const SizedBox(height: 8),
                     Wrap(
-                      spacing: 16,
-                      runSpacing: 8,
-                      children: expertise.keys.map((key) {
-                        return _buildCheckbox(key, expertise[key]!, (val) {
-                          setState(() => expertise[key] = val ?? false);
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: areasOfExpertiseOptions.map((item) {
+                        final val = item['value']!;
+                        final label = item['label']!;
+                        return _buildCheckbox(label, expertise[val] ?? false, (isChecked) {
+                          setState(() => expertise[val] = isChecked ?? false);
                         });
                       }).toList(),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                     const Text(
                       'Consultation Languages',
                       style: TextStyle(
@@ -150,11 +291,13 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                     ),
                     const SizedBox(height: 8),
                     Wrap(
-                      spacing: 16,
-                      runSpacing: 8,
-                      children: languages.keys.map((key) {
-                        return _buildCheckbox(key, languages[key]!, (val) {
-                          setState(() => languages[key] = val ?? false);
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: consultationLanguagesOptions.map((item) {
+                        final val = item['value']!;
+                        final label = item['label']!;
+                        return _buildCheckbox(label, languages[val] ?? false, (isChecked) {
+                          setState(() => languages[val] = isChecked ?? false);
                         });
                       }).toList(),
                     ),
@@ -179,60 +322,35 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'Account Holder Name',
                       hintText: 'Full name as per bank records',
+                      controller: _accountHolderController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'Bank Name',
-                      hintText: 'e.g. National Health Bank',
+                      hintText: 'e.g. HDFC Bank',
+                      controller: _bankNameController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'Account Number',
-                      hintText: '9-18 digits',
+                      hintText: '123456789012',
                       keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Numbers only, 9-18 digits required.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textLight,
-                      ),
+                      controller: _accountNumberController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Confirm Account Number',
-                      hintText: 'Re-enter account number',
-                      keyboardType: TextInputType.number,
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'IFSC Code',
-                      hintText: 'E.G. WELL0123456',
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '11-character alpha-numeric code.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textLight,
-                      ),
+                      hintText: 'HDFC0001234',
+                      controller: _ifscCodeController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'PAN Number',
-                      hintText: 'E.G. ABCDE1234F',
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '10-character alpha-numeric ID.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textLight,
-                      ),
+                      hintText: 'ABCDE1234F',
+                      controller: _panNumberController,
                     ),
                     const SizedBox(height: 32),
                     Row(
@@ -247,103 +365,13 @@ class _ProviderStep4ScreenState extends State<ProviderStep4Screen> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: PrimaryButton(
-                            text:
-                                'Complete', // Wait, the image says 'Complete Onboarding' for step 4? The image shows this on step 4. But there are 7 steps total. Let's just follow the button text from the image, but maybe in a real app it's "Continue". We'll use "Continue to Step 5" for logical flow.
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const ProviderStep5Screen(),
-                                ),
-                              );
-                            },
+                            text: _isLoading ? 'Saving...' : 'Continue',
+                            onPressed: _isLoading
+                                ? () {}
+                                : _handleSaveExpertiseAndBank,
                           ),
                         ),
                       ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Icon(
-                      Icons.shield_outlined,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Secure Transfers',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Your bank details are encrypted and stored following PCI-DSS compliance standards.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Icon(
-                      Icons.verified_user_outlined,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Verification',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'A penny test transfer will be initiated to verify your account within 24 hours.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),

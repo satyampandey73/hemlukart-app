@@ -1,12 +1,94 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
+import '../services/doctor_auth_service.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/step_indicator.dart';
 import 'provider_step7_screen.dart';
 
-class ProviderStep6Screen extends StatelessWidget {
+class ProviderStep6Screen extends StatefulWidget {
   const ProviderStep6Screen({super.key});
+
+  @override
+  State<ProviderStep6Screen> createState() => _ProviderStep6ScreenState();
+}
+
+class _ProviderStep6ScreenState extends State<ProviderStep6Screen> {
+  final TextEditingController _aboutController = TextEditingController(
+    text:
+        'Dr. John Doe is a board-certified Ayurvedic practitioner with over 15 years of experience in treating chronic diseases.',
+  );
+  final TextEditingController _philosophyController = TextEditingController(
+    text:
+        'I believe in holistic patient care that prioritizes empathetic listening.',
+  );
+  final TextEditingController _achievementsController = TextEditingController(
+    text: 'Winner of Best Ayurvedic Practitioner Award 2020',
+  );
+
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _aboutController.dispose();
+    _philosophyController.dispose();
+    _achievementsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSaveProfile() async {
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Session token missing. Please verify mobile OTP again.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final response = await DoctorAuthService.registerAbout(
+      token: token,
+      about: _aboutController.text,
+      consultationPhilosophy: _philosophyController.text,
+      achievements: _achievementsController.text,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProviderStep7Screen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,118 +146,57 @@ class ProviderStep6Screen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text.rich(
-                          TextSpan(
-                            text: 'About Doctor ',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textDark,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: '*',
-                                style: TextStyle(color: AppColors.error),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          '0 / 1000 chars',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'About Doctor *',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    const CustomTextField(
+                    CustomTextField(
                       label: '',
                       hintText:
-                          'E.g. Dr. Jane Smith is a board-certified Cardiologist with over 15 years of experience in preventative heart care...',
-                      maxLines: 5,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: const [
-                        Icon(
-                          Icons.lightbulb_outline,
-                          color: AppColors.textLight,
-                          size: 14,
-                        ),
-                        SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            'Focus on your specialization, education, and patient care history.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textLight,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text(
-                          'Consultation Philosophy ',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        Text(
-                          '0 / 500 chars',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const CustomTextField(
-                      label: '',
-                      hintText:
-                          'E.g. I believe in holistic patient care that prioritizes empathetic listening and shared decision-making...',
+                          'E.g. Dr. John Doe is a board-certified practitioner with extensive experience...',
                       maxLines: 4,
+                      controller: _aboutController,
                     ),
 
                     const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text(
-                          'Achievements & Awards ',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        Text(
-                          '0 / 500 chars',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textLight,
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'Consultation Philosophy',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    const CustomTextField(
+                    CustomTextField(
+                      label: '',
+                      hintText:
+                          'E.g. I believe in holistic patient care that prioritizes empathetic listening...',
+                      maxLines: 3,
+                      controller: _philosophyController,
+                    ),
+
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Achievements & Awards',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    CustomTextField(
                       label: '',
                       hintText:
                           'List any medical awards, publications, or significant clinical milestones...',
-                      maxLines: 4,
+                      maxLines: 3,
+                      controller: _achievementsController,
                     ),
 
                     const SizedBox(height: 32),
@@ -196,42 +217,12 @@ class ProviderStep6Screen extends StatelessWidget {
                         Expanded(
                           flex: 1,
                           child: PrimaryButton(
-                            text: 'Save',
+                            text: _isLoading ? 'Saving...' : 'Save',
                             icon: Icons.check_circle_outline,
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const ProviderStep7Screen(),
-                                ),
-                              );
-                            },
+                            onPressed: _isLoading ? () {} : _handleSaveProfile,
                           ),
                         ),
                       ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Icon(Icons.info_outline, color: Colors.white),
-                    SizedBox(height: 12),
-                    Text(
-                      'Your professional profile helps patients understand your expertise and care approach. A detailed profile increases booking rates by 40%.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
                     ),
                   ],
                 ),

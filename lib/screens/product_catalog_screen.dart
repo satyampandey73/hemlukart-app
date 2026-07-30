@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
@@ -7,7 +9,14 @@ import 'login_screen.dart';
 
 class ProductCatalogScreen extends StatefulWidget {
   final String? initialCategory;
-  const ProductCatalogScreen({super.key, this.initialCategory});
+  final String? initialCategoryId;
+  final String? initialSearchQuery;
+  const ProductCatalogScreen({
+    super.key,
+    this.initialCategory,
+    this.initialCategoryId,
+    this.initialSearchQuery,
+  });
 
   @override
   State<ProductCatalogScreen> createState() => _ProductCatalogScreenState();
@@ -32,6 +41,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   double _minRating = 0.0; // 0.0, 3.0, 4.0
 
   final TextEditingController _searchController = TextEditingController();
+  late final PageController _promoBannerController;
+  int _currentPromoBannerIndex = 0;
+  Timer? _promoBannerTimer;
 
   final List<String> _allCategories = [
     'Health Care',
@@ -70,11 +82,23 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
       _selectedCategories.add(widget.initialCategory!);
     }
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
+      _searchQuery = widget.initialSearchQuery!;
+      _searchController.text = widget.initialSearchQuery!;
+    }
+    _promoBannerController = PageController(viewportFraction: 0.92);
     _appState.addListener(_rebuild);
+    _startPromoBannerAutoSlide();
+    _appState.fetchProductsFromApi(
+      categoryId: widget.initialCategoryId,
+      search: widget.initialSearchQuery,
+    );
   }
 
   @override
   void dispose() {
+    _promoBannerTimer?.cancel();
+    _promoBannerController.dispose();
     _searchController.dispose();
     _appState.removeListener(_rebuild);
     super.dispose();
@@ -82,6 +106,20 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  void _startPromoBannerAutoSlide() {
+    _promoBannerTimer?.cancel();
+    _promoBannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_promoBannerController.hasClients) return;
+
+      final nextIndex = (_currentPromoBannerIndex + 1) % 3;
+      _promoBannerController.animateToPage(
+        nextIndex,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 
   int get _activeFilterCount {
@@ -109,7 +147,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   }
 
   List<Product> _getFilteredProducts() {
-    return _appState.mockProducts.where((prod) {
+    return _appState.products.where((prod) {
       // Search Query
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
@@ -133,32 +171,34 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       }
 
       // Discount %
-      final discountPct = ((prod.originalPrice - prod.price) / prod.originalPrice) * 100;
+      final discountPct =
+          ((prod.originalPrice - prod.price) / prod.originalPrice) * 100;
       if (discountPct < _selectedDiscountMin) return false;
 
       // Prescription Required
-      if (_prescriptionFilter == 'Rx Required' && !prod.isPrescriptionRequired) return false;
-      if (_prescriptionFilter == 'Non-Rx' && prod.isPrescriptionRequired) return false;
+      if (_prescriptionFilter == 'Rx Required' && !prod.isPrescriptionRequired)
+        return false;
+      if (_prescriptionFilter == 'Non-Rx' && prod.isPrescriptionRequired)
+        return false;
 
       // Vendor Rating
       if (prod.rating < _minRating) return false;
 
       return true;
-    }).toList()
-      ..sort((a, b) {
-        if (_sortBy == 'Price: Low to High') {
-          return a.price.compareTo(b.price);
-        } else if (_sortBy == 'Price: High to Low') {
-          return b.price.compareTo(a.price);
-        } else if (_sortBy == 'Rating: High to Low') {
-          return b.rating.compareTo(a.rating);
-        } else if (_sortBy == 'Discount: High to Low') {
-          final discA = ((a.originalPrice - a.price) / a.originalPrice);
-          final discB = ((b.originalPrice - b.price) / b.originalPrice);
-          return discB.compareTo(discA);
-        }
-        return 0; // Relevance default
-      });
+    }).toList()..sort((a, b) {
+      if (_sortBy == 'Price: Low to High') {
+        return a.price.compareTo(b.price);
+      } else if (_sortBy == 'Price: High to Low') {
+        return b.price.compareTo(a.price);
+      } else if (_sortBy == 'Rating: High to Low') {
+        return b.rating.compareTo(a.rating);
+      } else if (_sortBy == 'Discount: High to Low') {
+        final discA = ((a.originalPrice - a.price) / a.originalPrice);
+        final discB = ((b.originalPrice - b.price) / b.originalPrice);
+        return discB.compareTo(discA);
+      }
+      return 0; // Relevance default
+    });
   }
 
   @override
@@ -182,8 +222,8 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   filteredProducts.isEmpty
                       ? _buildEmptyState()
                       : (_isGridView
-                          ? _buildProductsGrid(filteredProducts)
-                          : _buildProductsList(filteredProducts)),
+                            ? _buildProductsGrid(filteredProducts)
+                            : _buildProductsList(filteredProducts)),
                   const SizedBox(height: 24),
                   _buildShowMoreButton(),
                   const SizedBox(height: 32),
@@ -205,7 +245,12 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
     return Container(
       color: AppColors.primary,
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 8, 16, 12),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 8,
+        16,
+        12,
+      ),
       child: Column(
         children: [
           Row(
@@ -214,19 +259,19 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
               Row(
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: 40,
+                    height: 40,
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
-                    child: const Text(
-                      'H',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/banner.png',
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
                       ),
                     ),
                   ),
@@ -245,7 +290,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
@@ -256,7 +304,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                         SizedBox(width: 4),
                         Text(
                           'Deliver to 452001',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
@@ -264,7 +316,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   const SizedBox(width: 12),
                   GestureDetector(
                     onTap: () async {
-                      final loggedIn = await LoginScreen.checkAndNavigate(context);
+                      final loggedIn = await LoginScreen.checkAndNavigate(
+                        context,
+                      );
                       if (loggedIn && mounted) {
                         Navigator.push(
                           context,
@@ -275,7 +329,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        const Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 24),
+                        const Icon(
+                          Icons.shopping_cart_outlined,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                         if (cartCount > 0)
                           Positioned(
                             right: -4,
@@ -286,7 +344,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                                 color: Colors.redAccent,
                                 shape: BoxShape.circle,
                               ),
-                              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
                               alignment: Alignment.center,
                               child: Text(
                                 '$cartCount',
@@ -326,10 +387,22 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                         _searchQuery = val;
                       });
                     },
-                    style: const TextStyle(fontSize: 13, color: AppColors.textDark),
+                    onSubmitted: (val) {
+                      _appState.fetchProductsFromApi(
+                        categoryId: widget.initialCategoryId,
+                        search: val.trim(),
+                      );
+                    },
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textDark,
+                    ),
                     decoration: const InputDecoration(
                       hintText: 'Search for Medicines, Brands and more...',
-                      hintStyle: TextStyle(color: AppColors.textLight, fontSize: 12),
+                      hintStyle: TextStyle(
+                        color: AppColors.textLight,
+                        fontSize: 12,
+                      ),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.only(bottom: 6),
                     ),
@@ -342,8 +415,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                       setState(() {
                         _searchQuery = '';
                       });
+                      _appState.fetchProductsFromApi(
+                        categoryId: widget.initialCategoryId,
+                      );
                     },
-                    child: const Icon(Icons.close, color: AppColors.textLight, size: 18),
+                    child: const Icon(
+                      Icons.close,
+                      color: AppColors.textLight,
+                      size: 18,
+                    ),
                   ),
               ],
             ),
@@ -362,6 +442,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         'sub': 'Special Seasonal Discount',
         'color1': const Color(0xFF0D9488),
         'color2': const Color(0xFF14B8A6),
+        'image': 'assets/img3.png',
       },
       {
         'discount': '70% OFF',
@@ -369,6 +450,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         'sub': 'Top Rated Immunity Brands',
         'color1': const Color(0xFF9333EA),
         'color2': const Color(0xFFA855F7),
+        'image': 'assets/img4.png',
       },
       {
         'discount': '25% OFF',
@@ -376,90 +458,61 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         'sub': 'Multivitamins & Minerals',
         'color1': const Color(0xFFD97706),
         'color2': const Color(0xFFF59E0B),
+        'image': 'assets/img5.png',
       },
     ];
 
     return Container(
-      height: 95,
+      height: 148,
       margin: const EdgeInsets.only(top: 12, bottom: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: banners.length,
-        itemBuilder: (context, idx) {
-          final b = banners[idx];
-          return Container(
-            width: 250,
-            margin: const EdgeInsets.only(right: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [b['color1'], b['color2']],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: (b['color1'] as Color).withValues(alpha: 0.3),
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
+      child: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _promoBannerController,
+              itemCount: banners.length,
+              onPageChanged: (index) {
+                if (mounted) {
+                  setState(() {
+                    _currentPromoBannerIndex = index;
+                  });
+                }
+              },
+              itemBuilder: (context, idx) {
+                final b = banners[idx];
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 5),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      b['image'] as String,
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
                   ),
-                  child: const Icon(Icons.local_offer, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.amber,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          b['discount'],
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        b['title'],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        b['sub'],
-                        style: const TextStyle(color: Colors.white70, fontSize: 9),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          );
-        },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(banners.length, (index) {
+              final isActive = index == _currentPromoBannerIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: isActive ? 18 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: isActive ? AppColors.primary : AppColors.border,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              );
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -495,7 +548,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   IconButton(
                     icon: Icon(
                       Icons.grid_view_rounded,
-                      color: _isGridView ? AppColors.primary : AppColors.textLight,
+                      color: _isGridView
+                          ? AppColors.primary
+                          : AppColors.textLight,
                       size: 20,
                     ),
                     onPressed: () => setState(() => _isGridView = true),
@@ -503,7 +558,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   IconButton(
                     icon: Icon(
                       Icons.view_list_rounded,
-                      color: !_isGridView ? AppColors.primary : AppColors.textLight,
+                      color: !_isGridView
+                          ? AppColors.primary
+                          : AppColors.textLight,
                       size: 20,
                     ),
                     onPressed: () => setState(() => _isGridView = false),
@@ -512,10 +569,21 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   // Filter Button
                   ElevatedButton.icon(
                     onPressed: _openFilterBottomSheet,
-                    icon: const Icon(Icons.filter_list, size: 16, color: Colors.white),
+                    icon: const Icon(
+                      Icons.filter_list,
+                      size: 16,
+                      color: Colors.white,
+                    ),
                     label: Row(
                       children: [
-                        const Text('Filters', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        const Text(
+                          'Filters',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         if (_activeFilterCount > 0) ...[
                           const SizedBox(width: 4),
                           Container(
@@ -538,10 +606,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                     ),
                   ),
                 ],
@@ -552,17 +625,21 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
           // Sort selection dropdown chip
           Row(
             children: [
-              const Text('Sort by: ', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+              const Text(
+                'Sort by: ',
+                style: TextStyle(fontSize: 12, color: AppColors.textLight),
+              ),
               DropdownButton<String>(
                 value: _sortBy,
                 isDense: true,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
                 underline: const SizedBox(),
                 items: _sortOptions.map((opt) {
-                  return DropdownMenuItem<String>(
-                    value: opt,
-                    child: Text(opt),
-                  );
+                  return DropdownMenuItem<String>(value: opt, child: Text(opt));
                 }).toList(),
                 onChanged: (val) {
                   if (val != null) setState(() => _sortBy = val);
@@ -580,37 +657,49 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     final List<Widget> chips = [];
 
     for (var cat in _selectedCategories) {
-      chips.add(_buildChip(cat, () {
-        setState(() => _selectedCategories.remove(cat));
-      }));
+      chips.add(
+        _buildChip(cat, () {
+          setState(() => _selectedCategories.remove(cat));
+        }),
+      );
     }
     if (_minPrice > 0 || _maxPrice < 2000) {
-      chips.add(_buildChip('₹${_minPrice.toInt()} - ₹${_maxPrice.toInt()}', () {
-        setState(() {
-          _minPrice = 0;
-          _maxPrice = 2000;
-        });
-      }));
+      chips.add(
+        _buildChip('₹${_minPrice.toInt()} - ₹${_maxPrice.toInt()}', () {
+          setState(() {
+            _minPrice = 0;
+            _maxPrice = 2000;
+          });
+        }),
+      );
     }
     for (var b in _selectedBrands) {
-      chips.add(_buildChip(b, () {
-        setState(() => _selectedBrands.remove(b));
-      }));
+      chips.add(
+        _buildChip(b, () {
+          setState(() => _selectedBrands.remove(b));
+        }),
+      );
     }
     if (_selectedDiscountMin > 0) {
-      chips.add(_buildChip('${_selectedDiscountMin}%+ Off', () {
-        setState(() => _selectedDiscountMin = 0);
-      }));
+      chips.add(
+        _buildChip('${_selectedDiscountMin}%+ Off', () {
+          setState(() => _selectedDiscountMin = 0);
+        }),
+      );
     }
     if (_prescriptionFilter != 'All') {
-      chips.add(_buildChip(_prescriptionFilter, () {
-        setState(() => _prescriptionFilter = 'All');
-      }));
+      chips.add(
+        _buildChip(_prescriptionFilter, () {
+          setState(() => _prescriptionFilter = 'All');
+        }),
+      );
     }
     if (_minRating > 0) {
-      chips.add(_buildChip('${_minRating.toInt()}★ & Above', () {
-        setState(() => _minRating = 0.0);
-      }));
+      chips.add(
+        _buildChip('${_minRating.toInt()}★ & Above', () {
+          setState(() => _minRating = 0.0);
+        }),
+      );
     }
 
     return Container(
@@ -623,7 +712,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
             ...chips,
             TextButton(
               onPressed: _clearAllFilters,
-              child: const Text('Clear All', style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Clear All',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),
@@ -643,7 +739,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.primary, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppColors.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(width: 4),
           GestureDetector(
             onTap: onRemove,
@@ -673,13 +776,54 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     );
   }
 
+  Widget _buildSizeSelector(Product prod) {
+    final String packText = prod.packSize.isNotEmpty ? prod.packSize : '1 Pack';
+    return SizedBox(
+      width: double.infinity,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.secondary, width: 1.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                packText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.keyboard_arrow_down,
+              size: 14,
+              color: AppColors.secondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildGridProductCard(Product prod) {
     final isWish = _appState.wishlistProductIds.contains(prod.id);
-    final discountPct = (((prod.originalPrice - prod.price) / prod.originalPrice) * 100).toInt();
+    final discountPct =
+        (((prod.originalPrice - prod.price) / prod.originalPrice) * 100)
+            .toInt();
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)),
+        );
       },
       child: Container(
         padding: const EdgeInsets.all(10),
@@ -706,7 +850,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                       color: AppColors.backgroundLight.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: AssetImage(prod.image.isNotEmpty ? prod.image : 'assets/img2.png'),
+                        image: (prod.image.startsWith('http://') ||
+                                prod.image.startsWith('https://'))
+                            ? NetworkImage(prod.image) as ImageProvider
+                            : AssetImage(
+                                prod.image.isNotEmpty
+                                    ? prod.image
+                                    : 'assets/img2.png',
+                              ),
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -741,9 +892,22 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                       top: 4,
                       left: 4,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.blue[700], borderRadius: BorderRadius.circular(4)),
-                        child: const Text('Rx', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[700],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Rx',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                   // Discount Tag
@@ -752,33 +916,72 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                       bottom: 4,
                       left: 4,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.green[700], borderRadius: BorderRadius.circular(4)),
-                        child: Text('$discountPct% OFF', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green[700],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '$discountPct% OFF',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                 ],
               ),
             ),
             const SizedBox(height: 8),
-            Text(prod.brand.toUpperCase(), style: const TextStyle(fontSize: 8, color: AppColors.textLight, fontWeight: FontWeight.bold)),
+            Text(
+              prod.brand.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 8,
+                color: AppColors.textLight,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 2),
             Text(
               prod.name,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textDark, height: 1.2),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+                height: 1.2,
+              ),
             ),
             const SizedBox(height: 4),
             Row(
               children: [
                 const Icon(Icons.star, color: Colors.amber, size: 10),
                 const SizedBox(width: 2),
-                Text('${prod.rating}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                Text(
+                  '${prod.rating}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(width: 4),
-                Text('(${prod.reviewsCount})', style: const TextStyle(fontSize: 8, color: AppColors.textLight)),
+                Text(
+                  '(${prod.reviewsCount})',
+                  style: const TextStyle(
+                    fontSize: 8,
+                    color: AppColors.textLight,
+                  ),
+                ),
               ],
             ),
+            const SizedBox(height: 8),
+            _buildSizeSelector(prod),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -786,11 +989,22 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('₹${prod.price.toInt()}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                    Text(
+                      '₹${prod.price.toInt()}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
                     if (prod.price < prod.originalPrice)
                       Text(
                         '₹${prod.originalPrice.toInt()}',
-                        style: const TextStyle(fontSize: 9, color: AppColors.textLight, decoration: TextDecoration.lineThrough),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: AppColors.textLight,
+                          decoration: TextDecoration.lineThrough,
+                        ),
                       ),
                   ],
                 ),
@@ -805,11 +1019,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           label: 'View Cart',
                           textColor: Colors.amber,
                           onPressed: () async {
-                            final loggedIn = await LoginScreen.checkAndNavigate(context);
+                            final loggedIn = await LoginScreen.checkAndNavigate(
+                              context,
+                            );
                             if (loggedIn && mounted) {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => const CartScreen()),
+                                MaterialPageRoute(
+                                  builder: (_) => const CartScreen(),
+                                ),
                               );
                             }
                           },
@@ -819,7 +1037,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   },
                   child: Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
                     child: const Icon(Icons.add, color: Colors.white, size: 16),
                   ),
                 ),
@@ -846,11 +1067,16 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
   Widget _buildListProductCard(Product prod) {
     final isWish = _appState.wishlistProductIds.contains(prod.id);
-    final discountPct = (((prod.originalPrice - prod.price) / prod.originalPrice) * 100).toInt();
+    final discountPct =
+        (((prod.originalPrice - prod.price) / prod.originalPrice) * 100)
+            .toInt();
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)),
+        );
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -869,7 +1095,12 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                 color: AppColors.backgroundLight.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
                 image: DecorationImage(
-                  image: AssetImage(prod.image.isNotEmpty ? prod.image : 'assets/img2.png'),
+                  image: (prod.image.startsWith('http://') ||
+                          prod.image.startsWith('https://'))
+                      ? NetworkImage(prod.image) as ImageProvider
+                      : AssetImage(
+                          prod.image.isNotEmpty ? prod.image : 'assets/img2.png',
+                        ),
                   fit: BoxFit.contain,
                 ),
               ),
@@ -882,7 +1113,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(prod.brand.toUpperCase(), style: const TextStyle(fontSize: 9, color: AppColors.textLight, fontWeight: FontWeight.bold)),
+                      Text(
+                        prod.brand.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: AppColors.textLight,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       GestureDetector(
                         onTap: () {
                           setState(() {
@@ -898,30 +1136,72 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text(prod.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                  Text(
+                    prod.name,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
                       const Icon(Icons.star, color: Colors.amber, size: 12),
                       const SizedBox(width: 2),
-                      Text('${prod.rating}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      Text(
+                        '${prod.rating}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       const SizedBox(width: 4),
-                      Text('(${prod.reviewsCount} reviews)', style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
+                      Text(
+                        '(${prod.reviewsCount} reviews)',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.textLight,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
+                  _buildSizeSelector(prod),
+                  const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
-                          Text('₹${prod.price.toInt()}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                          Text(
+                            '₹${prod.price.toInt()}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
                           const SizedBox(width: 6),
                           if (prod.price < prod.originalPrice)
-                            Text('₹${prod.originalPrice.toInt()}', style: const TextStyle(fontSize: 11, color: AppColors.textLight, decoration: TextDecoration.lineThrough)),
+                            Text(
+                              '₹${prod.originalPrice.toInt()}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textLight,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
                           if (discountPct > 0) ...[
                             const SizedBox(width: 6),
-                            Text('$discountPct% OFF', style: const TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                            Text(
+                              '$discountPct% OFF',
+                              style: const TextStyle(
+                                color: Colors.green,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ],
                       ),
@@ -937,12 +1217,24 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                        child: const Text('ADD', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'ADD',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -967,7 +1259,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
           const SizedBox(height: 16),
           const Text(
             'No matching products found',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textDark),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: AppColors.textDark,
+            ),
           ),
           const SizedBox(height: 8),
           const Text(
@@ -978,7 +1274,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
           ElevatedButton(
             onPressed: _clearAllFilters,
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-            child: const Text('Clear All Filters', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Clear All Filters',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -993,11 +1292,17 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: AppColors.primary),
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
         child: const Text(
           'Show More',
-          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13),
+          style: TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -1028,7 +1333,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                         children: const [
                           Icon(Icons.filter_list, color: AppColors.primary),
                           SizedBox(width: 8),
-                          Text('Filters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                          Text(
+                            'Filters',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textDark,
+                            ),
+                          ),
                         ],
                       ),
                       Row(
@@ -1038,7 +1350,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                               _clearAllFilters();
                               setModalState(() {});
                             },
-                            child: const Text('CLEAR ALL', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold, fontSize: 12)),
+                            child: const Text(
+                              'CLEAR ALL',
+                              style: TextStyle(
+                                color: Colors.cyan,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
                           IconButton(
                             icon: const Icon(Icons.close),
@@ -1058,9 +1377,14 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           // CATEGORIES
                           _buildFilterSectionTitle('Categories'),
                           ..._allCategories.map((cat) {
-                            final isSelected = _selectedCategories.contains(cat);
+                            final isSelected = _selectedCategories.contains(
+                              cat,
+                            );
                             return CheckboxListTile(
-                              title: Text(cat, style: const TextStyle(fontSize: 13)),
+                              title: Text(
+                                cat,
+                                style: const TextStyle(fontSize: 13),
+                              ),
                               value: isSelected,
                               activeColor: AppColors.primary,
                               dense: true,
@@ -1082,12 +1406,26 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           // PRICE SLIDER
                           _buildFilterSectionTitle('Price Range (₹)'),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0,
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('₹${_minPrice.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
-                                Text('₹${_maxPrice.toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                                Text(
+                                  '₹${_minPrice.toInt()}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                Text(
+                                  '₹${_maxPrice.toInt()}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -1097,7 +1435,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                             max: 2000,
                             divisions: 40,
                             activeColor: AppColors.primary,
-                            labels: RangeLabels('₹${_minPrice.toInt()}', '₹${_maxPrice.toInt()}'),
+                            labels: RangeLabels(
+                              '₹${_minPrice.toInt()}',
+                              '₹${_maxPrice.toInt()}',
+                            ),
                             onChanged: (vals) {
                               setModalState(() {
                                 _minPrice = vals.start;
@@ -1127,31 +1468,40 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                                 hintStyle: TextStyle(fontSize: 11),
                                 prefixIcon: Icon(Icons.search, size: 16),
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 8),
+                                contentPadding: EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                               ),
                             ),
                           ),
                           ..._allBrands
-                              .where((b) => b.toLowerCase().contains(_selectedBrandQuery.toLowerCase()))
+                              .where(
+                                (b) => b.toLowerCase().contains(
+                                  _selectedBrandQuery.toLowerCase(),
+                                ),
+                              )
                               .map((brand) {
-                            final isSel = _selectedBrands.contains(brand);
-                            return CheckboxListTile(
-                              title: Text(brand, style: const TextStyle(fontSize: 13)),
-                              value: isSel,
-                              activeColor: AppColors.primary,
-                              dense: true,
-                              onChanged: (val) {
-                                setModalState(() {
-                                  if (val == true) {
-                                    _selectedBrands.add(brand);
-                                  } else {
-                                    _selectedBrands.remove(brand);
-                                  }
-                                });
-                                setState(() {});
-                              },
-                            );
-                          }),
+                                final isSel = _selectedBrands.contains(brand);
+                                return CheckboxListTile(
+                                  title: Text(
+                                    brand,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                  value: isSel,
+                                  activeColor: AppColors.primary,
+                                  dense: true,
+                                  onChanged: (val) {
+                                    setModalState(() {
+                                      if (val == true) {
+                                        _selectedBrands.add(brand);
+                                      } else {
+                                        _selectedBrands.remove(brand);
+                                      }
+                                    });
+                                    setState(() {});
+                                  },
+                                );
+                              }),
 
                           const Divider(height: 24),
 
@@ -1159,14 +1509,20 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           _buildFilterSectionTitle('Discount'),
                           ...[50, 40, 30, 20, 10].map((disc) {
                             return RadioListTile<int>(
-                              title: Text('$disc% or more', style: const TextStyle(fontSize: 13)),
+                              title: Text(
+                                '$disc% or more',
+                                style: const TextStyle(fontSize: 13),
+                              ),
                               value: disc,
                               groupValue: _selectedDiscountMin,
                               activeColor: AppColors.primary,
                               dense: true,
                               onChanged: (val) {
                                 setModalState(() {
-                                  _selectedDiscountMin = (val == _selectedDiscountMin) ? 0 : (val ?? 0);
+                                  _selectedDiscountMin =
+                                      (val == _selectedDiscountMin)
+                                      ? 0
+                                      : (val ?? 0);
                                 });
                                 setState(() {});
                               },
@@ -1179,13 +1535,18 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           _buildFilterSectionTitle('Prescription Required'),
                           ...['All', 'Rx Required', 'Non-Rx'].map((opt) {
                             return RadioListTile<String>(
-                              title: Text(opt, style: const TextStyle(fontSize: 13)),
+                              title: Text(
+                                opt,
+                                style: const TextStyle(fontSize: 13),
+                              ),
                               value: opt,
                               groupValue: _prescriptionFilter,
                               activeColor: AppColors.primary,
                               dense: true,
                               onChanged: (val) {
-                                setModalState(() => _prescriptionFilter = val ?? 'All');
+                                setModalState(
+                                  () => _prescriptionFilter = val ?? 'All',
+                                );
                                 setState(() {});
                               },
                             );
@@ -1196,22 +1557,32 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           // VENDOR / PRODUCT RATING
                           _buildFilterSectionTitle('Vendor / Product Rating'),
                           CheckboxListTile(
-                            title: const Text('4★ and above', style: TextStyle(fontSize: 13)),
+                            title: const Text(
+                              '4★ and above',
+                              style: TextStyle(fontSize: 13),
+                            ),
                             value: _minRating >= 4.0,
                             activeColor: AppColors.primary,
                             dense: true,
                             onChanged: (val) {
-                              setModalState(() => _minRating = (val == true) ? 4.0 : 0.0);
+                              setModalState(
+                                () => _minRating = (val == true) ? 4.0 : 0.0,
+                              );
                               setState(() {});
                             },
                           ),
                           CheckboxListTile(
-                            title: const Text('3★ and above', style: TextStyle(fontSize: 13)),
+                            title: const Text(
+                              '3★ and above',
+                              style: TextStyle(fontSize: 13),
+                            ),
                             value: _minRating >= 3.0 && _minRating < 4.0,
                             activeColor: AppColors.primary,
                             dense: true,
                             onChanged: (val) {
-                              setModalState(() => _minRating = (val == true) ? 3.0 : 0.0);
+                              setModalState(
+                                () => _minRating = (val == true) ? 3.0 : 0.0,
+                              );
                               setState(() {});
                             },
                           ),
@@ -1245,11 +1616,17 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                             child: Text(
                               'Apply Filters (${_getFilteredProducts().length} items)',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),

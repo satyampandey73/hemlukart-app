@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
 
 class SavedCardsWalletScreen extends StatelessWidget {
   const SavedCardsWalletScreen({super.key});
@@ -114,7 +115,7 @@ class SavedCardsWalletScreen extends StatelessWidget {
             _buildCreditCard(
               'HDFC Bank Credit',
               '**** **** **** 4892',
-              'Rahul Sharma',
+              AppState().currentUser?.fullName ?? 'User Profile',
               '12/29',
               const Color(0xFF1E3A8A), // Deep Blue
               'assets/img2.png',
@@ -126,7 +127,7 @@ class SavedCardsWalletScreen extends StatelessWidget {
             _buildCreditCard(
               'ICICI Bank Debit',
               '**** **** **** 7731',
-              'Rahul Sharma',
+              AppState().currentUser?.fullName ?? 'User Profile',
               '08/28',
               const Color(0xFF1E293B), // Charcoal Grey
               'assets/img2.png',

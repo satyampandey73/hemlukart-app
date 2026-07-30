@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import 'order_placed_screen.dart';
+import 'shipping_addresses_screen.dart';
+import '../models/shipping_address_model.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final double subtotal;
@@ -21,7 +23,8 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final AppState _appState = AppState();
-  String _selectedPaymentMethod = 'Card'; // UPI, Card, NetBanking, COD
+  String _selectedPaymentMethod = 'COD'; // COD, UPI, Card, NetBanking
+  bool _isPlacingOrder = false;
 
   final TextEditingController _cardNumberController = TextEditingController();
   final TextEditingController _expiryController = TextEditingController();
@@ -29,12 +32,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _couponController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _appState.addListener(_onStateChanged);
+    if (_appState.isLoggedIn) {
+      _appState.fetchShippingAddresses();
+    }
+  }
+
+  @override
   void dispose() {
+    _appState.removeListener(_onStateChanged);
     _cardNumberController.dispose();
     _expiryController.dispose();
     _cvvController.dispose();
     _couponController.dispose();
     super.dispose();
+  }
+
+  void _onStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -73,67 +90,94 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Delivery Address card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.border.withOpacity(0.5)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Builder(
+                    builder: (context) {
+                      final selectedAddress = _appState.selectedShippingAddress;
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Icon(Icons.location_on, color: AppColors.primary, size: 18),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'Delivery Address',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on, color: AppColors.primary, size: 18),
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'Delivery Address',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
+                                    ),
+                                    if (selectedAddress != null && selectedAddress.isDefault) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'Default',
+                                          style: TextStyle(color: AppColors.primary, fontSize: 9, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.backgroundLight.withOpacity(0.5),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'Home',
-                                    style: TextStyle(color: AppColors.primary, fontSize: 9, fontWeight: FontWeight.bold),
+                                GestureDetector(
+                                  onTap: () async {
+                                    final ShippingAddressModel? picked = await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const ShippingAddressesScreen(selectMode: true),
+                                      ),
+                                    );
+                                    if (picked != null) {
+                                      _appState.selectShippingAddress(picked);
+                                    }
+                                  },
+                                  child: Text(
+                                    selectedAddress != null ? 'Change' : 'Add / Select',
+                                    style: const TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 13),
                                   ),
                                 ),
                               ],
                             ),
-                            GestureDetector(
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Address edit option coming soon.')),
-                                );
-                              },
-                              child: const Text(
-                                'Change',
-                                style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontSize: 13),
+                            const SizedBox(height: 12),
+                            if (selectedAddress != null) ...[
+                              Text(
+                                selectedAddress.fullName,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
                               ),
-                            ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${selectedAddress.formattedAddress}\n+91 ${selectedAddress.phone}',
+                                style: const TextStyle(color: AppColors.textLight, fontSize: 12, height: 1.4),
+                              ),
+                            ] else if (_appState.isLoadingAddresses) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+                              ),
+                            ] else ...[
+                              const Text(
+                                'No shipping address selected. Tap Change to add or choose an address.',
+                                style: TextStyle(color: AppColors.error, fontSize: 12),
+                              ),
+                            ],
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Rahul Sharma',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Flat 402, Green Valley Apartments, Koramangala 4th Block,\nBengaluru, Karnataka 560034\n+91 9876543210',
-                          style: TextStyle(color: AppColors.textLight, fontSize: 12, height: 1.4),
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
+
 
                   const SizedBox(height: 16),
 
@@ -259,18 +303,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Cash on Delivery Accordion (Disabled)
+                  // Cash on Delivery Accordion
                   _buildPaymentAccordion(
                     'COD',
                     'Cash on Delivery',
                     [
                       const Text(
-                        'Not available for current location',
-                        style: TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.bold),
+                        'Pay cash or UPI upon delivery at your doorstep.',
+                        style: TextStyle(color: AppColors.textLight, fontSize: 11),
                       ),
                     ],
-                    icon: Icons.money_off,
-                    isEnabled: false,
+                    icon: Icons.payments_outlined,
+                    isEnabled: true,
                   ),
 
                   const SizedBox(height: 20),
@@ -450,7 +494,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: _isPlacingOrder ? null : () async {
                         if (_appState.cart.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Cart is empty. Cannot place order.')),
@@ -458,19 +502,70 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           return;
                         }
 
-                        // Place order in appState
-                        _appState.placeOrder(total, widget.discount);
-                        final placedOrder = _appState.orders.last;
-
-                        // Route to order placed screen
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => OrderPlacedScreen(
-                              order: placedOrder,
+                        final selectedAddress = _appState.selectedShippingAddress;
+                        if (selectedAddress == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please select or add a shipping address first.'),
+                              backgroundColor: AppColors.error,
                             ),
-                          ),
+                          );
+                          return;
+                        }
+
+                        setState(() {
+                          _isPlacingOrder = true;
+                        });
+
+                        final paymentMode = _selectedPaymentMethod.toLowerCase(); // 'cod', 'upi', 'card', 'netbanking'
+                        final paymentStatus = 'pending';
+
+                        final response = await _appState.checkoutOrder(
+                          shippingAddressId: selectedAddress.id,
+                          paymentMode: paymentMode,
+                          paymentStatus: paymentStatus,
                         );
+
+                        if (!mounted) return;
+
+                        setState(() {
+                          _isPlacingOrder = false;
+                        });
+
+                        if (response.success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(response.message.isNotEmpty ? response.message : 'Order created successfully'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+
+                          final placedOrder = _appState.orders.isNotEmpty
+                              ? _appState.orders.last
+                              : Order(
+                                  id: response.data?.order.orderNo ?? 'ORDER',
+                                  items: List.from(_appState.cart),
+                                  totalAmount: total,
+                                  discount: widget.discount,
+                                  orderDate: 'Just now',
+                                );
+
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OrderPlacedScreen(
+                                order: placedOrder,
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(response.message.isNotEmpty ? response.message : 'Failed to place order.'),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -479,17 +574,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         elevation: 0,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.lock_outline, size: 16),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Pay ₹${total.toStringAsFixed(2)} & Place Order',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                        ],
-                      ),
+                      child: _isPlacingOrder
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.lock_outline, size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Pay ₹${total.toStringAsFixed(2)} & Place Order',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                   const SizedBox(height: 32),

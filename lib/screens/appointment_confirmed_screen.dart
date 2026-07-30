@@ -18,7 +18,7 @@ class _AppointmentConfirmedScreenState extends State<AppointmentConfirmedScreen>
     final appt = widget.appointment;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundLight.withOpacity(0.2),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Confirmed', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.primary,

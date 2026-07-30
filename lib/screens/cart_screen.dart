@@ -21,6 +21,7 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     _appState.addListener(_rebuild);
+    _appState.fetchCartFromApi();
   }
 
   @override
@@ -46,7 +47,7 @@ class _CartScreenState extends State<CartScreen> {
       totalItems += item.quantity;
     }
 
-    double delivery = subtotal > 0 && subtotal < 500 ? 50.0 : 0.0;
+    double delivery = 0.0;
     if (_promoApplied) {
       _promoDiscount = subtotal * 0.1; // 10% coupon
     } else {
@@ -377,10 +378,13 @@ class _CartScreenState extends State<CartScreen> {
                   color: AppColors.backgroundLight.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Image.asset(
-                  prod.image.isNotEmpty ? prod.image : 'assets/img2.png',
-                  fit: BoxFit.contain,
-                ),
+                child: (prod.image.startsWith('http://') ||
+                        prod.image.startsWith('https://'))
+                    ? Image.network(prod.image, fit: BoxFit.contain)
+                    : Image.asset(
+                        prod.image.isNotEmpty ? prod.image : 'assets/img2.png',
+                        fit: BoxFit.contain,
+                      ),
               ),
               const SizedBox(width: 12),
 

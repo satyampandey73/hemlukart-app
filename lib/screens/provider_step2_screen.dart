@@ -1,12 +1,129 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../constants/app_state.dart';
+import '../services/doctor_auth_service.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/step_indicator.dart';
-import '../widgets/success_popup.dart';
+import 'provider_step3_screen.dart';
 
-class ProviderStep2Screen extends StatelessWidget {
+class ProviderStep2Screen extends StatefulWidget {
   const ProviderStep2Screen({super.key});
+
+  @override
+  State<ProviderStep2Screen> createState() => _ProviderStep2ScreenState();
+}
+
+class _ProviderStep2ScreenState extends State<ProviderStep2Screen> {
+  final TextEditingController _fullNameController = TextEditingController(text: 'Dr. John Doe');
+  String _selectedGender = 'male';
+  final TextEditingController _dobController = TextEditingController(text: '1990-05-15');
+  final TextEditingController _emailController = TextEditingController(text: 'john@example.com');
+  final TextEditingController _addressController = TextEditingController(text: '123 Medical Street');
+  final TextEditingController _cityController = TextEditingController(text: 'Mumbai');
+  final TextEditingController _stateController = TextEditingController(text: 'Maharashtra');
+  final TextEditingController _pinCodeController = TextEditingController(text: '400001');
+
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _fullNameController.dispose();
+    _dobController.dispose();
+    _emailController.dispose();
+    _addressController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
+    _pinCodeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime initialDate =
+        DateTime.tryParse(_dobController.text) ?? DateTime(1990, 5, 15);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(1940),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              onSurface: AppColors.textDark,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final formatted =
+          '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      setState(() {
+        _dobController.text = formatted;
+      });
+    }
+  }
+
+  Future<void> _handleSavePersonal() async {
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Session token missing. Please verify mobile OTP again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final response = await DoctorAuthService.registerPersonal(
+      token: token,
+      fullName: _fullNameController.text,
+      gender: _selectedGender,
+      dateOfBirth: _dobController.text,
+      email: _emailController.text,
+      address: _addressController.text,
+      city: _cityController.text,
+      state: _stateController.text,
+      pinCode: _pinCodeController.text,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (response.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message),
+          backgroundColor: Colors.green.shade700,
+        ),
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProviderStep3Screen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +169,10 @@ class ProviderStep2Screen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'Full Name',
                       hintText: 'Enter your full legal name',
+                      controller: _fullNameController,
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -65,65 +183,81 @@ class ProviderStep2Screen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Gender',
-                      hintText: 'Select gender',
-                      suffixIcon: Icon(
-                        Icons.keyboard_arrow_down,
-                        color: AppColors.textLight,
+                    const Text(
+                      'Gender',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Date of Birth',
-                      hintText: 'mm/dd/yyyy',
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Email Address',
-                      hintText: 'name@example.com',
-                      prefixIcon: Icons.email_outlined,
-                    ),
-                    const SizedBox(height: 20),
-                    const CustomTextField(
-                      label: 'Residential Address (optional)',
-                      hintText: 'Street name, building number, apartment...',
-                      maxLines: 3,
                     ),
                     const SizedBox(height: 8),
-                    const Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        '0 / 250',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textLight,
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedGender,
+                      decoration: InputDecoration(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                       ),
+                      items: const [
+                        DropdownMenuItem(value: 'male', child: Text('Male')),
+                        DropdownMenuItem(value: 'female', child: Text('Female')),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _selectedGender = val);
+                        }
+                      },
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
+                      label: 'Date of Birth',
+                      hintText: 'Select Date of Birth',
+                      prefixIcon: Icons.calendar_today_outlined,
+                      suffixIcon: const Icon(Icons.arrow_drop_down, color: AppColors.textLight),
+                      readOnly: true,
+                      onTap: () => _selectDate(context),
+                      controller: _dobController,
+                    ),
+                    const SizedBox(height: 20),
+                    CustomTextField(
+                      label: 'Email Address',
+                      hintText: 'john@example.com',
+                      prefixIcon: Icons.email_outlined,
+                      controller: _emailController,
+                    ),
+                    const SizedBox(height: 20),
+                    CustomTextField(
+                      label: 'Residential Address',
+                      hintText: 'Street name, building number, apartment...',
+                      maxLines: 3,
+                      controller: _addressController,
+                    ),
+                    const SizedBox(height: 20),
+                    CustomTextField(
                       label: 'City',
-                      hintText: 'Search city...',
-                      suffixIcon: Icon(
-                        Icons.search,
-                        color: AppColors.textLight,
-                      ),
+                      hintText: 'Enter city',
+                      controller: _cityController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'State',
-                      hintText: 'Search state...',
-                      suffixIcon: Icon(
-                        Icons.map_outlined,
-                        color: AppColors.textLight,
-                      ),
+                      hintText: 'Enter state',
+                      controller: _stateController,
                     ),
                     const SizedBox(height: 20),
-                    const CustomTextField(
+                    CustomTextField(
                       label: 'PIN Code',
                       hintText: '6-digit code',
                       keyboardType: TextInputType.number,
+                      controller: _pinCodeController,
                     ),
                     const SizedBox(height: 32),
                     const Divider(color: AppColors.border),
@@ -142,13 +276,8 @@ class ProviderStep2Screen extends StatelessWidget {
                         Expanded(
                           flex: 2,
                           child: PrimaryButton(
-                            text: 'Save & Continue',
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (_) => const SuccessPopup(),
-                              );
-                            },
+                            text: _isLoading ? 'Saving...' : 'Save & Continue',
+                            onPressed: _isLoading ? () {} : _handleSavePersonal,
                           ),
                         ),
                       ],
@@ -158,7 +287,7 @@ class ProviderStep2Screen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               const Text(
-                '© 2024 Wellness Market. Secure and Encrypted Registration.',
+                '© 2026 Wellness Market. Secure and Encrypted Registration.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textLight, fontSize: 12),
               ),

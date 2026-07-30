@@ -1,4 +1,21 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart';
+import '../models/product_faq_model.dart';
+import '../models/wishlist_model.dart';
+import '../models/cart_model.dart';
+import '../services/auth_service.dart';
+import '../services/product_service.dart';
+import '../services/product_faq_service.dart';
+import '../services/wishlist_service.dart';
+import '../services/cart_service.dart';
+import '../models/rating_model.dart';
+import '../services/rating_service.dart';
+import '../models/shipping_address_model.dart';
+import '../services/shipping_address_service.dart';
+import '../models/order_model.dart';
+import '../services/order_service.dart';
 
 class Product {
   final String id;
@@ -74,11 +91,13 @@ class CartItem {
   final Product product;
   int quantity;
   String? prescriptionFile;
+  String? itemId;
 
   CartItem({
     required this.product,
     this.quantity = 1,
     this.prescriptionFile,
+    this.itemId,
   });
 }
 
@@ -109,6 +128,9 @@ class Order {
   final double discount;
   final String status; // Placed, Confirmed, Dispatched, Delivered
   final String orderDate;
+  final String? orderNo;
+  final String? paymentMode;
+  final String? deliveryAddress;
 
   Order({
     required this.id,
@@ -117,25 +139,136 @@ class Order {
     required this.discount,
     this.status = 'Placed',
     required this.orderDate,
+    this.orderNo,
+    this.paymentMode,
+    this.deliveryAddress,
+  });
+}
+
+class Clinic {
+  final String id;
+  final String name;
+  final String image;
+  final double rating;
+  final String location;
+  final String specialty;
+  final List<String> availableServices;
+  final int doctorsCount;
+  final bool isVerified;
+  final bool isPremium;
+  final double fee;
+  final bool availableToday;
+  final bool availableThisWeek;
+
+  const Clinic({
+    required this.id,
+    required this.name,
+    required this.image,
+    required this.rating,
+    required this.location,
+    required this.specialty,
+    required this.availableServices,
+    required this.doctorsCount,
+    this.isVerified = false,
+    this.isPremium = false,
+    required this.fee,
+    this.availableToday = true,
+    this.availableThisWeek = true,
   });
 }
 
 class AppState extends ChangeNotifier {
   // Singleton Pattern
-  AppState._internal();
+  AppState._internal() {
+    fetchProductsFromApi();
+  }
   static final AppState _instance = AppState._internal();
   factory AppState() => _instance;
 
   bool _isLoggedIn = false;
+  String? _authToken;
+  String? _doctorToken;
+  UserModel? _currentUser;
+
   bool get isLoggedIn => _isLoggedIn;
+  String? get authToken => _authToken;
+  String? get doctorToken => _doctorToken;
+  UserModel? get currentUser => _currentUser;
+  bool get isDoctorLoggedIn => _doctorToken != null && _doctorToken!.isNotEmpty;
+
+  Future<void> initSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    _authToken = prefs.getString('auth_token');
+    _doctorToken = prefs.getString('doctor_token');
+    final userStr = prefs.getString('user_data');
+
+    if (_authToken != null && userStr != null) {
+      try {
+        _currentUser = UserModel.fromJson(jsonDecode(userStr));
+        _isLoggedIn = true;
+        fetchUserWishlistProducts();
+        fetchCartFromApi();
+        fetchShippingAddresses();
+        fetchMyOrders();
+      } catch (e) {
+        _isLoggedIn = false;
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> setDoctorToken(String token) async {
+    _doctorToken = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('doctor_token', token);
+    notifyListeners();
+  }
+
+  Future<void> clearDoctorSession() async {
+    _doctorToken = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('doctor_token');
+    notifyListeners();
+  }
+
+  Future<void> setSession({required String token, required UserModel user}) async {
+    _isLoggedIn = true;
+    _authToken = token;
+    _currentUser = user;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', token);
+    await prefs.setString('user_data', jsonEncode(user.toJson()));
+    fetchUserWishlistProducts();
+    fetchCartFromApi();
+    fetchShippingAddresses();
+    fetchMyOrders();
+    notifyListeners();
+  }
+
+  Future<UserModel?> fetchUserProfile() async {
+    if (_authToken == null || _authToken!.isEmpty) return null;
+    final profileRes = await AuthService.getUserProfile(token: _authToken!);
+    if (profileRes.success && profileRes.user != null) {
+      _currentUser = profileRes.user;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_data', jsonEncode(_currentUser!.toJson()));
+      notifyListeners();
+    }
+    return _currentUser;
+  }
 
   void login() {
     _isLoggedIn = true;
     notifyListeners();
   }
 
-  void logout() {
+  Future<void> logout() async {
     _isLoggedIn = false;
+    _authToken = null;
+    _currentUser = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('user_data');
     notifyListeners();
   }
 
@@ -145,172 +278,80 @@ class AppState extends ChangeNotifier {
   final List<String> _wishlistDoctorIds = [];
   final List<Appointment> _appointments = [];
   final List<Order> _orders = [];
+  List<Product> _apiProducts = [];
+  bool _isLoadingProducts = false;
+  String? _productsError;
+  List<UserWishlistProductItem> _userWishlistItems = [];
+  bool _isLoadingWishlist = false;
+  bool _isLoadingCart = false;
+
+  List<ShippingAddressModel> _shippingAddresses = [];
+  ShippingAddressModel? _selectedShippingAddress;
+  bool _isLoadingAddresses = false;
+
+  List<MyOrderItem> _myOrders = [];
+  bool _isLoadingMyOrders = false;
 
   List<CartItem> get cart => _cart;
   List<String> get wishlistProductIds => _wishlistProductIds;
   List<String> get wishlistDoctorIds => _wishlistDoctorIds;
   List<Appointment> get appointments => _appointments;
   List<Order> get orders => _orders;
+  List<MyOrderItem> get myOrders => _myOrders;
+  bool get isLoadingMyOrders => _isLoadingMyOrders;
+  List<UserWishlistProductItem> get userWishlistItems => _userWishlistItems;
+  bool get isLoadingWishlist => _isLoadingWishlist;
+  bool get isLoadingCart => _isLoadingCart;
 
-  // Global Mock Database
-  final List<Product> mockProducts = [
-    const Product(
-      id: 'p1',
-      name: 'Ashwagandha Organic Extra Strength Capsules',
-      brand: 'Organic India',
-      image: 'assets/img2.png',
-      price: 250.00,
-      originalPrice: 350.00,
-      rating: 4.8,
-      reviewsCount: 128,
-      isPrescriptionRequired: false,
-      category: 'Herbal Medicine',
-      description: 'Experience peak vitality with our organic Ashwagandha capsules formulated for maximum stress reduction, energy enhancement, and immune support.',
-    ),
-    const Product(
-      id: 'p2',
-      name: 'Triphala Churna Purifying Formula 100g',
-      brand: 'Baidyanath',
-      image: 'assets/img2.png',
-      price: 180.00,
-      originalPrice: 220.00,
-      rating: 4.6,
-      reviewsCount: 94,
-      isPrescriptionRequired: false,
-      category: 'Digestive Care',
-      description: 'Traditional Ayurvedic blend of three fruits for gentle colon cleansing and digestive system rejuvenation.',
-    ),
-    const Product(
-      id: 'p3',
-      name: 'Ayurvedic Liver Care Syrup 200ml',
-      brand: 'Himalaya Wellness',
-      image: 'assets/img2.png',
-      price: 195.00,
-      originalPrice: 250.00,
-      rating: 4.7,
-      reviewsCount: 156,
-      isPrescriptionRequired: false,
-      category: 'Health Care',
-      description: 'Potent liver tonic supporting optimal hepatic function, detoxification, and appetite normalization.',
-    ),
-    const Product(
-      id: 'p4',
-      name: 'Pure Tulsi Wellness Drops 30ml',
-      brand: 'Kerala Ayurveda',
-      image: 'assets/img2.png',
-      price: 140.00,
-      originalPrice: 200.00,
-      rating: 4.5,
-      reviewsCount: 82,
-      isPrescriptionRequired: false,
-      category: 'Immunity Boosters',
-      description: 'Concentrated natural extract of 5 varieties of Holy Basil to build natural daily body defenses.',
-    ),
-    const Product(
-      id: 'p5',
-      name: 'Yograj Guggul Joint Fortifier 60 Tabs',
-      brand: 'Baidyanath',
-      image: 'assets/img2.png',
-      price: 360.00,
-      originalPrice: 480.00,
-      rating: 4.8,
-      reviewsCount: 64,
-      isPrescriptionRequired: true,
-      category: 'Ayurvedic',
-      description: 'Classical Guggulu preparation targeting chronic joint aches, arthritis relief, and muscle stiffness.',
-    ),
-    const Product(
-      id: 'p6',
-      name: 'Chyawanprash Awaleha Special 500g',
-      brand: 'Dabur',
-      image: 'assets/img2.png',
-      price: 290.00,
-      originalPrice: 380.00,
-      rating: 4.9,
-      reviewsCount: 310,
-      isPrescriptionRequired: false,
-      category: 'Immunity Boosters',
-      description: 'Time-tested Ayurvedic formulation packed with Amla and 40+ vital herbs for all-season family immunity.',
-    ),
-    const Product(
-      id: 'p7',
-      name: 'Maharishi Amrit Kalash Dual Paste & Tabs',
-      brand: 'Maharishi Ayurveda',
-      image: 'assets/img2.png',
-      price: 990.00,
-      originalPrice: 1450.00,
-      rating: 4.9,
-      reviewsCount: 42,
-      isPrescriptionRequired: false,
-      category: 'Ayurvedic',
-      description: 'Synergistic Rasayana formulation known for cell protection, anti-aging, and supreme immunity boosting.',
-    ),
-    const Product(
-      id: 'p8',
-      name: 'Zandu Rhumason Pain Relief Massage Oil',
-      brand: 'Zandu',
-      image: 'assets/img2.png',
-      price: 165.00,
-      originalPrice: 210.00,
-      rating: 4.4,
-      reviewsCount: 77,
-      isPrescriptionRequired: false,
-      category: 'Personal Care',
-      description: 'Fast-penetrating herbal oil designed to soothe muscle spasms, joint soreness, and backaches.',
-    ),
-    const Product(
-      id: 'p9',
-      name: 'Amoxicillin Trihydrate 500mg (Rx)',
-      brand: 'Medisynth',
-      image: 'assets/img2.png',
-      price: 185.00,
-      originalPrice: 240.00,
-      rating: 4.3,
-      reviewsCount: 38,
-      isPrescriptionRequired: true,
-      category: 'Allopathy',
-      description: 'Broad-spectrum antibiotic prescription medicine used under clinical supervision for bacterial infections.',
-    ),
-    const Product(
-      id: 'p10',
-      name: 'Daily Vitality Multivitamin & Minerals',
-      brand: 'GreenLeaf Nutrition',
-      image: 'assets/img2.png',
-      price: 499.00,
-      originalPrice: 999.00,
-      rating: 4.7,
-      reviewsCount: 420,
-      isPrescriptionRequired: false,
-      category: 'Supplements',
-      description: 'Complete daily nutritional support formula packed with essential vitamins, minerals, and plant extracts.',
-    ),
-    const Product(
-      id: 'p11',
-      name: 'Neem & Purifying Turmeric Herbal Soap',
-      brand: 'Himalaya Wellness',
-      image: 'assets/img2.png',
-      price: 95.00,
-      originalPrice: 120.00,
-      rating: 4.5,
-      reviewsCount: 190,
-      isPrescriptionRequired: false,
-      category: 'Personal Care',
-      description: 'Gentle antibacterial herbal bar cleanser that cleanses impurities while maintaining skin moisture balance.',
-    ),
-    const Product(
-      id: 'p12',
-      name: 'Kerala Ayurveda Myaxyl Pain Relief Spray',
-      brand: 'Kerala Ayurveda',
-      image: 'assets/img2.png',
-      price: 210.00,
-      originalPrice: 280.00,
-      rating: 4.6,
-      reviewsCount: 88,
-      isPrescriptionRequired: false,
-      category: 'Health Care',
-      description: 'Quick action herbal topical spray for sprains, stiffness, and joint mobility enhancement.',
-    ),
-  ];
+  List<ShippingAddressModel> get shippingAddresses => _shippingAddresses;
+  ShippingAddressModel? get selectedShippingAddress => _selectedShippingAddress;
+  bool get isLoadingAddresses => _isLoadingAddresses;
+
+  List<Product> get products => _apiProducts;
+  List<Product> get apiProducts => _apiProducts;
+  bool get isLoadingProducts => _isLoadingProducts;
+  String? get productsError => _productsError;
+
+  Future<void> fetchProductsFromApi({String? categoryId, String? search}) async {
+    _isLoadingProducts = true;
+    _productsError = null;
+    notifyListeners();
+
+    final response = await ProductService.getProducts(
+      categoryId: categoryId,
+      search: search,
+    );
+    _isLoadingProducts = false;
+
+    if (response.success) {
+      final activeApiProds = response.products
+          .where((p) => p.isActive && !p.isDeleted)
+          .map((p) => p.toProduct())
+          .toList();
+
+      _apiProducts = activeApiProds;
+    } else {
+      _productsError = response.message ?? 'Failed to load products from API';
+    }
+    notifyListeners();
+  }
+
+  Future<Product?> fetchProductDetails(String productId) async {
+    final response = await ProductService.getProductById(productId);
+    if (response.success && response.product != null) {
+      return response.product!.toProduct();
+    }
+    return null;
+  }
+
+  Future<List<ProductFaqModel>> fetchProductFaqs(String productId) async {
+    final response = await ProductFaqService.getFaqsByProductId(productId);
+    if (response.success) {
+      return response.faqs.where((f) => f.isActive).toList();
+    }
+    return [];
+  }  // Deprecated: System uses live API products exclusively
+  final List<Product> mockProducts = [];
 
   final List<Doctor> mockDoctors = [
     const Doctor(
@@ -327,7 +368,8 @@ class AppState extends ChangeNotifier {
       languages: ['English', 'Hindi', 'Sanskrit'],
       clinicName: 'AyurHeal Wellness Center',
       clinicAddress: '124 Wellness Blvd, Suite 200, Healthcare District, 90210',
-      about: 'Dr. Anjali Sharma is a highly esteemed Ayurvedic practitioner dedicated to the principles of holistic healing. With a profound belief in treating the root cause rather than merely managing symptoms, she integrates traditional Ayurvedic wisdom with modern lifestyle adjustments to create personalized wellness plans for her patients.',
+      about:
+          'Dr. Anjali Sharma is a highly esteemed Ayurvedic practitioner dedicated to the principles of holistic healing. With a profound belief in treating the root cause rather than merely managing symptoms, she integrates traditional Ayurvedic wisdom with modern lifestyle adjustments to create personalized wellness plans for her patients.',
     ),
     const Doctor(
       id: 'd2',
@@ -343,7 +385,8 @@ class AppState extends ChangeNotifier {
       languages: ['English', 'Gujarati', 'Hindi'],
       clinicName: 'Holistic Care Homeopathy Clinic',
       clinicAddress: '45 Lotus Road, Ground Floor, Sector 4, 380009',
-      about: 'Dr. Rajesh Patel is a seasoned homeopath with 20+ years of healing practice. He specializes in treating chronic allergies, skin disorders, and autoimmune symptoms through individualistic constitutional treatments.',
+      about:
+          'Dr. Rajesh Patel is a seasoned homeopath with 20+ years of healing practice. He specializes in treating chronic allergies, skin disorders, and autoimmune symptoms through individualistic constitutional treatments.',
     ),
     const Doctor(
       id: 'd3',
@@ -359,30 +402,237 @@ class AppState extends ChangeNotifier {
       languages: ['English', 'Urdu'],
       clinicName: 'Avicenna Unani Healing Studio',
       clinicAddress: '78 Shifa Plaza, Aligarh Road, 202001',
-      about: 'Dr. Tariq Khan is a dedicated Unani physician focused on natural herbal regimens and bodily humor balance. His therapies offer successful clinical restoration for digestive ailments and metabolism deficiencies.',
+      about:
+          'Dr. Tariq Khan is a dedicated Unani physician focused on natural herbal regimens and bodily humor balance. His therapies offer successful clinical restoration for digestive ailments and metabolism deficiencies.',
+    ),
+  ];
+
+  final List<Clinic> mockClinics = const [
+    Clinic(
+      id: 'c1',
+      name: 'St. Marina Medical Center',
+      image: 'assets/cl1.jpg',
+      rating: 4.9,
+      location: 'Connaught Place, Delhi',
+      specialty: 'Cardiology',
+      availableServices: ['Panchkarma', 'IPD', 'Cupping'],
+      doctorsCount: 8,
+      isVerified: true,
+      isPremium: false,
+      fee: 1500,
+      availableToday: true,
+      availableThisWeek: true,
+    ),
+    Clinic(
+      id: 'c2',
+      name: 'Apex General Hospital',
+      image: 'assets/cl2.jpg',
+      rating: 4.7,
+      location: 'Sector 18, Noida',
+      specialty: 'General Medicine',
+      availableServices: ['IPD', 'Leech Therapy', 'Agni Karma'],
+      doctorsCount: 12,
+      isVerified: false,
+      isPremium: true,
+      fee: 2500,
+      availableToday: true,
+      availableThisWeek: true,
+    ),
+    Clinic(
+      id: 'c3',
+      name: 'Cedar Skin & Wellness',
+      image: 'assets/cl3.jpg',
+      rating: 4.8,
+      location: 'DLF Cyber City, Gurgaon',
+      specialty: 'Dermatology',
+      availableServices: ['Kerali Panchkarma', 'Agni Karma'],
+      doctorsCount: 6,
+      isVerified: true,
+      isPremium: false,
+      fee: 1800,
+      availableToday: false,
+      availableThisWeek: true,
+    ),
+    Clinic(
+      id: 'c4',
+      name: 'AyurHeal Clinical Care',
+      image: 'assets/cl1.jpg',
+      rating: 4.6,
+      location: 'South Extension, Delhi',
+      specialty: 'Pediatrics',
+      availableServices: ['Panchkarma', 'Rakt Mokshan'],
+      doctorsCount: 10,
+      isVerified: true,
+      isPremium: false,
+      fee: 1200,
+      availableToday: true,
+      availableThisWeek: true,
+    ),
+    Clinic(
+      id: 'c5',
+      name: 'Medicity Oncology & Specialty',
+      image: 'assets/cl2.jpg',
+      rating: 4.9,
+      location: 'Golf Course Road, Gurgaon',
+      specialty: 'Oncology',
+      availableServices: ['IPD', 'Agni Karma'],
+      doctorsCount: 15,
+      isVerified: false,
+      isPremium: true,
+      fee: 3500,
+      availableToday: true,
+      availableThisWeek: true,
+    ),
+    Clinic(
+      id: 'c6',
+      name: 'Vedic Healing Sanctuary',
+      image: 'assets/cl3.jpg',
+      rating: 4.8,
+      location: 'Indirapuram, Ghaziabad',
+      specialty: 'Cardiology',
+      availableServices: ['Kerali Panchkarma', 'Leech Therapy'],
+      doctorsCount: 7,
+      isVerified: true,
+      isPremium: false,
+      fee: 1600,
+      availableToday: true,
+      availableThisWeek: true,
     ),
   ];
 
   // Cart Operations
-  void addToCart(Product product, {int qty = 1}) {
-    final existingIdx = _cart.indexWhere((item) => item.product.id == product.id);
+  Future<GetCartApiResponse> fetchCartFromApi() async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return GetCartApiResponse(
+        success: false,
+        message: 'User not authenticated',
+      );
+    }
+
+    _isLoadingCart = true;
+    notifyListeners();
+
+    final response = await CartService.getCart(token: _authToken);
+    _isLoadingCart = false;
+
+    if (response.success && response.data != null) {
+      final localUnsynced = _cart.where((item) => item.itemId == null).toList();
+
+      List<CartItem> updatedCart = [];
+      for (final itemData in response.data!.items) {
+        final existingProd = _apiProducts.firstWhere(
+          (p) => p.id == itemData.productId,
+          orElse: () => Product(
+            id: itemData.productId,
+            name: itemData.productName ?? 'Product',
+            brand: itemData.skuName ?? '',
+            image: 'assets/img2.png',
+            price: itemData.priceAtAdd,
+            originalPrice:
+                itemData.mrp > 0 ? itemData.mrp : itemData.priceAtAdd,
+            rating: 4.5,
+            reviewsCount: 10,
+            category: 'General',
+            description: '',
+          ),
+        );
+
+        final localIdx =
+            _cart.indexWhere((c) => c.product.id == itemData.productId);
+        final String? localPrescription =
+            localIdx != -1 ? _cart[localIdx].prescriptionFile : null;
+
+        updatedCart.add(CartItem(
+          product: existingProd,
+          quantity: itemData.quantity,
+          itemId: itemData.id,
+          prescriptionFile: localPrescription,
+        ));
+      }
+
+      for (final unsynced in localUnsynced) {
+        if (!updatedCart.any((c) => c.product.id == unsynced.product.id)) {
+          updatedCart.add(unsynced);
+        }
+      }
+
+      _cart.clear();
+      _cart.addAll(updatedCart);
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<AddToCartApiResponse> addToCart(Product product, {int qty = 1}) async {
+    final existingIdx = _cart.indexWhere(
+      (item) => item.product.id == product.id,
+    );
     if (existingIdx != -1) {
       _cart[existingIdx].quantity += qty;
     } else {
       _cart.add(CartItem(product: product, quantity: qty));
     }
     notifyListeners();
+
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      final response = await CartService.addToCart(
+        productId: product.id,
+        quantity: qty,
+        token: _authToken,
+      );
+
+      if (response.success && response.data != null) {
+        final idx = _cart.indexWhere((item) => item.product.id == product.id);
+        if (idx != -1) {
+          _cart[idx].itemId = response.data!.id;
+        }
+      }
+      return response;
+    }
+
+    return AddToCartApiResponse(
+      success: true,
+      message: 'Added to cart locally',
+    );
   }
 
-  void updateCartQty(Product product, int newQty) {
+  Future<AddToCartApiResponse> addToCartApi(Product product, {int qty = 1}) async {
+    return await addToCart(product, qty: qty);
+  }
+
+  Future<CartActionApiResponse?> updateCartQty(Product product, int newQty) async {
     final idx = _cart.indexWhere((item) => item.product.id == product.id);
-    if (idx != -1) {
-      if (newQty <= 0) {
-        _cart.removeAt(idx);
-      } else {
-        _cart[idx].quantity = newQty;
-      }
+    if (idx == -1) return null;
+
+    final String? itemId = _cart[idx].itemId;
+
+    if (newQty <= 0) {
+      _cart.removeAt(idx);
       notifyListeners();
+      if (itemId != null &&
+          itemId.isNotEmpty &&
+          _authToken != null &&
+          _authToken!.isNotEmpty) {
+        return await CartService.removeCartItem(
+          itemId: itemId,
+          token: _authToken,
+        );
+      }
+      return null;
+    } else {
+      _cart[idx].quantity = newQty;
+      notifyListeners();
+      if (itemId != null &&
+          itemId.isNotEmpty &&
+          _authToken != null &&
+          _authToken!.isNotEmpty) {
+        return await CartService.updateCartItemQuantity(
+          itemId: itemId,
+          quantity: newQty,
+          token: _authToken,
+        );
+      }
+      return null;
     }
   }
 
@@ -394,24 +644,107 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void removeFromCart(Product product) {
-    _cart.removeWhere((item) => item.product.id == product.id);
-    notifyListeners();
+  Future<CartActionApiResponse?> removeFromCart(Product product) async {
+    final idx = _cart.indexWhere((item) => item.product.id == product.id);
+    String? itemId;
+    if (idx != -1) {
+      itemId = _cart[idx].itemId;
+      _cart.removeAt(idx);
+      notifyListeners();
+    }
+    if (itemId != null &&
+        itemId.isNotEmpty &&
+        _authToken != null &&
+        _authToken!.isNotEmpty) {
+      return await CartService.removeCartItem(
+        itemId: itemId,
+        token: _authToken,
+      );
+    }
+    return null;
   }
 
-  void clearCart() {
+  Future<CartActionApiResponse?> clearCart() async {
     _cart.clear();
     notifyListeners();
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      return await CartService.clearCart(token: _authToken);
+    }
+    return null;
   }
 
   // Wishlist Operations
-  void toggleProductWishlist(String productId) {
-    if (_wishlistProductIds.contains(productId)) {
+  Future<WishlistActionResponse> toggleProductWishlist(String productId) async {
+    final bool wasInWishlist = _wishlistProductIds.contains(productId);
+    if (wasInWishlist) {
       _wishlistProductIds.remove(productId);
     } else {
       _wishlistProductIds.add(productId);
     }
     notifyListeners();
+
+    final response = await WishlistService.toggleWishlist(
+      productId: productId,
+      token: _authToken,
+    );
+
+    if (!response.success) {
+      if (wasInWishlist) {
+        _wishlistProductIds.add(productId);
+      } else {
+        _wishlistProductIds.remove(productId);
+      }
+      notifyListeners();
+    }
+
+    return response;
+  }
+
+  Future<WishlistActionResponse> addToWishlistApi(String productId) async {
+    final response = await WishlistService.addToWishlist(
+      productId: productId,
+      token: _authToken,
+    );
+    if (response.success && !_wishlistProductIds.contains(productId)) {
+      _wishlistProductIds.add(productId);
+      notifyListeners();
+    }
+    return response;
+  }
+
+  Future<WishlistActionResponse> removeFromWishlistApi(String productId) async {
+    final response = await WishlistService.removeFromWishlist(
+      productId: productId,
+      token: _authToken,
+    );
+    if (response.success && _wishlistProductIds.contains(productId)) {
+      _wishlistProductIds.remove(productId);
+      notifyListeners();
+    }
+    return response;
+  }
+
+  Future<UserWishlistProductsApiResponse> fetchUserWishlistProducts() async {
+    _isLoadingWishlist = true;
+    notifyListeners();
+
+    final response = await WishlistService.getUserWishlistProducts(
+      token: _authToken,
+    );
+    _isLoadingWishlist = false;
+
+    if (response.success) {
+      _userWishlistItems = response.data;
+      _wishlistProductIds.clear();
+      for (final item in response.data) {
+        if (item.productId.isNotEmpty &&
+            !_wishlistProductIds.contains(item.productId)) {
+          _wishlistProductIds.add(item.productId);
+        }
+      }
+    }
+    notifyListeners();
+    return response;
   }
 
   void toggleDoctorWishlist(String doctorId) {
@@ -424,31 +757,234 @@ class AppState extends ChangeNotifier {
   }
 
   // Appointment Operations
-  void addAppointment(Doctor doctor, String date, String time, String notes, {List<String> files = const []}) {
+  void addAppointment(
+    Doctor doctor,
+    String date,
+    String time,
+    String notes, {
+    List<String> files = const [],
+  }) {
     final id = 'AYC-${100000 + _appointments.length}';
-    _appointments.add(Appointment(
-      id: id,
-      doctor: doctor,
-      date: date,
-      time: time,
-      notes: notes,
-      uploadedFiles: files,
-    ));
+    _appointments.add(
+      Appointment(
+        id: id,
+        doctor: doctor,
+        date: date,
+        time: time,
+        notes: notes,
+        uploadedFiles: files,
+      ),
+    );
     notifyListeners();
   }
 
   // Order Operations
+  Future<MyOrdersApiResponse> fetchMyOrders() async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return MyOrdersApiResponse(
+        success: false,
+        message: 'User not authenticated',
+        data: [],
+      );
+    }
+    _isLoadingMyOrders = true;
+    notifyListeners();
+
+    final response = await OrderService.getUsersOrders(token: _authToken);
+    _isLoadingMyOrders = false;
+
+    if (response.success) {
+      _myOrders = response.data;
+      _orders.clear();
+      for (final item in _myOrders) {
+        _orders.add(item.toOrder(_apiProducts));
+      }
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<SingleOrderDetailApiResponse> fetchOrderDetail(String orderId) async {
+    return await OrderService.getOrderById(
+      orderId: orderId,
+      token: _authToken,
+    );
+  }
+
+  Future<CheckoutApiResponse> checkoutOrder({
+    required String shippingAddressId,
+    required String paymentMode,
+    String paymentStatus = 'pending',
+  }) async {
+    final response = await OrderService.checkout(
+      shippingAddressId: shippingAddressId,
+      paymentMode: paymentMode,
+      paymentStatus: paymentStatus,
+      token: _authToken,
+    );
+
+    if (response.success && response.data != null) {
+      final newOrder = response.data!.toOrder(_apiProducts);
+      _orders.add(newOrder);
+      await clearCart();
+      await fetchMyOrders();
+      notifyListeners();
+    }
+    return response;
+  }
+
   void placeOrder(double total, double discount) {
     if (_cart.isEmpty) return;
     final orderId = 'OD050${62026100 + _orders.length}';
-    _orders.add(Order(
-      id: orderId,
-      items: List.from(_cart),
-      totalAmount: total,
-      discount: discount,
-      orderDate: 'July 16, 2026',
-    ));
+    _orders.add(
+      Order(
+        id: orderId,
+        items: List.from(_cart),
+        totalAmount: total,
+        discount: discount,
+        orderDate: 'July 16, 2026',
+      ),
+    );
     clearCart();
     notifyListeners();
   }
+
+  // Rating Operations
+  Future<AddRatingResponse> submitRating({
+    required String targetId,
+    required String targetType,
+    required int score,
+    required String review,
+  }) async {
+    final response = await RatingService.addRating(
+      targetId: targetId,
+      targetType: targetType,
+      score: score,
+      review: review,
+      token: _authToken,
+    );
+    notifyListeners();
+    return response;
+  }
+
+  // Shipping Address Operations
+  Future<ShippingAddressesApiResponse> fetchShippingAddresses() async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return ShippingAddressesApiResponse(
+        success: false,
+        data: [],
+        message: 'User not authenticated',
+      );
+    }
+    _isLoadingAddresses = true;
+    notifyListeners();
+
+    final response = await ShippingAddressService.getShippingAddresses(token: _authToken);
+    _isLoadingAddresses = false;
+
+    if (response.success) {
+      _shippingAddresses = response.data;
+      if (_shippingAddresses.isNotEmpty) {
+        final defaultAddress = _shippingAddresses.firstWhere(
+          (a) => a.isDefault,
+          orElse: () => _shippingAddresses.first,
+        );
+        if (_selectedShippingAddress == null ||
+            !_shippingAddresses.any((a) => a.id == _selectedShippingAddress!.id)) {
+          _selectedShippingAddress = defaultAddress;
+        }
+      } else {
+        _selectedShippingAddress = null;
+      }
+    }
+    notifyListeners();
+    return response;
+  }
+
+  void selectShippingAddress(ShippingAddressModel address) {
+    _selectedShippingAddress = address;
+    notifyListeners();
+  }
+
+  Future<ShippingAddressApiResponse> addShippingAddress({
+    required String fullName,
+    required String phone,
+    required String addressLine,
+    required String city,
+    required String state,
+    required String pincode,
+    String? landmark,
+    bool isDefault = false,
+  }) async {
+    final response = await ShippingAddressService.addShippingAddress(
+      fullName: fullName,
+      phone: phone,
+      addressLine: addressLine,
+      city: city,
+      state: state,
+      pincode: pincode,
+      landmark: landmark,
+      isDefault: isDefault,
+      token: _authToken,
+    );
+
+    if (response.success && response.data != null) {
+      await fetchShippingAddresses();
+      if (isDefault || _selectedShippingAddress == null) {
+        _selectedShippingAddress = response.data;
+      }
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<ShippingAddressApiResponse> updateShippingAddress({
+    required String id,
+    required String fullName,
+    required String phone,
+    required String addressLine,
+    required String city,
+    required String state,
+    required String pincode,
+    String? landmark,
+    bool isDefault = false,
+  }) async {
+    final response = await ShippingAddressService.updateShippingAddress(
+      id: id,
+      fullName: fullName,
+      phone: phone,
+      addressLine: addressLine,
+      city: city,
+      state: state,
+      pincode: pincode,
+      landmark: landmark,
+      isDefault: isDefault,
+      token: _authToken,
+    );
+
+    if (response.success) {
+      await fetchShippingAddresses();
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<ShippingAddressActionResponse> deleteShippingAddress(String id) async {
+    final response = await ShippingAddressService.deleteShippingAddress(
+      id: id,
+      token: _authToken,
+    );
+
+    if (response.success) {
+      _shippingAddresses.removeWhere((a) => a.id == id);
+      if (_selectedShippingAddress?.id == id) {
+        _selectedShippingAddress = _shippingAddresses.isNotEmpty
+            ? (_shippingAddresses.firstWhere((a) => a.isDefault, orElse: () => _shippingAddresses.first))
+            : null;
+      }
+      notifyListeners();
+    }
+    return response;
+  }
 }
+

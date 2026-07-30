@@ -9,6 +9,18 @@ import 'book_appointment_screen.dart';
 import 'order_tracking_screen.dart';
 import 'cart_screen.dart';
 import 'login_screen.dart';
+import 'product_catalog_screen.dart';
+import '../models/category_model.dart';
+import '../services/category_service.dart';
+import '../models/testimonial_model.dart';
+import '../services/testimonial_service.dart';
+import '../models/faq_model.dart';
+import '../services/faq_service.dart';
+import '../models/brand_model.dart';
+import '../services/brand_service.dart';
+import '../models/blog_model.dart';
+import '../services/blog_service.dart';
+import 'blog_detail_screen.dart';
 
 // harsh.s@btplsoft.com
 class NewHomeScreen extends StatefulWidget {
@@ -25,18 +37,194 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   final AppState _appState = AppState();
   Timer? _bannerTimer;
 
+  List<CategoryModel> _apiCategories = [];
+  bool _isLoadingCategories = false;
+  String? _categoryError;
+
+  List<TestimonialModel> _testimonials = [];
+  bool _isLoadingTestimonials = false;
+  String? _testimonialError;
+  final PageController _testimonialController = PageController();
+  int _currentTestimonialIndex = 0;
+  Timer? _testimonialTimer;
+
+  List<FaqModel> _apiFaqs = [];
+  List<bool> _faqExpandedStates = [];
+  bool _isLoadingFaqs = false;
+  String? _faqError;
+
+  List<BrandModel> _apiBrands = [];
+  bool _isLoadingBrands = false;
+  String? _brandError;
+
+  List<BlogModel> _apiBlogs = [];
+  bool _isLoadingBlogs = false;
+  String? _blogError;
+
   @override
   void initState() {
     super.initState();
     _appState.addListener(_rebuild);
     _startBannerAutoSlide();
+    _fetchCategories();
+    _fetchTestimonials();
+    _fetchFaqs();
+    _fetchBrands();
+    _fetchBlogs();
+  }
+
+  Future<void> _fetchCategories() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingCategories = true;
+      _categoryError = null;
+    });
+
+    final response = await CategoryService.getCategories();
+    if (!mounted) return;
+
+    if (response.success) {
+      setState(() {
+        _apiCategories = response.categories;
+        _isLoadingCategories = false;
+      });
+    } else {
+      setState(() {
+        _categoryError = response.message ?? 'Failed to load categories';
+        _isLoadingCategories = false;
+      });
+    }
+  }
+
+  Future<void> _fetchTestimonials() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingTestimonials = true;
+      _testimonialError = null;
+    });
+
+    final response = await TestimonialService.getTestimonials();
+    if (!mounted) return;
+
+    if (response.success) {
+      final activeList =
+          response.testimonials.where((t) => t.isActive && !t.isDeleted).toList();
+      setState(() {
+        _testimonials = activeList.isNotEmpty ? activeList : response.testimonials;
+        _isLoadingTestimonials = false;
+      });
+      if (_testimonials.length > 1) {
+        _startTestimonialAutoSlide();
+      }
+    } else {
+      setState(() {
+        _testimonialError = response.message ?? 'Failed to load testimonials';
+        _isLoadingTestimonials = false;
+      });
+    }
+  }
+
+  Future<void> _fetchFaqs() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingFaqs = true;
+      _faqError = null;
+    });
+
+    final response = await FaqService.getFaqs();
+    if (!mounted) return;
+
+    if (response.success) {
+      final activeList =
+          response.faqs.where((f) => f.isActive && !f.isDeleted).toList();
+      activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _apiFaqs = activeList.isNotEmpty ? activeList : response.faqs;
+        _faqExpandedStates = List.filled(_apiFaqs.length, false);
+        _isLoadingFaqs = false;
+      });
+    } else {
+      setState(() {
+        _faqError = response.message ?? 'Failed to load FAQs';
+        _isLoadingFaqs = false;
+      });
+    }
+  }
+
+  Future<void> _fetchBrands() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingBrands = true;
+      _brandError = null;
+    });
+
+    final response = await BrandService.getBrands();
+    if (!mounted) return;
+
+    if (response.success) {
+      final activeList =
+          response.brands.where((b) => b.isActive && !b.isDeleted).toList();
+      activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _apiBrands = activeList.isNotEmpty ? activeList : response.brands;
+        _isLoadingBrands = false;
+      });
+    } else {
+      setState(() {
+        _brandError = response.message ?? 'Failed to load brands';
+        _isLoadingBrands = false;
+      });
+    }
+  }
+
+  Future<void> _fetchBlogs() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingBlogs = true;
+      _blogError = null;
+    });
+
+    final response = await BlogService.getBlogs();
+    if (!mounted) return;
+
+    if (response.success) {
+      final activeList =
+          response.blogs.where((b) => b.isActive && !b.isDeleted).toList();
+      activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _apiBlogs = activeList.isNotEmpty ? activeList : response.blogs;
+        _isLoadingBlogs = false;
+      });
+    } else {
+      setState(() {
+        _blogError = response.message ?? 'Failed to load blogs';
+        _isLoadingBlogs = false;
+      });
+    }
+  }
+
+  void _startTestimonialAutoSlide() {
+    _testimonialTimer?.cancel();
+    _testimonialTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || _testimonials.isEmpty) return;
+      final nextIndex = (_currentTestimonialIndex + 1) % _testimonials.length;
+      if (_testimonialController.hasClients) {
+        _testimonialController.animateToPage(
+          nextIndex,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _bannerTimer?.cancel();
+    _testimonialTimer?.cancel();
     _appState.removeListener(_rebuild);
     _bannerController.dispose();
+    _testimonialController.dispose();
     super.dispose();
   }
 
@@ -57,31 +245,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   void _rebuild() {
     if (mounted) setState(() {});
   }
-
-  final List<Map<String, String>> _faqList = [
-    {
-      'question': 'What types of products does Hemlukart offer?',
-      'answer':
-          'Hemlukart specializes in authentic, high-quality Ayurvedic and natural wellness products. Our catalog includes organic supplements, wellness remedies, skincare products, and personalized herbal formulations designed to promote holistic health.',
-    },
-    {
-      'question': 'Are the products certified and safe to use?',
-      'answer':
-          'Yes, all wellness products are sourced from verified GMP-certified facilities and FDA-registered laboratories. Every batch is evaluated to ensure absolute purity and safety.',
-    },
-    {
-      'question': 'How long does delivery take?',
-      'answer':
-          'Standard delivery takes 3-5 business days. Express shipping is available for select zones (1-2 business days).',
-    },
-    {
-      'question': 'Is doctor consultation available online?',
-      'answer':
-          'Yes, we provide online video/audio consultations with certified Ayurvedic, Homeopathic, and Unani practitioners. You can choose a slot and book directly.',
-    },
-  ];
-
-  final List<bool> _faqExpanded = [false, false, false, false];
 
   Widget _buildSectionHeader(
     String title,
@@ -214,20 +377,26 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          width: 40,
+                          height: 40,
+                          padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(
                             color: Colors.white,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.healing,
-                            color: AppColors.primary,
-                            size: 24,
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/banner.png',
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         const Text(
                           'Hemlukart',
+
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 22,
@@ -273,7 +442,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 ),
                 const SizedBox(height: 16),
                 GestureDetector(
-                  onTap: () => widget.onTabChange(2), // Navigate to Shop
+                  onTap: () => widget.onTabChange(1), // Navigate to Shop
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -352,51 +521,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
           const SizedBox(height: 20),
 
-          // Our Brands
-          _buildSectionHeader(
-            'Our Brands',
-            'Pick from our favorite brands',
-            () => widget.onTabChange(2),
-          ),
-          SizedBox(
-            height: 150,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-                _buildBrandCard(
-                  'Sugar Free',
-                  '',
-                  onTap: () => widget.onTabChange(2),
-                ),
-              ],
-            ),
-          ),
+          // Our Brands (from API)
+          _buildBrandsSection(),
 
           const SizedBox(height: 20),
 
@@ -451,6 +577,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     }
                   },
                 ),
+              
                 _buildQuickActionCard(
                   'View Prescriptions',
                   'Digital health vaults',
@@ -472,7 +599,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           _buildSectionHeader(
             'Featured Doctors',
             'Consult with our top-rated medical experts',
-            () => widget.onTabChange(1),
+            () => widget.onTabChange(3),
           ),
           SizedBox(
             height: 220,
@@ -493,39 +620,13 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             'Shop by health category interests',
             () => widget.onTabChange(2),
           ),
-          SizedBox(
-            height: 150,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _buildCategoryCard('Must Have', Icons.star, Colors.orange),
-                _buildCategoryCard(
-                  'Vitamin Store',
-                  Icons.health_and_safety,
-                  Colors.green,
-                ),
-                _buildCategoryCard(
-                  'Sexual Wellness',
-                  Icons.favorite,
-                  Colors.pink,
-                ),
-                _buildCategoryCard('Personal Care', Icons.face, Colors.teal),
-                _buildCategoryCard(
-                  'Summer Store',
-                  Icons.wb_sunny,
-                  Colors.amber,
-                ),
-                _buildCategoryCard('Self Care', Icons.spa, Colors.indigo),
-              ],
-            ),
-          ),
+          _buildCategorySection(),
 
           // Featured Products
           _buildSectionHeader(
             'Featured Products',
             'Shop our best featured wellness products',
-            () => widget.onTabChange(2),
+            () => widget.onTabChange(1),
           ),
           GridView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -537,203 +638,25 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               crossAxisSpacing: 16,
               childAspectRatio: 0.60,
             ),
-            itemCount: _appState.mockProducts.take(4).length,
+            itemCount: _appState.products.take(4).length,
             itemBuilder: (context, idx) {
-              final prod = _appState.mockProducts[idx];
+              final prod = _appState.products[idx];
               return _buildProductCard(prod);
             },
           ),
 
           const SizedBox(height: 24),
 
-          // Blog Section
-          _buildSectionHeader('Our Blogs', 'Health Articles', () {}),
-          SizedBox(
-            height: 260,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              itemCount: 5,
-              separatorBuilder: (context, idx) => const SizedBox(width: 16),
-              itemBuilder: (context, idx) {
-                return _buildBlogCard(
-                  title:
-                      'Smog: What Is It, Causes and Ways To Protect Yourself From',
-                  imagePath: 'assets/img2.png',
-                );
-              },
-            ),
-          ),
+          // Blog Section (from API)
+          _buildBlogsSection(),
 
           const SizedBox(height: 24),
 
-          // Loved by Thousands (Testimonial Slider)
-          Container(
-            padding: const EdgeInsets.all(24),
-            color: Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Center(
-                  child: Text(
-                    'Loved by Thousands',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Center(
-                  child: Text(
-                    'Patient success stories from our consultations',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: AppColors.textLight),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundLight.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: List.generate(
-                          5,
-                          (_) => const Icon(
-                            Icons.star,
-                            color: Colors.amber,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '"The telemedicine consultation was incredibly professional. I received my Ayurvedic supplements the next day. Truly life-changing service!"',
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          fontStyle: FontStyle.italic,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const CircleAvatar(
-                            radius: 18,
-                            backgroundColor: AppColors.primary,
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'Robert Wilson',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                              Text(
-                                'Verified Patient',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Loved by Thousands (Testimonials Section from API)
+          _buildTestimonialsSection(),
 
-          // FAQ Accordion Section
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Frequently Asked Questions',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _faqList.length,
-                  itemBuilder: (context, idx) {
-                    final item = _faqList[idx];
-                    final isExp = _faqExpanded[idx];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppColors.border.withOpacity(0.5),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          ListTile(
-                            onTap: () =>
-                                setState(() => _faqExpanded[idx] = !isExp),
-                            title: Text(
-                              item['question']!,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            trailing: Icon(
-                              isExp ? Icons.expand_less : Icons.expand_more,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          if (isExp)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                              child: Text(
-                                item['answer']!,
-                                style: const TextStyle(
-                                  color: AppColors.textLight,
-                                  fontSize: 13,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+          // FAQ Accordion Section from API
+          _buildFaqSection(),
         ],
       ),
     );
@@ -867,84 +790,173 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildBrandCard(String title, String subtitle, {VoidCallback? onTap}) {
+
+
+  Widget _buildBlogsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Our Blogs', 'Health Articles', () {
+          if (_apiBlogs.isNotEmpty) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => BlogDetailScreen(
+                  blogId: _apiBlogs.first.id,
+                  initialBlog: _apiBlogs.first,
+                ),
+              ),
+            );
+          }
+        }),
+        if (_isLoadingBlogs)
+          Container(
+            height: 260,
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(color: AppColors.primary),
+          )
+        else if (_blogError != null && _apiBlogs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _blogError!,
+                      style: const TextStyle(fontSize: 12, color: AppColors.error),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _fetchBlogs,
+                    icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
+                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_apiBlogs.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'No blogs available right now.',
+              style: TextStyle(fontSize: 12, color: AppColors.textLight),
+            ),
+          )
+        else
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: _apiBlogs.length,
+              separatorBuilder: (context, idx) => const SizedBox(width: 16),
+              itemBuilder: (context, idx) {
+                final blog = _apiBlogs[idx];
+                return _buildApiBlogCard(blog);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildApiBlogCard(BlogModel blog) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BlogDetailScreen(
+              blogId: blog.id,
+              initialBlog: blog,
+            ),
+          ),
+        );
+      },
       child: Container(
-        width: 144,
-        margin: const EdgeInsets.only(right: 12),
+        width: 220,
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-              child: Stack(
-                children: [
-                  Image.asset(
-                    'assets/img2.png',
-                    width: 144,
-                    height: 104,
-                    fit: BoxFit.cover,
-                  ),
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: Container(
+                height: 140,
+                color: AppColors.backgroundLight,
+                child: blog.image.isNotEmpty && blog.image.startsWith('http')
+                    ? Image.network(
+                        blog.image,
+                        height: 140,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Image.asset(
+                            'assets/img2.png',
+                            height: 140,
+                            fit: BoxFit.cover,
+                          );
+                        },
+                      )
+                    : Image.asset(
+                        'assets/img2.png',
+                        height: 140,
+                        fit: BoxFit.cover,
                       ),
-                      decoration: BoxDecoration(
-                        // color: AppColors.secondary,
-                        color: const Color.fromRGBO(140, 244, 235, 1.0),
-                        borderRadius: BorderRadius.circular(8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: const Text(
-                        '15% OFF',
-                        style: TextStyle(
-                          color: Color.fromARGB(255, 12, 112, 93),
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Health Articles',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   Text(
-                    title,
-                    maxLines: 1,
+                    blog.title,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w700,
                       fontSize: 13,
+                      fontWeight: FontWeight.bold,
                       color: AppColors.textDark,
+                      height: 1.3,
                     ),
                   ),
                 ],
@@ -952,71 +964,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildBlogCard({required String title, required String imagePath}) {
-    return Container(
-      width: 220,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border.withOpacity(0.5)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            child: Image.asset(imagePath, height: 140, fit: BoxFit.cover),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'Health Articles',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1190,83 +1137,190 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildCategoryCard(String name, IconData icon, Color color) {
-    return Container(
-      width: 144,
-      margin: const EdgeInsets.only(right: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: Stack(
-              children: [
-                Image.asset(
-                  'assets/img2.png',
-                  width: 144,
-                  height: 104,
-                  fit: BoxFit.cover,
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color.fromRGBO(140, 244, 235, 1.0),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Text(
-                      '15% OFF',
-                      style: TextStyle(
-                        color: Color.fromARGB(255, 12, 112, 93),
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+  Widget _buildCategorySection() {
+    final activeCategories =
+        _apiCategories.where((c) => c.isActive && !c.isDeleted).toList();
+
+    if (_isLoadingCategories && activeCategories.isEmpty) {
+      return SizedBox(
+        height: 150,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: 4,
+          itemBuilder: (context, idx) => Container(
+            width: 144,
+            margin: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(20),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-            child: Text(
-              name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppColors.textDark,
+        ),
+      );
+    }
+
+    if (_categoryError != null && activeCategories.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _categoryError!,
+                style: const TextStyle(fontSize: 12, color: Colors.red),
               ),
             ),
-          ),
-        ],
+            TextButton(
+              onPressed: _fetchCategories,
+              child: const Text('Retry', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (activeCategories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      height: 150,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: activeCategories.length,
+        itemBuilder: (context, idx) {
+          final category = activeCategories[idx];
+          return _buildApiCategoryCard(category);
+        },
       ),
     );
   }
+
+  Widget _buildApiCategoryCard(CategoryModel category) {
+    final bool hasNetworkIcon =
+        category.icon.isNotEmpty && category.icon.startsWith('http');
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProductCatalogScreen(
+              initialCategory: category.name,
+              initialCategoryId: category.id,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        width: 144,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    width: 144,
+                    height: 104,
+                    child: hasNetworkIcon
+                        ? Image.network(
+                            category.icon,
+                            width: 144,
+                            height: 104,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              child: const Icon(
+                                Icons.medical_services_outlined,
+                                color: AppColors.primary,
+                                size: 40,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            child: const Icon(
+                              Icons.medical_services_outlined,
+                              color: AppColors.primary,
+                              size: 40,
+                            ),
+                          ),
+                  ),
+                  if (category.discount > 0)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color.fromRGBO(140, 244, 235, 1.0),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.08),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          '${category.discount}% OFF',
+                          style: const TextStyle(
+                            color: Color.fromARGB(255, 12, 112, 93),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Text(
+                category.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildProductCard(Product prod) {
     final isWish = _appState.wishlistProductIds.contains(prod.id);
@@ -1295,11 +1349,14 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                       color: AppColors.backgroundLight.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: AssetImage(
-                          prod.image.isNotEmpty
-                              ? prod.image
-                              : 'assets/img2.png',
-                        ),
+                        image: (prod.image.startsWith('http://') ||
+                                prod.image.startsWith('https://'))
+                            ? NetworkImage(prod.image) as ImageProvider
+                            : AssetImage(
+                                prod.image.isNotEmpty
+                                    ? prod.image
+                                    : 'assets/img2.png',
+                              ),
                         fit: BoxFit.contain,
                       ),
                     ),
@@ -1403,16 +1460,20 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Text(
-                      '450ml',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.secondary,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        prod.packSize.isNotEmpty ? prod.packSize : '1 Pack',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.secondary,
+                        ),
                       ),
                     ),
-                    Icon(
+                    const Icon(
                       Icons.keyboard_arrow_down,
                       size: 14,
                       color: AppColors.secondary,
@@ -1467,6 +1528,467 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTestimonialsSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Center(
+            child: Text(
+              'Loved by Thousands',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+            child: Text(
+              'Patient success stories from our consultations',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AppColors.textLight),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_isLoadingTestimonials)
+            Container(
+              height: 160,
+              alignment: Alignment.center,
+              child: const CircularProgressIndicator(color: AppColors.primary),
+            )
+          else if (_testimonialError != null && _testimonials.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.backgroundLight.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _testimonialError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: AppColors.error),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _fetchTestimonials,
+                    icon: const Icon(Icons.refresh, size: 18, color: AppColors.primary),
+                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            )
+          else if (_testimonials.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              alignment: Alignment.center,
+              child: const Text(
+                'No testimonials available right now.',
+                style: TextStyle(fontSize: 13, color: AppColors.textLight),
+              ),
+            )
+          else ...[
+            SizedBox(
+              height: 180,
+              child: PageView.builder(
+                controller: _testimonialController,
+                onPageChanged: (idx) {
+                  setState(() => _currentTestimonialIndex = idx);
+                },
+                itemCount: _testimonials.length,
+                itemBuilder: (context, idx) {
+                  final item = _testimonials[idx];
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundLight.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: List.generate(
+                                item.rating.clamp(1, 5),
+                                (_) => const Icon(
+                                  Icons.star,
+                                  color: Colors.amber,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '"${item.testimonial}"',
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                height: 1.5,
+                                fontStyle: FontStyle.italic,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppColors.primary,
+                              backgroundImage: item.image.isNotEmpty && item.image.startsWith('http')
+                                  ? NetworkImage(item.image)
+                                  : null,
+                              child: item.image.isEmpty || !item.image.startsWith('http')
+                                  ? Text(
+                                      item.name.isNotEmpty
+                                          ? item.name[0].toUpperCase()
+                                          : 'U',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                                if (item.isVerified)
+                                  const Text(
+                                    'Verified Patient',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (_testimonials.length > 1) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_testimonials.length, (idx) {
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: _currentTestimonialIndex == idx ? 16 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _currentTestimonialIndex == idx
+                          ? AppColors.primary
+                          : AppColors.border,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFaqSection() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Frequently Asked Questions',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_isLoadingFaqs)
+            Container(
+              height: 120,
+              alignment: Alignment.center,
+              child: const CircularProgressIndicator(color: AppColors.primary),
+            )
+          else if (_faqError != null && _apiFaqs.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _faqError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: AppColors.error),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _fetchFaqs,
+                    icon: const Icon(Icons.refresh, size: 18, color: AppColors.primary),
+                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            )
+          else if (_apiFaqs.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+              ),
+              child: const Text(
+                'No FAQs available at the moment.',
+                style: TextStyle(fontSize: 13, color: AppColors.textLight),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _apiFaqs.length,
+              itemBuilder: (context, idx) {
+                final item = _apiFaqs[idx];
+                final isExp =
+                    idx < _faqExpandedStates.length ? _faqExpandedStates[idx] : false;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.border.withOpacity(0.5),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        onTap: () {
+                          setState(() {
+                            if (idx < _faqExpandedStates.length) {
+                              _faqExpandedStates[idx] = !_faqExpandedStates[idx];
+                            }
+                          });
+                        },
+                        title: Text(
+                          item.question,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        trailing: Icon(
+                          isExp ? Icons.expand_less : Icons.expand_more,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      if (isExp)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: Text(
+                            item.answer,
+                            style: const TextStyle(
+                              color: AppColors.textLight,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          'Our Brands',
+          'Pick from our favorite brands',
+          () => widget.onTabChange(2),
+        ),
+        if (_isLoadingBrands)
+          Container(
+            height: 150,
+            alignment: Alignment.center,
+            child: const CircularProgressIndicator(color: AppColors.primary),
+          )
+        else if (_brandError != null && _apiBrands.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _brandError!,
+                      style: const TextStyle(fontSize: 12, color: AppColors.error),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _fetchBrands,
+                    icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
+                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_apiBrands.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'No brands available.',
+              style: TextStyle(fontSize: 12, color: AppColors.textLight),
+            ),
+          )
+        else
+          SizedBox(
+            height: 150,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _apiBrands.length,
+              itemBuilder: (context, idx) {
+                final brand = _apiBrands[idx];
+                return _buildApiBrandCard(
+                  brand,
+                  onTap: () => widget.onTabChange(2),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildApiBrandCard(BrandModel brand, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 144,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              child: Container(
+                width: 144,
+                height: 104,
+                color: AppColors.backgroundLight.withOpacity(0.5),
+                child: brand.image.isNotEmpty && brand.image.startsWith('http')
+                    ? Image.network(
+                        brand.image,
+                        width: 144,
+                        height: 104,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Image.asset(
+                            'assets/img2.png',
+                            width: 144,
+                            height: 104,
+                            fit: BoxFit.cover,
+                          );
+                        },
+                      )
+                    : Image.asset(
+                        'assets/img2.png',
+                        width: 144,
+                        height: 104,
+                        fit: BoxFit.cover,
+                      ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    brand.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
