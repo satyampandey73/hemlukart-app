@@ -38,6 +38,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_appState.isLoggedIn) {
       _appState.fetchShippingAddresses();
     }
+    if (_appState.appliedCoupon != null) {
+      _couponController.text = _appState.appliedCoupon!.code;
+    }
   }
 
   @override
@@ -56,7 +59,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double total = widget.subtotal + widget.deliveryFee - widget.discount;
+    double effectiveDiscount = widget.discount;
+    if (_appState.appliedCoupon != null) {
+      effectiveDiscount = _appState.appliedCoupon!.calculateDiscount(widget.subtotal);
+    }
+    double total = widget.subtotal + widget.deliveryFee - effectiveDiscount;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -382,8 +389,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 child: TextField(
                                   controller: _couponController,
                                   decoration: InputDecoration(
-                                    hintText: 'Enter coupon code',
-                                    hintStyle: const TextStyle(fontSize: 11),
+                                    hintText: _appState.appliedCoupon != null
+                                        ? 'Applied: ${_appState.appliedCoupon!.code}'
+                                        : 'Enter coupon code',
+                                    hintStyle: TextStyle(
+                                      fontSize: 11,
+                                      color: _appState.appliedCoupon != null ? AppColors.success : AppColors.textLight,
+                                      fontWeight: _appState.appliedCoupon != null ? FontWeight.bold : FontWeight.normal,
+                                    ),
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                                     fillColor: Colors.grey[50],
                                     filled: true,
@@ -399,18 +412,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               height: 36,
                               child: ElevatedButton(
                                 onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Coupons cannot be modified during checkout.')),
-                                  );
+                                  if (_appState.appliedCoupon != null) {
+                                    _appState.clearAppliedCoupon();
+                                    _couponController.clear();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Coupon removed.')),
+                                    );
+                                  } else {
+                                    final code = _couponController.text.trim();
+                                    if (code.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Please enter a coupon code.')),
+                                      );
+                                      return;
+                                    }
+                                    final applied = _appState.applyCouponByCode(code, widget.subtotal);
+                                    if (applied) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Coupon "${_appState.appliedCoupon!.code}" applied!'),
+                                          backgroundColor: AppColors.success,
+                                        ),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Invalid coupon code or order minimum not met.'),
+                                          backgroundColor: AppColors.error,
+                                        ),
+                                      );
+                                    }
+                                  }
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
+                                  backgroundColor: _appState.appliedCoupon != null ? AppColors.error : AppColors.primary,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 12),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                   elevation: 0,
                                 ),
-                                child: const Text('Apply', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                child: Text(
+                                  _appState.appliedCoupon != null ? 'Remove' : 'Apply',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
                               ),
                             ),
                           ],
@@ -420,7 +464,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
                         _buildSummaryRow('Item Total', '₹${widget.subtotal.toStringAsFixed(2)}'),
                         const SizedBox(height: 6),
-                        _buildSummaryRow('Platform Discount', '-₹${widget.discount.toStringAsFixed(2)}', isGreen: true),
+                        _buildSummaryRow('Platform Discount', '-₹${effectiveDiscount.toStringAsFixed(2)}', isGreen: true),
                         const SizedBox(height: 6),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -519,11 +563,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
                         final paymentMode = _selectedPaymentMethod.toLowerCase(); // 'cod', 'upi', 'card', 'netbanking'
                         final paymentStatus = 'pending';
+                        final enteredCoupon = _couponController.text.trim();
+                        final String? effectiveCoupon = enteredCoupon.isNotEmpty ? enteredCoupon : _appState.appliedCoupon?.code;
+
+                        final cartItemsBeforeCheckout = List<CartItem>.from(_appState.cart);
 
                         final response = await _appState.checkoutOrder(
                           shippingAddressId: selectedAddress.id,
                           paymentMode: paymentMode,
                           paymentStatus: paymentStatus,
+                          couponCode: effectiveCoupon,
                         );
 
                         if (!mounted) return;
@@ -540,15 +589,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ),
                           );
 
-                          final placedOrder = _appState.orders.isNotEmpty
-                              ? _appState.orders.last
-                              : Order(
-                                  id: response.data?.order.orderNo ?? 'ORDER',
-                                  items: List.from(_appState.cart),
-                                  totalAmount: total,
-                                  discount: widget.discount,
-                                  orderDate: 'Just now',
-                                );
+                          final String finalOrderNo = (response.data?.order.orderNo != null && response.data!.order.orderNo.isNotEmpty)
+                              ? response.data!.order.orderNo
+                              : (response.data?.order.id != null && response.data!.order.id.isNotEmpty
+                                  ? response.data!.order.id
+                                  : 'OD${DateTime.now().millisecondsSinceEpoch}');
+
+                          final String formattedAddr = [
+                            selectedAddress.addressLine,
+                            selectedAddress.city,
+                            selectedAddress.state,
+                            selectedAddress.pincode
+                          ].where((s) => s.isNotEmpty).join(', ');
+
+                          final placedOrder = Order(
+                            id: response.data?.order.id ?? finalOrderNo,
+                            orderNo: finalOrderNo,
+                            items: cartItemsBeforeCheckout.isNotEmpty
+                                ? cartItemsBeforeCheckout
+                                : (response.data != null
+                                    ? response.data!.toOrder(_appState.apiProducts).items
+                                    : []),
+                            totalAmount: (response.data?.order.totalAmount != null && response.data!.order.totalAmount > 0)
+                                ? response.data!.order.totalAmount
+                                : total,
+                            discount: (response.data?.order.discountAmount != null && response.data!.order.discountAmount > 0)
+                                ? response.data!.order.discountAmount
+                                : widget.discount,
+                            status: response.data?.order.orderStatus ?? 'placed',
+                            orderDate: (response.data?.order.createdAt != null && response.data!.order.createdAt.isNotEmpty)
+                                ? response.data!.order.createdAt
+                                : 'Just now',
+                            paymentMode: _selectedPaymentMethod,
+                            deliveryAddress: formattedAddr,
+                          );
 
                           Navigator.pushReplacement(
                             context,

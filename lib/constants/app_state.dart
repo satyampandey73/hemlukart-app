@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
@@ -16,6 +18,15 @@ import '../models/shipping_address_model.dart';
 import '../services/shipping_address_service.dart';
 import '../models/order_model.dart';
 import '../services/order_service.dart';
+import '../models/coupon_model.dart';
+import '../services/coupon_service.dart';
+import '../models/doctor_model.dart';
+import '../models/clinic_model.dart';
+import '../models/my_appointments_model.dart';
+import '../services/appointment_service.dart';
+import '../services/doctor_auth_service.dart';
+import '../models/chat_model.dart';
+import '../services/chat_service.dart';
 
 class Product {
   final String id;
@@ -61,13 +72,16 @@ class Doctor {
   final String system; // Ayurveda, Homeopathy, Unani
   final int experienceYears;
   final double consultationFee;
+  final List<DoctorConsultationFee> consultationFees;
   final double rating;
   final int reviewsCount;
   final String image;
   final List<String> languages;
   final String clinicName;
   final String clinicAddress;
+  final String? clinicId;
   final String about;
+  final ApiDoctor? rawApiDoctor;
 
   const Doctor({
     required this.id,
@@ -77,14 +91,240 @@ class Doctor {
     required this.system,
     required this.experienceYears,
     required this.consultationFee,
+    this.consultationFees = const [],
     required this.rating,
     required this.reviewsCount,
     required this.image,
     required this.languages,
     required this.clinicName,
     required this.clinicAddress,
+    this.clinicId,
     required this.about,
+    this.rawApiDoctor,
   });
+
+  double getFeeForType([String? type]) {
+    if (consultationFees.isNotEmpty) {
+      if (type != null && type.isNotEmpty) {
+        final reqType = type.toLowerCase().trim();
+        final match = consultationFees.firstWhere((f) {
+          final t = f.consultationType.toLowerCase().trim();
+          if (reqType == 'in_person' || reqType == 'offline') {
+            return t == 'in_person' ||
+                t == 'in-person' ||
+                t.contains('person') ||
+                t.contains('clinic');
+          }
+          if (reqType == 'video' || reqType == 'online') {
+            return t == 'video' ||
+                t == 'online' ||
+                t.contains('video') ||
+                t.contains('online');
+          }
+          return t == reqType || t.contains(reqType);
+        }, orElse: () => consultationFees.first);
+        final parsed = double.tryParse(match.fee);
+        if (parsed != null && parsed > 0) return parsed;
+      } else {
+        final parsed = double.tryParse(consultationFees.first.fee);
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+    return consultationFee;
+  }
+
+  bool get hasInPerson {
+    final fees = consultationFees;
+    final scheds = rawApiDoctor?.schedules ?? [];
+
+    bool hasAnyTypeConfigured = fees.isNotEmpty || scheds.isNotEmpty;
+    if (!hasAnyTypeConfigured) return true;
+
+    final inFees = fees.any((f) {
+      final t = f.consultationType.toLowerCase().trim();
+      return t == 'in_person' ||
+          t == 'in-person' ||
+          t == 'inperson' ||
+          t.contains('person') ||
+          t.contains('clinic') ||
+          t.contains('offline');
+    });
+
+    final inScheds = scheds.any((s) {
+      final t = s.consultationType.toLowerCase().trim();
+      return t == 'in_person' ||
+          t == 'in-person' ||
+          t == 'inperson' ||
+          t.contains('person') ||
+          t.contains('clinic') ||
+          t.contains('offline');
+    });
+
+    return inFees || inScheds;
+  }
+
+  bool get hasOnline {
+    final fees = consultationFees;
+    final scheds = rawApiDoctor?.schedules ?? [];
+
+    final inFees = fees.any((f) {
+      final t = f.consultationType.toLowerCase().trim();
+      return t == 'video' ||
+          t == 'online' ||
+          t == 'audio' ||
+          t == 'chat' ||
+          t.contains('video') ||
+          t.contains('online') ||
+          t.contains('audio') ||
+          t.contains('chat') ||
+          t.contains('tele');
+    });
+
+    final inScheds = scheds.any((s) {
+      final t = s.consultationType.toLowerCase().trim();
+      return t == 'video' ||
+          t == 'online' ||
+          t == 'audio' ||
+          t == 'chat' ||
+          t.contains('video') ||
+          t.contains('online') ||
+          t.contains('audio') ||
+          t.contains('chat') ||
+          t.contains('tele');
+    });
+
+    return inFees || inScheds;
+  }
+
+  factory Doctor.fromApiDoctor(
+    ApiDoctor apiDoc, {
+    double? rating,
+    int? reviewsCount,
+  }) {
+    String nameStr = apiDoc.fullName.trim();
+    if (nameStr.isEmpty) nameStr = 'Dr. Practitioner';
+    if (!nameStr.toLowerCase().startsWith('dr.')) {
+      nameStr = 'Dr. $nameStr';
+    }
+
+    String sys = 'Ayurveda';
+    final rawSys = (apiDoc.ayushSystem ?? '').toLowerCase();
+    if (rawSys.contains('homeopathy')) {
+      sys = 'Homeopathy';
+    } else if (rawSys.contains('unani')) {
+      sys = 'Unani';
+    } else if (rawSys.contains('ayurveda')) {
+      sys = 'Ayurveda';
+    } else if (apiDoc.ayushSystem != null &&
+        apiDoc.ayushSystem!.trim().isNotEmpty) {
+      sys = apiDoc.ayushSystem!.trim();
+    }
+
+    String spec = apiDoc.highestQualification?.specialization ?? '';
+    if (spec.isEmpty) {
+      if (apiDoc.expertise?.areasOfExpertise != null &&
+          apiDoc.expertise!.areasOfExpertise!.isNotEmpty) {
+        spec = apiDoc.expertise!.areasOfExpertise!.join(', ');
+      } else {
+        spec = 'Ayush Specialist';
+      }
+    }
+
+    String deg = apiDoc.highestQualification?.degree ?? '';
+    if (deg.isEmpty) {
+      deg = apiDoc.ayushSystem ?? 'BAMS';
+    }
+
+    String img = apiDoc.documents?.profilePhoto ?? '';
+    if (img.trim().isEmpty) {
+      img = apiDoc.documents?.registrationCertificate ?? '';
+    }
+
+    String cName = apiDoc.currentClinicOrHospital ?? '';
+    if (cName.trim().isEmpty) {
+      cName = apiDoc.city != null && apiDoc.city!.trim().isNotEmpty
+          ? '${apiDoc.city} Wellness Clinic'
+          : 'Ayush Care Clinic';
+    }
+
+    List<String> addrParts = [
+      if (apiDoc.address != null && apiDoc.address!.trim().isNotEmpty)
+        apiDoc.address!.trim(),
+      if (apiDoc.city != null && apiDoc.city!.trim().isNotEmpty)
+        apiDoc.city!.trim(),
+      if (apiDoc.state != null && apiDoc.state!.trim().isNotEmpty)
+        apiDoc.state!.trim(),
+      if (apiDoc.pinCode != null && apiDoc.pinCode!.trim().isNotEmpty)
+        apiDoc.pinCode!.trim(),
+    ];
+    String cAddr = addrParts.isNotEmpty
+        ? addrParts.join(', ')
+        : 'Main Hospital Road';
+
+    String abt = apiDoc.about ?? '';
+    if (abt.trim().isEmpty) {
+      abt = apiDoc.consultationPhilosophy ?? '';
+    }
+    if (abt.trim().isEmpty) {
+      abt =
+          'Experienced Ayush practitioner dedicated to patient wellness and holistic healing.';
+    }
+
+    String? clinicIdValue;
+    for (final schedule in apiDoc.schedules ?? <DoctorSchedule>[]) {
+      if (schedule.clinicId != null && schedule.clinicId!.trim().isNotEmpty) {
+        clinicIdValue = schedule.clinicId!.trim();
+        break;
+      }
+    }
+
+    List<DoctorConsultationFee> cFees = apiDoc.consultationFees ?? [];
+    double dynamicFee = 500.0;
+    if (cFees.isNotEmpty) {
+      for (final f in cFees) {
+        final parsed = double.tryParse(f.fee);
+        if (parsed != null && parsed > 0) {
+          dynamicFee = parsed;
+          break;
+        }
+      }
+    }
+    if (dynamicFee == 500.0 &&
+        apiDoc.schedules != null &&
+        apiDoc.schedules!.isNotEmpty) {
+      for (final s in apiDoc.schedules!) {
+        final parsed = double.tryParse(s.consultationFee);
+        if (parsed != null && parsed > 0) {
+          dynamicFee = parsed;
+          break;
+        }
+      }
+    }
+
+    return Doctor(
+      id: apiDoc.id,
+      name: nameStr,
+      specialty: spec,
+      degree: deg,
+      system: sys,
+      experienceYears: apiDoc.totalExperience ?? 5,
+      consultationFee: dynamicFee,
+      consultationFees: cFees,
+      rating: rating ?? 4.8,
+      reviewsCount: reviewsCount ?? 124,
+      image: img,
+      languages:
+          (apiDoc.expertise?.consultationLanguages != null &&
+              apiDoc.expertise!.consultationLanguages!.isNotEmpty)
+          ? apiDoc.expertise!.consultationLanguages!
+          : ['English', 'Hindi'],
+      clinicName: cName,
+      clinicAddress: cAddr,
+      clinicId: clinicIdValue,
+      about: abt,
+      rawApiDoctor: apiDoc,
+    );
+  }
 }
 
 class CartItem {
@@ -131,6 +371,7 @@ class Order {
   final String? orderNo;
   final String? paymentMode;
   final String? deliveryAddress;
+  final String? prescription;
 
   Order({
     required this.id,
@@ -142,6 +383,7 @@ class Order {
     this.orderNo,
     this.paymentMode,
     this.deliveryAddress,
+    this.prescription,
   });
 }
 
@@ -159,6 +401,7 @@ class Clinic {
   final double fee;
   final bool availableToday;
   final bool availableThisWeek;
+  final ApiClinic? rawApiClinic;
 
   const Clinic({
     required this.id,
@@ -174,13 +417,63 @@ class Clinic {
     required this.fee,
     this.availableToday = true,
     this.availableThisWeek = true,
+    this.rawApiClinic,
   });
+
+  factory Clinic.fromApiClinic(ApiClinic apiClinic) {
+    String nameStr = apiClinic.clinicName.trim();
+    if (nameStr.isEmpty) nameStr = 'Care Clinic';
+
+    List<String> locParts = [
+      if (apiClinic.address != null && apiClinic.address!.trim().isNotEmpty)
+        apiClinic.address!.trim(),
+      if (apiClinic.city != null && apiClinic.city!.trim().isNotEmpty)
+        apiClinic.city!.trim(),
+      if (apiClinic.state != null && apiClinic.state!.trim().isNotEmpty)
+        apiClinic.state!.trim(),
+      if (apiClinic.pincode != null && apiClinic.pincode!.trim().isNotEmpty)
+        apiClinic.pincode!.trim(),
+    ];
+    String locationStr = locParts.isNotEmpty
+        ? locParts.join(', ')
+        : 'Main Market Area';
+
+    String imgUrl = 'assets/clinical_marketplace.jpg';
+    if (apiClinic.images != null &&
+        apiClinic.images!.isNotEmpty &&
+        apiClinic.images!.first.trim().isNotEmpty) {
+      imgUrl = apiClinic.images!.first.trim();
+    }
+
+    return Clinic(
+      id: apiClinic.id,
+      name: nameStr,
+      image: imgUrl,
+      rating: 4.8,
+      location: locationStr,
+      specialty: 'General Clinic',
+      availableServices: const [
+        'In-Person Consult',
+        'Ayush Therapy',
+        'Diagnostics',
+        'Pharmacy',
+      ],
+      doctorsCount: 8,
+      isVerified: apiClinic.isActive ?? true,
+      isPremium: true,
+      fee: 799.0,
+      availableToday: true,
+      availableThisWeek: true,
+      rawApiClinic: apiClinic,
+    );
+  }
 }
 
 class AppState extends ChangeNotifier {
   // Singleton Pattern
   AppState._internal() {
     fetchProductsFromApi();
+    fetchCoupons();
   }
   static final AppState _instance = AppState._internal();
   factory AppState() => _instance;
@@ -189,11 +482,13 @@ class AppState extends ChangeNotifier {
   String? _authToken;
   String? _doctorToken;
   UserModel? _currentUser;
+  ApiDoctor? _currentDoctorProfile;
 
   bool get isLoggedIn => _isLoggedIn;
   String? get authToken => _authToken;
   String? get doctorToken => _doctorToken;
   UserModel? get currentUser => _currentUser;
+  ApiDoctor? get currentDoctorProfile => _currentDoctorProfile;
   bool get isDoctorLoggedIn => _doctorToken != null && _doctorToken!.isNotEmpty;
 
   Future<void> initSession() async {
@@ -202,14 +497,24 @@ class AppState extends ChangeNotifier {
     _doctorToken = prefs.getString('doctor_token');
     final userStr = prefs.getString('user_data');
 
+    if (_doctorToken != null && _doctorToken!.isNotEmpty) {
+      fetchDoctorProfile();
+      fetchDoctorAppointments();
+      fetchUnreadChatCount();
+      startChatPolling();
+    }
+
     if (_authToken != null && userStr != null) {
       try {
         _currentUser = UserModel.fromJson(jsonDecode(userStr));
         _isLoggedIn = true;
         fetchUserWishlistProducts();
+        fetchUserWishlistDoctors();
         fetchCartFromApi();
         fetchShippingAddresses();
         fetchMyOrders();
+        fetchUnreadChatCount();
+        startChatPolling();
       } catch (e) {
         _isLoggedIn = false;
       }
@@ -221,17 +526,35 @@ class AppState extends ChangeNotifier {
     _doctorToken = token;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('doctor_token', token);
+    fetchDoctorProfile();
+    fetchDoctorAppointments();
+    fetchUnreadChatCount();
+    startChatPolling();
     notifyListeners();
   }
 
   Future<void> clearDoctorSession() async {
     _doctorToken = null;
+    _currentDoctorProfile = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('doctor_token');
     notifyListeners();
   }
 
-  Future<void> setSession({required String token, required UserModel user}) async {
+  Future<ApiDoctor?> fetchDoctorProfile() async {
+    if (_doctorToken == null || _doctorToken!.isEmpty) return null;
+    final res = await DoctorAuthService.getProfile(token: _doctorToken!);
+    if (res.success && res.doctor != null) {
+      _currentDoctorProfile = res.doctor;
+      notifyListeners();
+    }
+    return _currentDoctorProfile;
+  }
+
+  Future<void> setSession({
+    required String token,
+    required UserModel user,
+  }) async {
     _isLoggedIn = true;
     _authToken = token;
     _currentUser = user;
@@ -239,6 +562,7 @@ class AppState extends ChangeNotifier {
     await prefs.setString('auth_token', token);
     await prefs.setString('user_data', jsonEncode(user.toJson()));
     fetchUserWishlistProducts();
+    fetchUserWishlistDoctors();
     fetchCartFromApi();
     fetchShippingAddresses();
     fetchMyOrders();
@@ -255,6 +579,43 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
     return _currentUser;
+  }
+
+  Future<UpdateProfileResponse> updateUserProfile({
+    required String fullName,
+    required String email,
+    required String mobile,
+    required String dateOfBirth,
+    required String gender,
+    required String address,
+    required String city,
+    required String state,
+    required String pincode,
+    File? profileImage,
+  }) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return UpdateProfileResponse(success: false, message: 'Not authenticated');
+    }
+    final res = await AuthService.updateProfile(
+      token: _authToken!,
+      fullName: fullName,
+      email: email,
+      mobile: mobile,
+      dateOfBirth: dateOfBirth,
+      gender: gender,
+      address: address,
+      city: city,
+      state: state,
+      pincode: pincode,
+      profileImage: profileImage,
+    );
+    if (res.success && res.user != null) {
+      _currentUser = res.user;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_data', jsonEncode(_currentUser!.toJson()));
+      notifyListeners();
+    }
+    return res;
   }
 
   void login() {
@@ -283,6 +644,8 @@ class AppState extends ChangeNotifier {
   String? _productsError;
   List<UserWishlistProductItem> _userWishlistItems = [];
   bool _isLoadingWishlist = false;
+  List<UserWishlistDoctorItem> _userWishlistDoctorItems = [];
+  bool _isLoadingDoctorWishlist = false;
   bool _isLoadingCart = false;
 
   List<ShippingAddressModel> _shippingAddresses = [];
@@ -292,16 +655,175 @@ class AppState extends ChangeNotifier {
   List<MyOrderItem> _myOrders = [];
   bool _isLoadingMyOrders = false;
 
+  List<UserAppointmentItem> _myAppointments = [];
+  bool _isLoadingMyAppointments = false;
+
+  List<UserAppointmentItem> _doctorAppointments = [];
+  bool _isLoadingDoctorAppointments = false;
+
+  List<CouponModel> _coupons = [];
+  bool _isLoadingCoupons = false;
+  CouponModel? _appliedCoupon;
+
   List<CartItem> get cart => _cart;
+
+  int getProductQuantity(String productId) {
+    final idx = _cart.indexWhere((item) => item.product.id == productId);
+    return idx != -1 ? _cart[idx].quantity : 0;
+  }
+
   List<String> get wishlistProductIds => _wishlistProductIds;
   List<String> get wishlistDoctorIds => _wishlistDoctorIds;
   List<Appointment> get appointments => _appointments;
   List<Order> get orders => _orders;
   List<MyOrderItem> get myOrders => _myOrders;
   bool get isLoadingMyOrders => _isLoadingMyOrders;
+  List<UserAppointmentItem> get myAppointments => _myAppointments;
+  bool get isLoadingMyAppointments => _isLoadingMyAppointments;
+  List<UserAppointmentItem> get doctorAppointments => _doctorAppointments;
+  bool get isLoadingDoctorAppointments => _isLoadingDoctorAppointments;
+
+  Future<List<UserAppointmentItem>> fetchDoctorAppointments({String? status}) async {
+    if (_doctorToken == null || _doctorToken!.isEmpty) return [];
+    _isLoadingDoctorAppointments = true;
+    notifyListeners();
+
+    final res = await AppointmentService.getDoctorAppointments(
+      token: _doctorToken!,
+      status: status,
+      limit: 100,
+    );
+
+    _isLoadingDoctorAppointments = false;
+    if (res.success) {
+      _doctorAppointments = res.appointments;
+    }
+    notifyListeners();
+    return _doctorAppointments;
+  }
+
+  Future<SingleAppointmentApiResponse> confirmDoctorAppointment(String appointmentId) async {
+    if (_doctorToken == null || _doctorToken!.isEmpty) {
+      return SingleAppointmentApiResponse(success: false, message: 'Doctor is not logged in');
+    }
+    final res = await AppointmentService.confirmDoctorAppointment(
+      appointmentId: appointmentId,
+      token: _doctorToken!,
+    );
+    if (res.success) {
+      await fetchDoctorAppointments();
+    }
+    return res;
+  }
+
+  Future<SingleAppointmentApiResponse> completeDoctorAppointment(String appointmentId) async {
+    if (_doctorToken == null || _doctorToken!.isEmpty) {
+      return SingleAppointmentApiResponse(success: false, message: 'Doctor is not logged in');
+    }
+    final res = await AppointmentService.completeDoctorAppointment(
+      appointmentId: appointmentId,
+      token: _doctorToken!,
+    );
+    if (res.success) {
+      await fetchDoctorAppointments();
+    }
+    return res;
+  }
+
+  int _unreadChatCount = 0;
+  int get unreadChatCount => _unreadChatCount;
+  Timer? _chatPollingTimer;
+
+  void Function(int count)? onNewChatNotification;
+
+  String? get activeChatToken => (_doctorToken != null && _doctorToken!.isNotEmpty) ? _doctorToken : _authToken;
+
+  void startChatPolling() {
+    _chatPollingTimer?.cancel();
+    // Poll unread messages count every 6 seconds
+    _chatPollingTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      fetchUnreadChatCount();
+    });
+  }
+
+  void stopChatPolling() {
+    _chatPollingTimer?.cancel();
+    _chatPollingTimer = null;
+  }
+
+  Future<int> fetchUnreadChatCount() async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) return 0;
+    final res = await ChatService.getUnreadCount(token: token);
+    if (res.success) {
+      final int previousCount = _unreadChatCount;
+      _unreadChatCount = res.unreadCount;
+      notifyListeners();
+
+      if (_unreadChatCount > previousCount) {
+        onNewChatNotification?.call(_unreadChatCount);
+      }
+    }
+    return _unreadChatCount;
+  }
+
+  Future<SendMessageApiResponse> sendChatMessage({
+    required String appointmentId,
+    required String message,
+  }) async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) {
+      return SendMessageApiResponse(success: false, message: 'You are not logged in');
+    }
+    final res = await ChatService.sendMessage(
+      appointmentId: appointmentId,
+      message: message,
+      token: token,
+    );
+    fetchUnreadChatCount();
+    return res;
+  }
+
+  Future<ChatMessagesApiResponse> fetchChatMessages(String appointmentId) async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) {
+      return ChatMessagesApiResponse(success: false, messages: [], message: 'Not logged in');
+    }
+    return await ChatService.getMessages(
+      appointmentId: appointmentId,
+      token: token,
+    );
+  }
+
+  Future<ChatThreadsApiResponse> fetchChatThreads() async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) {
+      return ChatThreadsApiResponse(success: false, threads: [], message: 'Not logged in');
+    }
+    return await ChatService.getThreads(token: token);
+  }
+
+  Future<void> markChatMessagesRead(String appointmentId) async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) return;
+    final ok = await ChatService.markMessagesAsRead(
+      appointmentId: appointmentId,
+      token: token,
+    );
+    if (ok) {
+      fetchUnreadChatCount();
+    }
+  }
   List<UserWishlistProductItem> get userWishlistItems => _userWishlistItems;
   bool get isLoadingWishlist => _isLoadingWishlist;
+  List<UserWishlistDoctorItem> get userWishlistDoctorItems =>
+      _userWishlistDoctorItems;
+  bool get isLoadingDoctorWishlist => _isLoadingDoctorWishlist;
   bool get isLoadingCart => _isLoadingCart;
+
+  List<CouponModel> get coupons => _coupons;
+  bool get isLoadingCoupons => _isLoadingCoupons;
+  CouponModel? get appliedCoupon => _appliedCoupon;
 
   List<ShippingAddressModel> get shippingAddresses => _shippingAddresses;
   ShippingAddressModel? get selectedShippingAddress => _selectedShippingAddress;
@@ -312,7 +834,10 @@ class AppState extends ChangeNotifier {
   bool get isLoadingProducts => _isLoadingProducts;
   String? get productsError => _productsError;
 
-  Future<void> fetchProductsFromApi({String? categoryId, String? search}) async {
+  Future<void> fetchProductsFromApi({
+    String? categoryId,
+    String? search,
+  }) async {
     _isLoadingProducts = true;
     _productsError = null;
     notifyListeners();
@@ -350,7 +875,8 @@ class AppState extends ChangeNotifier {
       return response.faqs.where((f) => f.isActive).toList();
     }
     return [];
-  }  // Deprecated: System uses live API products exclusively
+  } // Deprecated: System uses live API products exclusively
+
   final List<Product> mockProducts = [];
 
   final List<Doctor> mockDoctors = [
@@ -411,7 +937,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c1',
       name: 'St. Marina Medical Center',
-      image: 'assets/cl1.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.9,
       location: 'Connaught Place, Delhi',
       specialty: 'Cardiology',
@@ -426,7 +952,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c2',
       name: 'Apex General Hospital',
-      image: 'assets/cl2.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.7,
       location: 'Sector 18, Noida',
       specialty: 'General Medicine',
@@ -441,7 +967,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c3',
       name: 'Cedar Skin & Wellness',
-      image: 'assets/cl3.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.8,
       location: 'DLF Cyber City, Gurgaon',
       specialty: 'Dermatology',
@@ -456,7 +982,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c4',
       name: 'AyurHeal Clinical Care',
-      image: 'assets/cl1.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.6,
       location: 'South Extension, Delhi',
       specialty: 'Pediatrics',
@@ -471,7 +997,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c5',
       name: 'Medicity Oncology & Specialty',
-      image: 'assets/cl2.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.9,
       location: 'Golf Course Road, Gurgaon',
       specialty: 'Oncology',
@@ -486,7 +1012,7 @@ class AppState extends ChangeNotifier {
     Clinic(
       id: 'c6',
       name: 'Vedic Healing Sanctuary',
-      image: 'assets/cl3.jpg',
+      image: 'assets/clinical_marketplace.jpg',
       rating: 4.8,
       location: 'Indirapuram, Ghaziabad',
       specialty: 'Cardiology',
@@ -528,8 +1054,9 @@ class AppState extends ChangeNotifier {
             brand: itemData.skuName ?? '',
             image: 'assets/img2.png',
             price: itemData.priceAtAdd,
-            originalPrice:
-                itemData.mrp > 0 ? itemData.mrp : itemData.priceAtAdd,
+            originalPrice: itemData.mrp > 0
+                ? itemData.mrp
+                : itemData.priceAtAdd,
             rating: 4.5,
             reviewsCount: 10,
             category: 'General',
@@ -537,17 +1064,21 @@ class AppState extends ChangeNotifier {
           ),
         );
 
-        final localIdx =
-            _cart.indexWhere((c) => c.product.id == itemData.productId);
-        final String? localPrescription =
-            localIdx != -1 ? _cart[localIdx].prescriptionFile : null;
+        final localIdx = _cart.indexWhere(
+          (c) => c.product.id == itemData.productId,
+        );
+        final String? localPrescription = localIdx != -1
+            ? _cart[localIdx].prescriptionFile
+            : null;
 
-        updatedCart.add(CartItem(
-          product: existingProd,
-          quantity: itemData.quantity,
-          itemId: itemData.id,
-          prescriptionFile: localPrescription,
-        ));
+        updatedCart.add(
+          CartItem(
+            product: existingProd,
+            quantity: itemData.quantity,
+            itemId: itemData.id,
+            prescriptionFile: localPrescription,
+          ),
+        );
       }
 
       for (final unsynced in localUnsynced) {
@@ -596,11 +1127,17 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<AddToCartApiResponse> addToCartApi(Product product, {int qty = 1}) async {
+  Future<AddToCartApiResponse> addToCartApi(
+    Product product, {
+    int qty = 1,
+  }) async {
     return await addToCart(product, qty: qty);
   }
 
-  Future<CartActionApiResponse?> updateCartQty(Product product, int newQty) async {
+  Future<CartActionApiResponse?> updateCartQty(
+    Product product,
+    int newQty,
+  ) async {
     final idx = _cart.indexWhere((item) => item.product.id == product.id);
     if (idx == -1) return null;
 
@@ -747,13 +1284,53 @@ class AppState extends ChangeNotifier {
     return response;
   }
 
-  void toggleDoctorWishlist(String doctorId) {
-    if (_wishlistDoctorIds.contains(doctorId)) {
+  Future<UserWishlistDoctorsApiResponse> fetchUserWishlistDoctors() async {
+    _isLoadingDoctorWishlist = true;
+    notifyListeners();
+
+    final response = await WishlistService.getUserWishlistDoctors(
+      token: _authToken,
+    );
+    _isLoadingDoctorWishlist = false;
+
+    if (response.success) {
+      _userWishlistDoctorItems = response.data;
+      _wishlistDoctorIds.clear();
+      for (final item in response.data) {
+        if (item.targetDoctorId.isNotEmpty &&
+            !_wishlistDoctorIds.contains(item.targetDoctorId)) {
+          _wishlistDoctorIds.add(item.targetDoctorId);
+        }
+      }
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<WishlistActionResponse> toggleDoctorWishlist(String doctorId) async {
+    final bool wasInWishlist = _wishlistDoctorIds.contains(doctorId);
+    if (wasInWishlist) {
       _wishlistDoctorIds.remove(doctorId);
     } else {
       _wishlistDoctorIds.add(doctorId);
     }
     notifyListeners();
+
+    final response = await WishlistService.toggleDoctorWishlist(
+      targetDoctorId: doctorId,
+      token: _authToken,
+    );
+
+    if (!response.success) {
+      if (wasInWishlist) {
+        _wishlistDoctorIds.add(doctorId);
+      } else {
+        _wishlistDoctorIds.remove(doctorId);
+      }
+      notifyListeners();
+    }
+
+    return response;
   }
 
   // Appointment Operations
@@ -763,8 +1340,9 @@ class AppState extends ChangeNotifier {
     String time,
     String notes, {
     List<String> files = const [],
+    String? customId,
   }) {
-    final id = 'AYC-${100000 + _appointments.length}';
+    final id = customId ?? 'AYC-${100000 + _appointments.length}';
     _appointments.add(
       Appointment(
         id: id,
@@ -776,6 +1354,62 @@ class AppState extends ChangeNotifier {
       ),
     );
     notifyListeners();
+  }
+
+  Future<MyAppointmentsApiResponse> fetchMyAppointments({
+    int page = 1,
+    int limit = 10,
+    String? status,
+  }) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      return MyAppointmentsApiResponse(
+        success: false,
+        appointments: [],
+        message: 'User not authenticated',
+      );
+    }
+
+    _isLoadingMyAppointments = true;
+    notifyListeners();
+
+    final response = await AppointmentService.getMyAppointments(
+      page: page,
+      limit: limit,
+      status: status,
+      token: _authToken,
+    );
+
+    _isLoadingMyAppointments = false;
+
+    if (response.success) {
+      _myAppointments = response.appointments;
+    }
+    notifyListeners();
+    return response;
+  }
+
+  Future<SingleAppointmentApiResponse> fetchAppointmentDetail(
+    String appointmentId,
+  ) async {
+    return await AppointmentService.getAppointmentById(
+      appointmentId: appointmentId,
+      token: _authToken,
+    );
+  }
+
+  Future<SingleAppointmentApiResponse> cancelAppointment({
+    required String appointmentId,
+    required String cancelReason,
+  }) async {
+    final response = await AppointmentService.cancelAppointment(
+      appointmentId: appointmentId,
+      cancelReason: cancelReason,
+      token: _authToken,
+    );
+    if (response.success) {
+      fetchMyAppointments();
+    }
+    return response;
   }
 
   // Order Operations
@@ -805,29 +1439,140 @@ class AppState extends ChangeNotifier {
   }
 
   Future<SingleOrderDetailApiResponse> fetchOrderDetail(String orderId) async {
-    return await OrderService.getOrderById(
-      orderId: orderId,
-      token: _authToken,
+    return await OrderService.getOrderById(orderId: orderId, token: _authToken);
+  }
+
+  // Coupon Operations
+  Future<CouponsApiResponse> fetchCoupons() async {
+    _isLoadingCoupons = true;
+    notifyListeners();
+
+    final response = await CouponService.getCoupons(token: _authToken);
+    _isLoadingCoupons = false;
+
+    if (response.success) {
+      _coupons = response.data;
+    }
+    notifyListeners();
+    return response;
+  }
+
+  void applyCoupon(CouponModel? coupon) {
+    _appliedCoupon = coupon;
+    notifyListeners();
+  }
+
+  bool applyCouponByCode(String code, double subtotal) {
+    final trimmed = code.trim().toLowerCase();
+    if (trimmed.isEmpty) {
+      _appliedCoupon = null;
+      notifyListeners();
+      return false;
+    }
+
+    final matchIndex = _coupons.indexWhere(
+      (c) => c.code.toLowerCase() == trimmed,
     );
+    if (matchIndex != -1) {
+      final coupon = _coupons[matchIndex];
+      if (coupon.isValidForOrder(subtotal)) {
+        _appliedCoupon = coupon;
+        notifyListeners();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void clearAppliedCoupon() {
+    _appliedCoupon = null;
+    notifyListeners();
   }
 
   Future<CheckoutApiResponse> checkoutOrder({
     required String shippingAddressId,
     required String paymentMode,
     String paymentStatus = 'pending',
+    String? prescription,
+    String? couponCode,
   }) async {
+    String? effectivePrescription = prescription;
+    if (effectivePrescription == null || effectivePrescription.trim().isEmpty) {
+      for (final item in _cart) {
+        if (item.prescriptionFile != null &&
+            item.prescriptionFile!.trim().isNotEmpty) {
+          effectivePrescription = item.prescriptionFile;
+          break;
+        }
+      }
+    }
+
+    final String? effectiveCouponCode =
+        (couponCode != null && couponCode.trim().isNotEmpty)
+        ? couponCode.trim()
+        : _appliedCoupon?.code;
+
     final response = await OrderService.checkout(
       shippingAddressId: shippingAddressId,
       paymentMode: paymentMode,
       paymentStatus: paymentStatus,
+      prescription: effectivePrescription,
+      couponCode: effectiveCouponCode,
       token: _authToken,
     );
 
     if (response.success && response.data != null) {
-      final newOrder = response.data!.toOrder(_apiProducts);
-      _orders.add(newOrder);
+      final cartItemsBeforeClear = List<CartItem>.from(_cart);
+      final newOrderFromApi = response.data!.toOrder(_apiProducts);
+
+      final orderWithItems = newOrderFromApi.items.isNotEmpty
+          ? newOrderFromApi
+          : Order(
+              id: newOrderFromApi.id,
+              items: cartItemsBeforeClear,
+              totalAmount: newOrderFromApi.totalAmount > 0
+                  ? newOrderFromApi.totalAmount
+                  : cartItemsBeforeClear.fold(
+                      0.0,
+                      (sum, i) => sum + (i.product.price * i.quantity),
+                    ),
+              discount: newOrderFromApi.discount,
+              status: newOrderFromApi.status,
+              orderDate: newOrderFromApi.orderDate,
+              orderNo: newOrderFromApi.orderNo,
+              paymentMode: newOrderFromApi.paymentMode,
+              deliveryAddress: newOrderFromApi.deliveryAddress,
+              prescription:
+                  newOrderFromApi.prescription ?? effectivePrescription,
+            );
+
+      _orders.add(orderWithItems);
+      _appliedCoupon = null;
       await clearCart();
       await fetchMyOrders();
+
+      if (_orders.isNotEmpty) {
+        final lastIndex = _orders.length - 1;
+        if (_orders[lastIndex].items.isEmpty &&
+            orderWithItems.items.isNotEmpty) {
+          _orders[lastIndex] = Order(
+            id: _orders[lastIndex].id,
+            items: orderWithItems.items,
+            totalAmount: _orders[lastIndex].totalAmount,
+            discount: _orders[lastIndex].discount,
+            status: _orders[lastIndex].status,
+            orderDate: _orders[lastIndex].orderDate,
+            orderNo: _orders[lastIndex].orderNo,
+            paymentMode: _orders[lastIndex].paymentMode,
+            deliveryAddress: _orders[lastIndex].deliveryAddress,
+            prescription:
+                _orders[lastIndex].prescription ?? orderWithItems.prescription,
+          );
+        }
+      } else {
+        _orders.add(orderWithItems);
+      }
+
       notifyListeners();
     }
     return response;
@@ -879,7 +1624,9 @@ class AppState extends ChangeNotifier {
     _isLoadingAddresses = true;
     notifyListeners();
 
-    final response = await ShippingAddressService.getShippingAddresses(token: _authToken);
+    final response = await ShippingAddressService.getShippingAddresses(
+      token: _authToken,
+    );
     _isLoadingAddresses = false;
 
     if (response.success) {
@@ -890,7 +1637,9 @@ class AppState extends ChangeNotifier {
           orElse: () => _shippingAddresses.first,
         );
         if (_selectedShippingAddress == null ||
-            !_shippingAddresses.any((a) => a.id == _selectedShippingAddress!.id)) {
+            !_shippingAddresses.any(
+              (a) => a.id == _selectedShippingAddress!.id,
+            )) {
           _selectedShippingAddress = defaultAddress;
         }
       } else {
@@ -979,7 +1728,10 @@ class AppState extends ChangeNotifier {
       _shippingAddresses.removeWhere((a) => a.id == id);
       if (_selectedShippingAddress?.id == id) {
         _selectedShippingAddress = _shippingAddresses.isNotEmpty
-            ? (_shippingAddresses.firstWhere((a) => a.isDefault, orElse: () => _shippingAddresses.first))
+            ? (_shippingAddresses.firstWhere(
+                (a) => a.isDefault,
+                orElse: () => _shippingAddresses.first,
+              ))
             : null;
       }
       notifyListeners();
@@ -987,4 +1739,3 @@ class AppState extends ChangeNotifier {
     return response;
   }
 }
-

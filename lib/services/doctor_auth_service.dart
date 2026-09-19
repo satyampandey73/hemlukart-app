@@ -3,13 +3,11 @@ import 'package:http/http.dart' as http;
 import '../models/doctor_model.dart';
 
 class DoctorAuthService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/doctors';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/doctors';
 
-  /// Endpoint 1: Send OTP for Doctor Registration/Login
-  /// API: POST https://hospital.gntechnology.de/api/doctors/send-otp
-  static Future<DoctorSendOtpResponse> sendOtp({
-    required String mobile,
-  }) async {
+  /// Endpoint 1: Send OTP for Doctor Registration
+  /// API: POST https://backend.chikitsakart.com/api/doctors/send-otp
+  static Future<DoctorSendOtpResponse> sendOtp({required String mobile}) async {
     final Uri url = Uri.parse('$baseUrl/send-otp');
     try {
       final response = await http.post(
@@ -18,9 +16,7 @@ class DoctorAuthService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({
-          'mobile': mobile.trim(),
-        }),
+        body: jsonEncode({'mobile': mobile.trim()}),
       );
 
       final Map<String, dynamic> body = jsonDecode(response.body);
@@ -33,8 +29,8 @@ class DoctorAuthService {
     }
   }
 
-  /// Endpoint 2: Verify OTP for Doctor
-  /// API: POST https://hospital.gntechnology.de/api/doctors/verify-otp
+  /// Endpoint 2: Verify OTP for Doctor Registration
+  /// API: POST https://backend.chikitsakart.com/api/doctors/verify-otp
   static Future<DoctorVerifyOtpResponse> verifyOtp({
     required String mobile,
     required String otp,
@@ -47,10 +43,7 @@ class DoctorAuthService {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({
-          'mobile': mobile.trim(),
-          'otp': otp.trim(),
-        }),
+        body: jsonEncode({'mobile': mobile.trim(), 'otp': otp.trim()}),
       );
 
       final Map<String, dynamic> body = jsonDecode(response.body);
@@ -63,8 +56,61 @@ class DoctorAuthService {
     }
   }
 
+  /// Endpoint: Send OTP for Doctor Login
+  /// API: POST https://backend.chikitsakart.com/api/doctors/login/send-otp
+  static Future<DoctorSendOtpResponse> sendLoginOtp({
+    required String mobile,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/login/send-otp');
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'mobile': mobile.trim()}),
+      );
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return DoctorSendOtpResponse.fromJson(body);
+    } catch (e) {
+      return DoctorSendOtpResponse(
+        success: false,
+        message: 'Failed to send login OTP: $e',
+      );
+    }
+  }
+
+  /// Endpoint: Verify OTP for Doctor Login
+  /// API: POST https://backend.chikitsakart.com/api/doctors/login/verify-otp
+  static Future<DoctorVerifyOtpResponse> verifyLoginOtp({
+    required String mobile,
+    required String otp,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/login/verify-otp');
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'mobile': mobile.trim(), 'otp': otp.trim()}),
+      );
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return DoctorVerifyOtpResponse.fromJson(body);
+    } catch (e) {
+      return DoctorVerifyOtpResponse(
+        success: false,
+        message: 'Failed to verify login OTP: $e',
+      );
+    }
+  }
+
   /// Endpoint 3: Register Personal Information
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/personal
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/personal
   static Future<DoctorApiResponse> registerPersonal({
     required String token,
     required String fullName,
@@ -108,7 +154,7 @@ class DoctorAuthService {
   }
 
   /// Endpoint 4: Register Professional Information
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/professional
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/professional
   static Future<DoctorApiResponse> registerProfessional({
     required String token,
     required String ayushSystem,
@@ -146,25 +192,33 @@ class DoctorAuthService {
       });
 
       if (certFilePath != null && certFilePath.isNotEmpty) {
-        request.files.add(await http.MultipartFile.fromPath(
-          'registrationCertificate',
-          certFilePath,
-          filename: certFileName,
-        ));
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'registrationCertificate',
+            certFilePath,
+            filename: certFileName,
+          ),
+        );
       } else if (certFileBytes != null && certFileBytes.isNotEmpty) {
-        request.files.add(http.MultipartFile.fromBytes(
-          'registrationCertificate',
-          certFileBytes,
-          filename: certFileName ?? 'registrationCertificate.pdf',
-        ));
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'registrationCertificate',
+            certFileBytes,
+            filename: certFileName ?? 'registrationCertificate.pdf',
+          ),
+        );
       } else {
         // Dummy fallback file if not provided to pass multipart validation
-        final dummyBytes = utf8.encode('Sample registration certificate content');
-        request.files.add(http.MultipartFile.fromBytes(
-          'registrationCertificate',
-          dummyBytes,
-          filename: 'registrationCertificate.txt',
-        ));
+        final dummyBytes = utf8.encode(
+          'Sample registration certificate content',
+        );
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'registrationCertificate',
+            dummyBytes,
+            filename: 'registrationCertificate.txt',
+          ),
+        );
       }
 
       final streamedResponse = await request.send();
@@ -180,7 +234,7 @@ class DoctorAuthService {
   }
 
   /// Endpoint 5: Register Expertise
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/expertise
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/expertise
   static Future<DoctorApiResponse> registerExpertise({
     required String token,
     required List<String> areasOfExpertise,
@@ -212,7 +266,7 @@ class DoctorAuthService {
   }
 
   /// Endpoint 6: Register Bank Information
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/bank
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/bank
   static Future<DoctorApiResponse> registerBank({
     required String token,
     required String accountHolderName,
@@ -250,7 +304,7 @@ class DoctorAuthService {
   }
 
   /// Endpoint 7: Register Documents
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/documents
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/documents
   static Future<DoctorDocumentsResponse> registerDocuments({
     required String token,
     String? aadhaarNumber,
@@ -272,11 +326,14 @@ class DoctorAuthService {
       if (panCardNumber != null && panCardNumber.isNotEmpty) {
         request.fields['panCardNumber'] = panCardNumber.trim();
       }
-      if (medicalRegistrationNumber != null && medicalRegistrationNumber.isNotEmpty) {
-        request.fields['medicalRegistrationNumber'] = medicalRegistrationNumber.trim();
+      if (medicalRegistrationNumber != null &&
+          medicalRegistrationNumber.isNotEmpty) {
+        request.fields['medicalRegistrationNumber'] = medicalRegistrationNumber
+            .trim();
       }
       if (degreeUniversityNumber != null && degreeUniversityNumber.isNotEmpty) {
-        request.fields['degreeUniversityNumber'] = degreeUniversityNumber.trim();
+        request.fields['degreeUniversityNumber'] = degreeUniversityNumber
+            .trim();
       }
 
       // Attach files if provided via filePaths or fileBytesMap
@@ -292,26 +349,32 @@ class DoctorAuthService {
 
       for (final key in documentKeys) {
         final customName = fileNamesMap?[key];
-        if (filePaths != null && filePaths.containsKey(key) && filePaths[key]!.isNotEmpty) {
-          request.files.add(await http.MultipartFile.fromPath(
-            key,
-            filePaths[key]!,
-            filename: customName,
-          ));
-        } else if (fileBytesMap != null && fileBytesMap.containsKey(key) && fileBytesMap[key]!.isNotEmpty) {
-          request.files.add(http.MultipartFile.fromBytes(
-            key,
-            fileBytesMap[key]!,
-            filename: customName ?? '$key.jpg',
-          ));
+        if (filePaths != null &&
+            filePaths.containsKey(key) &&
+            filePaths[key]!.isNotEmpty) {
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              key,
+              filePaths[key]!,
+              filename: customName,
+            ),
+          );
+        } else if (fileBytesMap != null &&
+            fileBytesMap.containsKey(key) &&
+            fileBytesMap[key]!.isNotEmpty) {
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              key,
+              fileBytesMap[key]!,
+              filename: customName ?? '$key.jpg',
+            ),
+          );
         } else {
           // Provide placeholder sample file bytes if not selected so server multipart validator passes
           final dummyBytes = utf8.encode('Sample document content for $key');
-          request.files.add(http.MultipartFile.fromBytes(
-            key,
-            dummyBytes,
-            filename: '$key.txt',
-          ));
+          request.files.add(
+            http.MultipartFile.fromBytes(key, dummyBytes, filename: '$key.txt'),
+          );
         }
       }
 
@@ -328,7 +391,7 @@ class DoctorAuthService {
   }
 
   /// Endpoint 8: Register About / Profile Info
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/about
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/about
   static Future<DoctorApiResponse> registerProfile({
     required String token,
     required String about,
@@ -367,16 +430,15 @@ class DoctorAuthService {
     required String about,
     required String consultationPhilosophy,
     required String achievements,
-  }) =>
-      registerProfile(
-        token: token,
-        about: about,
-        consultationPhilosophy: consultationPhilosophy,
-        achievements: achievements,
-      );
+  }) => registerProfile(
+    token: token,
+    about: about,
+    consultationPhilosophy: consultationPhilosophy,
+    achievements: achievements,
+  );
 
   /// Endpoint 9: Register Consent
-  /// API: POST https://hospital.gntechnology.de/api/doctors/register/consent
+  /// API: POST https://backend.chikitsakart.com/api/doctors/register/consent
   static Future<DoctorConsentResponse> registerConsent({
     required String token,
     required bool informationCorrect,
@@ -409,6 +471,41 @@ class DoctorAuthService {
       return DoctorConsentResponse(
         success: false,
         message: 'Failed to submit consent: $e',
+      );
+    }
+  }
+
+  /// Endpoint 10: Get Doctor Profile
+  /// API: GET https://backend.chikitsakart.com/api/doctors/profile
+  static Future<SingleDoctorApiResponse> getProfile({
+    required String token,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/profile');
+    try {
+      final response = await http
+          .get(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final Map<String, dynamic> body = jsonDecode(response.body);
+        return SingleDoctorApiResponse.fromJson(body);
+      } else {
+        return SingleDoctorApiResponse(
+          success: false,
+          message: 'Server returned status code: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      return SingleDoctorApiResponse(
+        success: false,
+        message: 'Failed to fetch doctor profile: $e',
       );
     }
   }

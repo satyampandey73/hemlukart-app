@@ -10,4 +10,5 @@ class AppColors {
   static const Color border = Color(0xFFCBD5E1);
   static const Color error = Color(0xFFEF4444);
   static const Color success = Color(0xFF10B981);
+  static const Color brandBlue = Color(0xFF3879BB); // Turquoise Blue (#3879BB)
 }

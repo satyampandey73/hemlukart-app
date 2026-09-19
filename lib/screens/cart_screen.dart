@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:file_picker/file_picker.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import 'checkout_screen.dart';
@@ -22,6 +23,7 @@ class _CartScreenState extends State<CartScreen> {
     super.initState();
     _appState.addListener(_rebuild);
     _appState.fetchCartFromApi();
+    _appState.fetchCoupons();
   }
 
   @override
@@ -48,13 +50,15 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     double delivery = 0.0;
-    if (_promoApplied) {
-      _promoDiscount = subtotal * 0.1; // 10% coupon
-    } else {
-      _promoDiscount = 0.0;
+    double promoDiscount = 0.0;
+    final appliedCoupon = _appState.appliedCoupon;
+    if (appliedCoupon != null) {
+      promoDiscount = appliedCoupon.calculateDiscount(subtotal);
+    } else if (_promoApplied) {
+      promoDiscount = _promoDiscount;
     }
 
-    double total = subtotal + delivery - _promoDiscount;
+    double total = subtotal + delivery - promoDiscount;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -180,9 +184,13 @@ class _CartScreenState extends State<CartScreen> {
                         _buildPriceSummaryRow('Subtotal ($totalItems items)', '₹${subtotal.toStringAsFixed(2)}'),
                         const SizedBox(height: 6),
                         _buildPriceSummaryRow('Delivery Charges', delivery == 0.0 ? 'FREE' : '₹${delivery.toStringAsFixed(2)}'),
-                        if (_promoApplied) ...[
+                        if (appliedCoupon != null || _promoApplied) ...[
                           const SizedBox(height: 6),
-                          _buildPriceSummaryRow('Discount (AYUSH10)', '-₹${_promoDiscount.toStringAsFixed(2)}', isDiscount: true),
+                          _buildPriceSummaryRow(
+                            'Coupon Discount (${appliedCoupon?.code ?? 'PROMO'})',
+                            '-₹${promoDiscount.toStringAsFixed(2)}',
+                            isDiscount: true,
+                          ),
                         ],
                         const SizedBox(height: 8),
                         const Divider(height: 1),
@@ -223,8 +231,14 @@ class _CartScreenState extends State<CartScreen> {
                                 child: TextField(
                                   controller: _promoController,
                                   decoration: InputDecoration(
-                                    hintText: 'Enter Promo Code (AYUSH10)',
-                                    hintStyle: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                                    hintText: appliedCoupon != null
+                                        ? 'Applied: ${appliedCoupon.code}'
+                                        : 'Enter Promo Code (AYUSH10)',
+                                    hintStyle: TextStyle(
+                                      fontSize: 11,
+                                      color: appliedCoupon != null ? AppColors.success : AppColors.textLight,
+                                      fontWeight: appliedCoupon != null ? FontWeight.bold : FontWeight.normal,
+                                    ),
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     fillColor: Colors.grey[50],
                                     filled: true,
@@ -246,30 +260,84 @@ class _CartScreenState extends State<CartScreen> {
                               height: 40,
                               child: ElevatedButton(
                                 onPressed: () {
-                                  if (_promoController.text.toUpperCase() == 'AYUSH10') {
+                                  if (appliedCoupon != null) {
+                                    _appState.clearAppliedCoupon();
+                                    _promoController.clear();
                                     setState(() {
-                                      _promoApplied = true;
+                                      _promoApplied = false;
                                     });
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Promo Code AYUSH10 Applied!')),
+                                      const SnackBar(content: Text('Coupon removed.')),
                                     );
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Invalid Promo Code.')),
-                                    );
+                                    final inputCode = _promoController.text.trim();
+                                    if (inputCode.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Please enter a coupon code.')),
+                                      );
+                                      return;
+                                    }
+                                    final applied = _appState.applyCouponByCode(inputCode, subtotal);
+                                    if (applied) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Coupon "${_appState.appliedCoupon!.code}" applied!'),
+                                          backgroundColor: AppColors.success,
+                                        ),
+                                      );
+                                    } else if (inputCode.toUpperCase() == 'AYUSH10') {
+                                      setState(() {
+                                        _promoApplied = true;
+                                        _promoDiscount = subtotal * 0.1;
+                                      });
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Promo Code AYUSH10 Applied!')),
+                                      );
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Invalid coupon code or order minimum not met.'),
+                                          backgroundColor: AppColors.error,
+                                        ),
+                                      );
+                                    }
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
+                                  backgroundColor: appliedCoupon != null ? AppColors.error : AppColors.primary,
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   elevation: 0,
                                 ),
-                                child: const Text('Apply', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                child: Text(
+                                  appliedCoupon != null ? 'Remove' : 'Apply',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
                               ),
                             ),
                           ],
                         ),
+                        if (_appState.coupons.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () => _showAvailableCouponsModal(context, subtotal),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.local_offer_outlined, size: 14, color: AppColors.secondary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'View ${_appState.coupons.length} Available Coupons',
+                                  style: const TextStyle(
+                                    color: AppColors.secondary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 16),
 
@@ -303,7 +371,7 @@ class _CartScreenState extends State<CartScreen> {
                                   builder: (_) => CheckoutScreen(
                                     subtotal: subtotal,
                                     deliveryFee: delivery,
-                                    discount: _promoDiscount,
+                                    discount: promoDiscount,
                                   ),
                                 ),
                               );
@@ -522,14 +590,7 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ),
                     OutlinedButton(
-                      onPressed: () {
-                        setState(() {
-                          _appState.attachPrescription(prod, 'prescription_rx_${prod.id}.pdf');
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Prescription prescription_rx_${prod.id}.pdf attached.')),
-                        );
-                      },
+                      onPressed: () => _pickPrescriptionFile(prod),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         side: const BorderSide(color: AppColors.secondary),
@@ -657,6 +718,196 @@ class _CartScreenState extends State<CartScreen> {
       ],
     );
   }
+
+  Future<void> _pickPrescriptionFile(Product prod) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final pickedFile = result.files.first;
+        final String fileName = pickedFile.name;
+        final String? filePath = pickedFile.path;
+        final String displayPathOrUrl = filePath ?? fileName;
+
+        setState(() {
+          _appState.attachPrescription(prod, displayPathOrUrl);
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Prescription "$fileName" attached.'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick file: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAvailableCouponsModal(BuildContext context, double subtotal) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        final coupons = _appState.coupons;
+        final applied = _appState.appliedCoupon;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Available Coupons',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              if (coupons.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24.0),
+                  child: Center(
+                    child: Text('No coupons available right now.', style: TextStyle(color: AppColors.textLight)),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: coupons.length,
+                    itemBuilder: (context, index) {
+                      final coupon = coupons[index];
+                      final isApplied = applied?.id == coupon.id;
+                      final isValid = coupon.isValidForOrder(subtotal);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isApplied ? AppColors.primary : AppColors.border.withOpacity(0.6),
+                            width: isApplied ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.local_offer, color: AppColors.primary, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        coupon.code,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal[50],
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          coupon.type == 'percentage'
+                                              ? '${coupon.value.toStringAsFixed(0)}% OFF'
+                                              : '₹${coupon.value.toStringAsFixed(0)} OFF',
+                                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.teal),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    coupon.name,
+                                    style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                                  ),
+                                  if (coupon.minOrderAmount > 0) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Min order: ₹${coupon.minOrderAmount.toStringAsFixed(2)}',
+                                      style: TextStyle(fontSize: 10, color: isValid ? Colors.grey[600] : AppColors.error),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            ElevatedButton(
+                              onPressed: isValid
+                                  ? () {
+                                      if (isApplied) {
+                                        _appState.clearAppliedCoupon();
+                                        _promoController.clear();
+                                      } else {
+                                        _appState.applyCoupon(coupon);
+                                        _promoController.text = coupon.code;
+                                      }
+                                      Navigator.pop(context);
+                                    }
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isApplied ? AppColors.error : AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                minimumSize: const Size(0, 32),
+                                elevation: 0,
+                              ),
+                              child: Text(
+                                isApplied ? 'Remove' : 'Apply',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 // Custom Painter to draw dashed rectangles for upload area
@@ -719,3 +970,5 @@ class DashedRectPainter extends CustomPainter {
         oldDelegate.borderRadius != borderRadius;
   }
 }
+
+

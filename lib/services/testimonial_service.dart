@@ -3,9 +3,10 @@ import 'package:http/http.dart' as http;
 import '../models/testimonial_model.dart';
 
 class TestimonialService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/testimonials';
+  static const String baseUrl =
+      'https://backend.chikitsakart.com/api/testimonials';
 
-  /// API: GET https://hospital.gntechnology.de/api/testimonials
+  /// API: GET https://backend.chikitsakart.com/api/testimonials
   static Future<TestimonialApiResponse> getTestimonials() async {
     final Uri url = Uri.parse(baseUrl);
     try {

@@ -10,8 +10,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjQ1YWExYzFmLWViMzAtNDcyOS05ZTM4LTNhNjk2OWNjOTg2OSIsInJvbGUiOiJjdXN0b21lciIsImlhdCI6MTc4NTM5OTYyNywiZXhwIjoxNzg3OTkxNjI3fQ.4IT0NbjqjXIKfFWX5PnKzQfYRbQZK4Spe9uWwN602Ts
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 

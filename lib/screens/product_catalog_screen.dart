@@ -6,6 +6,10 @@ import '../constants/app_state.dart';
 import 'product_detail_screen.dart';
 import 'cart_screen.dart';
 import 'login_screen.dart';
+import 'clinic_listing_screen.dart';
+import '../widgets/product_quantity_selector.dart';
+import '../models/banner_model.dart';
+import '../services/banner_service.dart';
 
 class ProductCatalogScreen extends StatefulWidget {
   final String? initialCategory;
@@ -44,6 +48,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   late final PageController _promoBannerController;
   int _currentPromoBannerIndex = 0;
   Timer? _promoBannerTimer;
+
+  List<BannerModel> _productsBanners = [];
+  bool _isLoadingProductsBanners = false;
 
   final List<String> _allCategories = [
     'Health Care',
@@ -89,6 +96,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     _promoBannerController = PageController(viewportFraction: 0.92);
     _appState.addListener(_rebuild);
     _startPromoBannerAutoSlide();
+    _fetchProductsBanners();
     _appState.fetchProductsFromApi(
       categoryId: widget.initialCategoryId,
       search: widget.initialSearchQuery,
@@ -112,14 +120,35 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     _promoBannerTimer?.cancel();
     _promoBannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted || !_promoBannerController.hasClients) return;
-
-      final nextIndex = (_currentPromoBannerIndex + 1) % 3;
+      final count = _productsBanners.isNotEmpty ? _productsBanners.length : 3;
+      final nextIndex = (_currentPromoBannerIndex + 1) % count;
       _promoBannerController.animateToPage(
         nextIndex,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOut,
       );
     });
+  }
+
+  Future<void> _fetchProductsBanners() async {
+    if (!mounted) return;
+    setState(() => _isLoadingProductsBanners = true);
+
+    final response = await BannerService.getProductsBanners();
+    if (!mounted) return;
+
+    if (response.success && response.banners.isNotEmpty) {
+      final active = response.banners
+          .where((b) => b.isActive && !b.isDeleted)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _productsBanners = active.isNotEmpty ? active : response.banners;
+        _isLoadingProductsBanners = false;
+      });
+    } else {
+      setState(() => _isLoadingProductsBanners = false);
+    }
   }
 
   int get _activeFilterCount {
@@ -277,7 +306,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   ),
                   const SizedBox(width: 8),
                   const Text(
-                    'Hemlukart',
+                    'Chikitsakart',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 20,
@@ -289,31 +318,42 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
               ),
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: const [
-                        Icon(Icons.location_on, color: Colors.white, size: 12),
-                        SizedBox(width: 4),
-                        Text(
-                          'Deliver to 452001',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClinicListingScreen(),
                         ),
-                      ],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.local_hospital_outlined, color: Colors.white, size: 12),
+                          SizedBox(width: 4),
+                          Text(
+                            'Clinics',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                 
+                  const SizedBox(width: 22),
                   GestureDetector(
                     onTap: () async {
                       final loggedIn = await LoginScreen.checkAndNavigate(
@@ -433,34 +473,22 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     );
   }
 
-  // ---------------- PROMO BANNERS (Matching Reference Website Header) ----------------
+  // ---------------- PROMO BANNERS (from API: products/banner) ----------------
   Widget _buildPromoBanners() {
-    final List<Map<String, dynamic>> banners = [
-      {
-        'discount': '50% OFF',
-        'title': 'Herbal & Ayurvedic Care',
-        'sub': 'Special Seasonal Discount',
-        'color1': const Color(0xFF0D9488),
-        'color2': const Color(0xFF14B8A6),
-        'image': 'assets/img3.png',
-      },
-      {
-        'discount': '70% OFF',
-        'title': 'Wellness Products',
-        'sub': 'Top Rated Immunity Brands',
-        'color1': const Color(0xFF9333EA),
-        'color2': const Color(0xFFA855F7),
-        'image': 'assets/img4.png',
-      },
-      {
-        'discount': '25% OFF',
-        'title': 'Daily Supplements',
-        'sub': 'Multivitamins & Minerals',
-        'color1': const Color(0xFFD97706),
-        'color2': const Color(0xFFF59E0B),
-        'image': 'assets/img5.png',
-      },
-    ];
+    if (_isLoadingProductsBanners) {
+      return Container(
+        height: 148,
+        margin: const EdgeInsets.only(top: 12, bottom: 8),
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: AppColors.primary,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
+    if (_productsBanners.isEmpty) return const SizedBox.shrink();
 
     return Container(
       height: 148,
@@ -470,48 +498,77 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
           Expanded(
             child: PageView.builder(
               controller: _promoBannerController,
-              itemCount: banners.length,
+              itemCount: _productsBanners.length,
               onPageChanged: (index) {
-                if (mounted) {
-                  setState(() {
-                    _currentPromoBannerIndex = index;
-                  });
-                }
+                if (mounted) setState(() => _currentPromoBannerIndex = index);
               },
               itemBuilder: (context, idx) {
-                final b = banners[idx];
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 5),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.asset(
-                      b['image'] as String,
+                    child: Image.network(
+                      _productsBanners[idx].imageUrl,
                       fit: BoxFit.contain,
                       width: double.infinity,
                       height: double.infinity,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: progress.expectedTotalBytes != null
+                                  ? progress.cumulativeBytesLoaded /
+                                      progress.expectedTotalBytes!
+                                  : null,
+                              color: AppColors.primary,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: AppColors.border,
+                            size: 36,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(banners.length, (index) {
-              final isActive = index == _currentPromoBannerIndex;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: isActive ? 18 : 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: isActive ? AppColors.primary : AppColors.border,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              );
-            }),
-          ),
+          if (_productsBanners.length > 1) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_productsBanners.length, (index) {
+                final isActive = index == _currentPromoBannerIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: isActive ? 18 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: isActive ? AppColors.primary : AppColors.border,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                );
+              }),
+            ),
+          ],
         ],
       ),
     );
@@ -1008,42 +1065,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                       ),
                   ],
                 ),
-                GestureDetector(
-                  onTap: () {
-                    _appState.addToCart(prod, qty: 1);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${prod.name} added to cart!'),
-                        duration: const Duration(seconds: 2),
-                        action: SnackBarAction(
-                          label: 'View Cart',
-                          textColor: Colors.amber,
-                          onPressed: () async {
-                            final loggedIn = await LoginScreen.checkAndNavigate(
-                              context,
-                            );
-                            if (loggedIn && mounted) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const CartScreen(),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 16),
-                  ),
-                ),
+                ProductQuantitySelector(product: prod),
               ],
             ),
           ],
@@ -1205,37 +1227,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           ],
                         ],
                       ),
-                      ElevatedButton(
-                        onPressed: () {
-                          _appState.addToCart(prod, qty: 1);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${prod.name} added to cart!'),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                        child: const Text(
-                          'ADD',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                      ProductQuantitySelector(product: prod),
                     ],
                   ),
                 ],

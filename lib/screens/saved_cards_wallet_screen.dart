@@ -42,7 +42,7 @@ class SavedCardsWalletScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: const [
                       Text(
-                        'HEMLUKART WALLET',
+                        'Chikitsakart WALLET',
                         style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2),
                       ),
                       Icon(Icons.account_balance_wallet, color: Colors.white70, size: 18),

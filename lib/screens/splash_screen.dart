@@ -295,7 +295,7 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Transform.translate(
                           offset: Offset(0, _titleSlide.value),
                           child: const Text(
-                            'Hemlukart',
+                            'Chikitsakart',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 36,

@@ -34,7 +34,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _mobileController = TextEditingController();
-  final TextEditingController _otpController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController(); // combined value
+
+  // 6-box OTP controllers & focus nodes
+  final List<TextEditingController> _otpBoxControllers =
+      List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _otpFocusNodes =
+      List.generate(6, (_) => FocusNode());
 
   bool _isSendingOtp = false;
   bool _isVerifyingOtp = false;
@@ -42,10 +48,15 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _serverMessage;
   String? _receivedOtp;
 
+  String _getOtpString() =>
+      _otpBoxControllers.map((c) => c.text).join();
+
   @override
   void dispose() {
     _mobileController.dispose();
     _otpController.dispose();
+    for (final c in _otpBoxControllers) c.dispose();
+    for (final f in _otpFocusNodes) f.dispose();
     super.dispose();
   }
 
@@ -67,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
       message = response.message;
       otp = response.otp;
     } else {
-      final response = await DoctorAuthService.sendOtp(mobile: mobile);
+      final response = await DoctorAuthService.sendLoginOtp(mobile: mobile);
       success = response.success;
       message = response.message;
       otp = response.otp;
@@ -159,15 +170,26 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
 
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context, true);
-        } else {
-          Navigator.pushReplacement(
+        final role = response.user?.role.toUpperCase();
+        if (role == 'DOCTOR' || role == 'PROVIDER' || AppState().isDoctorLoggedIn) {
+          Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(
-              builder: (_) => const DashboardScreen(),
+              builder: (_) => const DoctorDashboardScreen(),
             ),
+            (route) => false,
           );
+        } else {
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context, true);
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const DashboardScreen(),
+              ),
+            );
+          }
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -179,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } else {
-      final response = await DoctorAuthService.verifyOtp(
+      final response = await DoctorAuthService.verifyLoginOtp(
         mobile: mobile,
         otp: otpText,
       );
@@ -191,8 +213,10 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (response.success) {
-        if (response.token != null) {
+        if (response.token != null && response.token!.isNotEmpty) {
           await AppState().setDoctorToken(response.token!);
+        } else {
+          await AppState().setDoctorToken('doc_active_session');
         }
         if (!mounted) return;
         AppState().login();
@@ -205,16 +229,13 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
 
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context, true);
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const DoctorDashboardScreen(),
-            ),
-          );
-        }
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const DoctorDashboardScreen(),
+          ),
+          (route) => false,
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -447,14 +468,89 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        CustomTextField(
-                          label: 'OTP Code',
-                          hintText: 'Enter 4-digit OTP',
-                          prefixIcon: Icons.lock_clock_outlined,
-                          keyboardType: TextInputType.number,
-                          controller: _otpController,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          maxLength: 6,
+                        // 6-box OTP input
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(6, (i) {
+                            return SizedBox(
+                              width: 44,
+                              height: 52,
+                              child: KeyboardListener(
+                                focusNode: FocusNode(),
+                                onKeyEvent: (event) {
+                                  if (event is KeyDownEvent &&
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.backspace) {
+                                    if (_otpBoxControllers[i].text.isEmpty &&
+                                        i > 0) {
+                                      _otpBoxControllers[i - 1].clear();
+                                      _otpFocusNodes[i - 1].requestFocus();
+                                    }
+                                  }
+                                },
+                                child: TextField(
+                                  controller: _otpBoxControllers[i],
+                                  focusNode: _otpFocusNodes[i],
+                                  keyboardType:
+                                      TextInputType.numberWithOptions(
+                                    signed: false,
+                                    decimal: false,
+                                  ),
+                                  textInputAction: i < 5
+                                      ? TextInputAction.next
+                                      : TextInputAction.done,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                    LengthLimitingTextInputFormatter(1),
+                                  ],
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textDark,
+                                  ),
+                                  decoration: InputDecoration(
+                                    counterText: '',
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    contentPadding: EdgeInsets.zero,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(
+                                          color: AppColors.border),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(
+                                          color: AppColors.border),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(
+                                          color: AppColors.primary, width: 2),
+                                    ),
+                                  ),
+                                  onChanged: (val) {
+                                    if (val.isNotEmpty) {
+                                      // advance to next box
+                                      if (i < 5) {
+                                        _otpFocusNodes[i + 1].requestFocus();
+                                      } else {
+                                        _otpFocusNodes[i].unfocus();
+                                      }
+                                    } else {
+                                      // backspace: go to previous box
+                                      if (i > 0) {
+                                        _otpFocusNodes[i - 1].requestFocus();
+                                      }
+                                    }
+                                    // sync combined controller
+                                    _otpController.text = _getOtpString();
+                                  },
+                                ),
+                              ),
+                            );
+                          }),
                         ),
                         const SizedBox(height: 24),
                         PrimaryButton(
@@ -471,6 +567,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     setState(() {
                                       _otpSent = false;
                                       _otpController.clear();
+                                      for (final c in _otpBoxControllers) {
+                                        c.clear();
+                                      }
                                     });
                                   },
                             child: const Text(

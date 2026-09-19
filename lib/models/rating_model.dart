@@ -1,3 +1,5 @@
+import 'doctor_model.dart';
+
 class RatingUser {
   final String id;
   final String fullName;
@@ -172,5 +174,16 @@ class GetRatingsResponse {
       ratings: list,
       targetDetails: json['targetDetails'],
     );
+  }
+
+  ApiDoctor? get doctorDetails {
+    if (targetDetails != null && targetDetails is Map<String, dynamic>) {
+      try {
+        return ApiDoctor.fromJson(targetDetails as Map<String, dynamic>);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 }

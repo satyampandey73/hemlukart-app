@@ -6,6 +6,12 @@ class UserModel {
   final String email;
   final String role;
   final String? profileImage;
+  final String? dateOfBirth;
+  final String? gender;
+  final String? address;
+  final String? city;
+  final String? state;
+  final String? pincode;
   final bool isMobileVerified;
   final bool isActive;
   final String? lastLoginAt;
@@ -20,6 +26,12 @@ class UserModel {
     required this.email,
     required this.role,
     this.profileImage,
+    this.dateOfBirth,
+    this.gender,
+    this.address,
+    this.city,
+    this.state,
+    this.pincode,
     required this.isMobileVerified,
     required this.isActive,
     this.lastLoginAt,
@@ -36,6 +48,12 @@ class UserModel {
       email: json['email'] ?? '',
       role: json['role'] ?? 'customer',
       profileImage: json['profileImage'] as String?,
+      dateOfBirth: json['dateOfBirth'] as String?,
+      gender: json['gender'] as String?,
+      address: json['address'] as String?,
+      city: json['city'] as String?,
+      state: json['state'] as String?,
+      pincode: json['pincode'] as String?,
       isMobileVerified: json['isMobileVerified'] ?? false,
       isActive: json['isActive'] ?? true,
       lastLoginAt: json['lastLoginAt'] as String?,
@@ -53,6 +71,12 @@ class UserModel {
       'email': email,
       'role': role,
       'profileImage': profileImage,
+      'dateOfBirth': dateOfBirth,
+      'gender': gender,
+      'address': address,
+      'city': city,
+      'state': state,
+      'pincode': pincode,
       'isMobileVerified': isMobileVerified,
       'isActive': isActive,
       'lastLoginAt': lastLoginAt,
@@ -120,6 +144,26 @@ class UserProfileResponse {
     return UserProfileResponse(
       success: json['success'] ?? false,
       message: json['message'] as String?,
+      user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
+    );
+  }
+}
+
+class UpdateProfileResponse {
+  final bool success;
+  final String message;
+  final UserModel? user;
+
+  UpdateProfileResponse({
+    required this.success,
+    required this.message,
+    this.user,
+  });
+
+  factory UpdateProfileResponse.fromJson(Map<String, dynamic> json) {
+    return UpdateProfileResponse(
+      success: json['success'] ?? false,
+      message: json['message'] ?? '',
       user: json['user'] != null ? UserModel.fromJson(json['user']) : null,
     );
   }

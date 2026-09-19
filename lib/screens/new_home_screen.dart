@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:hemlukart_app/screens/doctor_listing_screen.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import 'product_detail_screen.dart';
@@ -21,6 +23,12 @@ import '../services/brand_service.dart';
 import '../models/blog_model.dart';
 import '../services/blog_service.dart';
 import 'blog_detail_screen.dart';
+import '../widgets/product_quantity_selector.dart';
+import '../models/doctor_model.dart';
+import '../services/doctor_service.dart';
+import 'my_prescriptions_screen.dart';
+import '../models/banner_model.dart';
+import '../services/banner_service.dart';
 
 // harsh.s@btplsoft.com
 class NewHomeScreen extends StatefulWidget {
@@ -61,16 +69,148 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   bool _isLoadingBlogs = false;
   String? _blogError;
 
+  List<Doctor> _homeDoctors = [];
+  bool _isLoadingHomeDoctors = false;
+
+  List<BannerModel> _heroBanners = [];
+  bool _isLoadingBanners = false;
+
+  List<BannerModel> _hero1Banners = [];
+  bool _isLoadingHero1Banners = false;
+
+  List<BannerModel> _hero2Banners = [];
+  bool _isLoadingHero2Banners = false;
+  final PageController _hero2BannerController = PageController();
+  int _currentHero2BannerIndex = 0;
+  Timer? _hero2BannerTimer;
+  bool _rebuildScheduled = false;
+
   @override
   void initState() {
     super.initState();
     _appState.addListener(_rebuild);
     _startBannerAutoSlide();
+    _fetchBanners();
+    _fetchHero1Banners();
+    _fetchHero2Banners();
     _fetchCategories();
     _fetchTestimonials();
     _fetchFaqs();
     _fetchBrands();
     _fetchBlogs();
+    _fetchHomeDoctors();
+  }
+
+  Future<void> _fetchHomeDoctors() async {
+    if (!mounted) return;
+    setState(() => _isLoadingHomeDoctors = true);
+
+    final response = await DoctorService.getAllDoctors();
+    if (!mounted) return;
+
+    if (response.success && response.doctors.isNotEmpty) {
+      final initialDocs = response.doctors
+          .map((d) => Doctor.fromApiDoctor(d))
+          .toList();
+      setState(() {
+        _homeDoctors = initialDocs;
+        _isLoadingHomeDoctors = false;
+      });
+
+      final enriched = await DoctorService.enrichDoctorsWithDetails(
+        response.doctors,
+      );
+      if (mounted) {
+        setState(() {
+          _homeDoctors = enriched.map((d) => Doctor.fromApiDoctor(d)).toList();
+        });
+      }
+    } else {
+      setState(() {
+        _homeDoctors = _appState.mockDoctors;
+        _isLoadingHomeDoctors = false;
+      });
+    }
+  }
+
+  Future<void> _fetchBanners() async {
+    if (!mounted) return;
+    setState(() => _isLoadingBanners = true);
+
+    final response = await BannerService.getHeroBanners();
+    if (!mounted) return;
+
+    if (response.success && response.banners.isNotEmpty) {
+      final active =
+          response.banners.where((b) => b.isActive && !b.isDeleted).toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _heroBanners = active.isNotEmpty ? active : response.banners;
+        _isLoadingBanners = false;
+      });
+      // Restart auto-slide with the correct banner count
+      _startBannerAutoSlide();
+    } else {
+      setState(() => _isLoadingBanners = false);
+    }
+  }
+
+  Future<void> _fetchHero1Banners() async {
+    if (!mounted) return;
+    setState(() => _isLoadingHero1Banners = true);
+
+    final response = await BannerService.getHero1Banners();
+    if (!mounted) return;
+
+    if (response.success && response.banners.isNotEmpty) {
+      final active =
+          response.banners.where((b) => b.isActive && !b.isDeleted).toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _hero1Banners = active.isNotEmpty ? active : response.banners;
+        _isLoadingHero1Banners = false;
+      });
+    } else {
+      setState(() => _isLoadingHero1Banners = false);
+    }
+  }
+
+  Future<void> _fetchHero2Banners() async {
+    if (!mounted) return;
+    setState(() => _isLoadingHero2Banners = true);
+
+    final response = await BannerService.getHero2Banners();
+    if (!mounted) return;
+
+    if (response.success && response.banners.isNotEmpty) {
+      final active =
+          response.banners.where((b) => b.isActive && !b.isDeleted).toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _hero2Banners = active.isNotEmpty ? active : response.banners;
+        _isLoadingHero2Banners = false;
+      });
+      if (_hero2Banners.length > 1) {
+        _startHero2BannerAutoSlide();
+      }
+    } else {
+      setState(() => _isLoadingHero2Banners = false);
+    }
+  }
+
+  void _startHero2BannerAutoSlide() {
+    _hero2BannerTimer?.cancel();
+    _hero2BannerTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || _hero2Banners.isEmpty) return;
+      final nextIndex = (_currentHero2BannerIndex + 1) % _hero2Banners.length;
+      if (_hero2BannerController.hasClients) {
+        _hero2BannerController.animateToPage(
+          nextIndex,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   Future<void> _fetchCategories() async {
@@ -107,10 +247,13 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     if (!mounted) return;
 
     if (response.success) {
-      final activeList =
-          response.testimonials.where((t) => t.isActive && !t.isDeleted).toList();
+      final activeList = response.testimonials
+          .where((t) => t.isActive && !t.isDeleted)
+          .toList();
       setState(() {
-        _testimonials = activeList.isNotEmpty ? activeList : response.testimonials;
+        _testimonials = activeList.isNotEmpty
+            ? activeList
+            : response.testimonials;
         _isLoadingTestimonials = false;
       });
       if (_testimonials.length > 1) {
@@ -135,8 +278,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     if (!mounted) return;
 
     if (response.success) {
-      final activeList =
-          response.faqs.where((f) => f.isActive && !f.isDeleted).toList();
+      final activeList = response.faqs
+          .where((f) => f.isActive && !f.isDeleted)
+          .toList();
       activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       setState(() {
         _apiFaqs = activeList.isNotEmpty ? activeList : response.faqs;
@@ -162,8 +306,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     if (!mounted) return;
 
     if (response.success) {
-      final activeList =
-          response.brands.where((b) => b.isActive && !b.isDeleted).toList();
+      final activeList = response.brands
+          .where((b) => b.isActive && !b.isDeleted)
+          .toList();
       activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       setState(() {
         _apiBrands = activeList.isNotEmpty ? activeList : response.brands;
@@ -188,8 +333,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     if (!mounted) return;
 
     if (response.success) {
-      final activeList =
-          response.blogs.where((b) => b.isActive && !b.isDeleted).toList();
+      final activeList = response.blogs
+          .where((b) => b.isActive && !b.isDeleted)
+          .toList();
       activeList.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       setState(() {
         _apiBlogs = activeList.isNotEmpty ? activeList : response.blogs;
@@ -222,28 +368,46 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   void dispose() {
     _bannerTimer?.cancel();
     _testimonialTimer?.cancel();
+    _hero2BannerTimer?.cancel();
     _appState.removeListener(_rebuild);
     _bannerController.dispose();
     _testimonialController.dispose();
+    _hero2BannerController.dispose();
     super.dispose();
   }
 
   void _startBannerAutoSlide() {
     _bannerTimer?.cancel();
+    if (_heroBanners.length <= 1) return;
     _bannerTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted) return;
-
-      final nextIndex = (_currentBannerIndex + 1) % 3;
-      _bannerController.animateToPage(
-        nextIndex,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-      );
+      if (!mounted || _heroBanners.isEmpty) return;
+      final nextIndex = (_currentBannerIndex + 1) % _heroBanners.length;
+      if (_bannerController.hasClients) {
+        _bannerController.animateToPage(
+          nextIndex,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
     });
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      if (_rebuildScheduled) return;
+      _rebuildScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _rebuildScheduled = false;
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+
+    setState(() {});
   }
 
   Widget _buildSectionHeader(
@@ -395,7 +559,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          'Hemlukart',
+                          'Chikitsakart',
 
                           style: TextStyle(
                             color: Colors.white,
@@ -407,33 +571,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     ),
                     Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                'Deliver to 452001',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        
                         const SizedBox(width: 12),
                         _buildCartIconBtn(),
                       ],
@@ -474,50 +612,55 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           // const SizedBox(height: 16),
 
           // Banner Carousel
-          SizedBox(
-            height: 180,
-            child: PageView(
-              controller: _bannerController,
-              onPageChanged: (idx) => setState(() => _currentBannerIndex = idx),
-              children: [
-                _buildBannerSlide(
-                  '',
-                  '',
-                  Colors.transparent,
-                  'assets/img1.png',
+          _isLoadingBanners
+              ? const SizedBox(
+                  height: 180,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                )
+              : _heroBanners.isEmpty
+              ? const SizedBox.shrink()
+              : Column(
+                  children: [
+                    SizedBox(
+                      height: 180,
+                      child: PageView.builder(
+                        controller: _bannerController,
+                        itemCount: _heroBanners.length,
+                        onPageChanged: (idx) =>
+                            setState(() => _currentBannerIndex = idx),
+                        itemBuilder: (context, idx) {
+                          final banner = _heroBanners[idx];
+                          return _buildApiBannerSlide(banner.imageUrl);
+                        },
+                      ),
+                    ),
+                    if (_heroBanners.length > 1) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(_heroBanners.length, (idx) {
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            width: _currentBannerIndex == idx ? 16 : 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _currentBannerIndex == idx
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                  ],
                 ),
-                _buildBannerSlide(
-                  '',
-                  '',
-                  Colors.transparent,
-                  'assets/img1.png',
-                ),
-                _buildBannerSlide(
-                  '',
-                  '',
-                  Colors.transparent,
-                  'assets/img1.png',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (idx) {
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: _currentBannerIndex == idx ? 16 : 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: _currentBannerIndex == idx
-                      ? AppColors.primary
-                      : AppColors.border,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              );
-            }),
-          ),
 
           const SizedBox(height: 20),
 
@@ -577,18 +720,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     }
                   },
                 ),
-              
+
                 _buildQuickActionCard(
                   'View Prescriptions',
                   'Digital health vaults',
                   Icons.receipt_long,
                   const Color.fromARGB(255, 255, 255, 255),
-                  () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Prescription records vault is empty.'),
-                      ),
-                    );
+                  () async {
+                    if (await LoginScreen.checkAndNavigate(context)) {
+                      if (mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const MyPrescriptionsScreen(),
+                          ),
+                        );
+                      }
+                    }
                   },
                 ),
               ],
@@ -599,20 +747,89 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           _buildSectionHeader(
             'Featured Doctors',
             'Consult with our top-rated medical experts',
-            () => widget.onTabChange(3),
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const DoctorListingScreen()),
+            ),
           ),
           SizedBox(
             height: 220,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _appState.mockDoctors.length,
-              itemBuilder: (context, idx) {
-                final doc = _appState.mockDoctors[idx];
-                return _buildDoctorCard(doc);
-              },
-            ),
+            child: _isLoadingHomeDoctors
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                : ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _homeDoctors.isNotEmpty
+                        ? _homeDoctors.length
+                        : _appState.mockDoctors.length,
+                    itemBuilder: (context, idx) {
+                      final doc = _homeDoctors.isNotEmpty
+                          ? _homeDoctors[idx]
+                          : _appState.mockDoctors[idx];
+                      return _buildDoctorCard(doc);
+                    },
+                  ),
           ),
+
+          // Hero1 Banner (below Featured Doctors)
+          if (_isLoadingHero1Banners)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.primary,
+                  strokeWidth: 2,
+                ),
+              ),
+            )
+          else if (_hero1Banners.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  _hero1Banners.first.imageUrl,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 140,
+                      decoration: BoxDecoration(
+                        color: AppColors.backgroundLight,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: progress.expectedTotalBytes != null
+                              ? progress.cumulativeBytesLoaded /
+                                    progress.expectedTotalBytes!
+                              : null,
+                          color: AppColors.primary,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 140,
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundLight,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: AppColors.border,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
 
           // Categories
           _buildSectionHeader(
@@ -628,22 +845,62 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             'Shop our best featured wellness products',
             () => widget.onTabChange(1),
           ),
-          GridView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.60,
+          _buildFeaturedProductsCarousel(),
+
+          const SizedBox(height: 24),
+
+          // Hero2 Banner (below Featured Products)
+          if (_isLoadingHero2Banners)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.primary,
+                  strokeWidth: 2,
+                ),
+              ),
+            )
+          else if (_hero2Banners.isNotEmpty)
+            Column(
+              children: [
+                SizedBox(
+                  height: 120,
+                  child: PageView.builder(
+                    controller: _hero2BannerController,
+                    itemCount: _hero2Banners.length,
+                    onPageChanged: (idx) =>
+                        setState(() => _currentHero2BannerIndex = idx),
+                    itemBuilder: (context, idx) =>
+                        _buildApiBannerSlide(
+                          _hero2Banners[idx].imageUrl,
+                          fit: BoxFit.cover,
+                          borderRadius: 16,
+                          horizontalMargin: 16,
+                        ),
+                  ),
+                ),
+                if (_hero2Banners.length > 1) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(_hero2Banners.length, (idx) {
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: _currentHero2BannerIndex == idx ? 16 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _currentHero2BannerIndex == idx
+                              ? AppColors.primary
+                              : AppColors.border,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              ],
             ),
-            itemCount: _appState.products.take(4).length,
-            itemBuilder: (context, idx) {
-              final prod = _appState.products[idx];
-              return _buildProductCard(prod);
-            },
-          ),
 
           const SizedBox(height: 24),
 
@@ -662,90 +919,58 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildBannerSlide(
-    String title,
-    String desc,
-    Color bgColor,
-    String? imagePath,
-  ) {
+  Widget _buildApiBannerSlide(
+    String imageUrl, {
+    BoxFit fit = BoxFit.cover,
+    double borderRadius = 16,
+    double horizontalMargin = 16,
+  }) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 6),
+      margin: EdgeInsets.symmetric(horizontal: horizontalMargin),
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: imagePath != null && title.isEmpty && desc.isEmpty
-          ? Image.asset(
-              imagePath,
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.contain,
-            )
-          : Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          desc,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textDark,
-                            height: 1.4,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 2,
-                    child: Center(
-                      child: imagePath != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.asset(
-                                imagePath,
-                                width: 86,
-                                height: 86,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : Container(
-                              width: 70,
-                              height: 70,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.8),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.health_and_safety,
-                                size: 40,
-                                color: AppColors.secondary,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Image.network(
+          imageUrl,
+          width: double.infinity,
+          height: double.infinity,
+          fit: fit,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Center(
+              child: CircularProgressIndicator(
+                value: progress.expectedTotalBytes != null
+                    ? progress.cumulativeBytesLoaded /
+                          progress.expectedTotalBytes!
+                    : null,
+                color: AppColors.primary,
+                strokeWidth: 2,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) => Container(
+            color: AppColors.backgroundLight,
+            child: const Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: AppColors.border,
+                size: 40,
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -790,8 +1015,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-
-
   Widget _buildBlogsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -823,7 +1046,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                border: Border.all(
+                  color: AppColors.border.withValues(alpha: 0.5),
+                ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -831,13 +1056,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   Expanded(
                     child: Text(
                       _blogError!,
-                      style: const TextStyle(fontSize: 12, color: AppColors.error),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.error,
+                      ),
                     ),
                   ),
                   TextButton.icon(
                     onPressed: _fetchBlogs,
-                    icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
-                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                    icon: const Icon(
+                      Icons.refresh,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    label: const Text(
+                      'Retry',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -875,10 +1110,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => BlogDetailScreen(
-              blogId: blog.id,
-              initialBlog: blog,
-            ),
+            builder: (_) =>
+                BlogDetailScreen(blogId: blog.id, initialBlog: blog),
           ),
         );
       },
@@ -900,7 +1133,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               child: Container(
                 height: 140,
                 color: AppColors.backgroundLight,
@@ -995,11 +1230,15 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: AssetImage(
-                          doc.image.isNotEmpty
-                              ? doc.image
-                              : 'assets/doctor_profile.png',
-                        ),
+                        image:
+                            (doc.image.startsWith('http://') ||
+                                doc.image.startsWith('https://'))
+                            ? NetworkImage(doc.image) as ImageProvider
+                            : AssetImage(
+                                doc.image.isNotEmpty
+                                    ? doc.image
+                                    : 'assets/doctor_profile.png',
+                              ),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -1088,7 +1327,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '₹${doc.consultationFee.toInt()}/Consultation',
+                  '₹${doc.getFeeForType().toInt()}/Consultation',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
@@ -1138,22 +1377,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   }
 
   Widget _buildCategorySection() {
-    final activeCategories =
-        _apiCategories.where((c) => c.isActive && !c.isDeleted).toList();
+    final activeCategories = _apiCategories
+        .where((c) => c.isActive && !c.isDeleted)
+        .toList();
 
     if (_isLoadingCategories && activeCategories.isEmpty) {
       return SizedBox(
-        height: 150,
+        height: 114,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: 4,
           itemBuilder: (context, idx) => Container(
-            width: 144,
-            margin: const EdgeInsets.only(right: 12),
+            width: 108,
+            margin: const EdgeInsets.only(right: 10),
             decoration: BoxDecoration(
               color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
             ),
           ),
         ),
@@ -1192,7 +1432,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     }
 
     return SizedBox(
-      height: 150,
+      height: 114,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1222,16 +1462,16 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         );
       },
       child: Container(
-        width: 144,
-        margin: const EdgeInsets.only(right: 12),
+        width: 108,
+        margin: const EdgeInsets.only(right: 10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -1239,53 +1479,58 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               child: Stack(
                 children: [
                   SizedBox(
-                    width: 144,
-                    height: 104,
+                    width: 108,
+                    height: 78,
                     child: hasNetworkIcon
                         ? Image.network(
                             category.icon,
-                            width: 144,
-                            height: 104,
+                            width: 108,
+                            height: 78,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              child: const Icon(
-                                Icons.medical_services_outlined,
-                                color: AppColors.primary,
-                                size: 40,
-                              ),
-                            ),
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  child: const Icon(
+                                    Icons.medical_services_outlined,
+                                    color: AppColors.primary,
+                                    size: 28,
+                                  ),
+                                ),
                           )
                         : Container(
                             color: AppColors.primary.withValues(alpha: 0.1),
                             child: const Icon(
                               Icons.medical_services_outlined,
                               color: AppColors.primary,
-                              size: 40,
+                              size: 28,
                             ),
                           ),
                   ),
                   if (category.discount > 0)
                     Positioned(
-                      top: 8,
-                      left: 8,
+                      top: 6,
+                      left: 6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 6,
+                          vertical: 2,
                         ),
                         decoration: BoxDecoration(
                           color: const Color.fromRGBO(140, 244, 235, 1.0),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
@@ -1293,7 +1538,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                           '${category.discount}% OFF',
                           style: const TextStyle(
                             color: Color.fromARGB(255, 12, 112, 93),
-                            fontSize: 10,
+                            fontSize: 9,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1303,14 +1548,14 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
               child: Text(
                 category.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  fontSize: 13,
+                  fontSize: 12,
                   color: AppColors.textDark,
                 ),
               ),
@@ -1321,6 +1566,36 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
+  Widget _buildFeaturedProductsCarousel() {
+    final products = _appState.products;
+    if (products.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      height: 340,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = constraints.maxWidth - 32; // 16px padding each side
+          final cardWidth = availableWidth / 2.5;
+          return ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: products.length,
+            itemBuilder: (context, idx) {
+              return Padding(
+                padding: EdgeInsets.only(right: idx < products.length - 1 ? 12 : 0),
+                child: SizedBox(
+                  width: cardWidth,
+                  child: _buildProductCard(products[idx]),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildProductCard(Product prod) {
     final isWish = _appState.wishlistProductIds.contains(prod.id);
@@ -1349,7 +1624,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                       color: AppColors.backgroundLight.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: (prod.image.startsWith('http://') ||
+                        image:
+                            (prod.image.startsWith('http://') ||
                                 prod.image.startsWith('https://'))
                             ? NetworkImage(prod.image) as ImageProvider
                             : AssetImage(
@@ -1508,25 +1784,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                       ),
                   ],
                 ),
-                GestureDetector(
-                  onTap: () {
-                    _appState.addToCart(prod, qty: 1);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${prod.name} added to cart!'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 16),
-                  ),
-                ),
+                ProductQuantitySelector(product: prod),
               ],
             ),
           ],
@@ -1580,13 +1838,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   Text(
                     _testimonialError!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: AppColors.error),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.error,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
                     onPressed: _fetchTestimonials,
-                    icon: const Icon(Icons.refresh, size: 18, color: AppColors.primary),
-                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                    icon: const Icon(
+                      Icons.refresh,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    label: const Text(
+                      'Retry',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -1654,10 +1922,14 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                             CircleAvatar(
                               radius: 18,
                               backgroundColor: AppColors.primary,
-                              backgroundImage: item.image.isNotEmpty && item.image.startsWith('http')
+                              backgroundImage:
+                                  item.image.isNotEmpty &&
+                                      item.image.startsWith('http')
                                   ? NetworkImage(item.image)
                                   : null,
-                              child: item.image.isEmpty || !item.image.startsWith('http')
+                              child:
+                                  item.image.isEmpty ||
+                                      !item.image.startsWith('http')
                                   ? Text(
                                       item.name.isNotEmpty
                                           ? item.name[0].toUpperCase()
@@ -1761,13 +2033,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   Text(
                     _faqError!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: AppColors.error),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.error,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(
                     onPressed: _fetchFaqs,
-                    icon: const Icon(Icons.refresh, size: 18, color: AppColors.primary),
-                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                    icon: const Icon(
+                      Icons.refresh,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    label: const Text(
+                      'Retry',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -1794,8 +2076,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               itemCount: _apiFaqs.length,
               itemBuilder: (context, idx) {
                 final item = _apiFaqs[idx];
-                final isExp =
-                    idx < _faqExpandedStates.length ? _faqExpandedStates[idx] : false;
+                final isExp = idx < _faqExpandedStates.length
+                    ? _faqExpandedStates[idx]
+                    : false;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
@@ -1811,7 +2094,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                         onTap: () {
                           setState(() {
                             if (idx < _faqExpandedStates.length) {
-                              _faqExpandedStates[idx] = !_faqExpandedStates[idx];
+                              _faqExpandedStates[idx] =
+                                  !_faqExpandedStates[idx];
                             }
                           });
                         },
@@ -1861,7 +2145,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         ),
         if (_isLoadingBrands)
           Container(
-            height: 150,
+            height: 114,
             alignment: Alignment.center,
             child: const CircularProgressIndicator(color: AppColors.primary),
           )
@@ -1881,13 +2165,23 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   Expanded(
                     child: Text(
                       _brandError!,
-                      style: const TextStyle(fontSize: 12, color: AppColors.error),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.error,
+                      ),
                     ),
                   ),
                   TextButton.icon(
                     onPressed: _fetchBrands,
-                    icon: const Icon(Icons.refresh, size: 16, color: AppColors.primary),
-                    label: const Text('Retry', style: TextStyle(color: AppColors.primary)),
+                    icon: const Icon(
+                      Icons.refresh,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    label: const Text(
+                      'Retry',
+                      style: TextStyle(color: AppColors.primary),
+                    ),
                   ),
                 ],
               ),
@@ -1903,7 +2197,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           )
         else
           SizedBox(
-            height: 150,
+            height: 114,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1925,16 +2219,16 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 144,
-        margin: const EdgeInsets.only(right: 12),
+        width: 108,
+        margin: const EdgeInsets.only(right: 10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -1943,37 +2237,37 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           children: [
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
+                top: Radius.circular(16),
               ),
               child: Container(
-                width: 144,
-                height: 104,
-                color: AppColors.backgroundLight.withOpacity(0.5),
+                width: 108,
+                height: 78,
+                color: AppColors.backgroundLight.withValues(alpha: 0.5),
                 child: brand.image.isNotEmpty && brand.image.startsWith('http')
                     ? Image.network(
                         brand.image,
-                        width: 144,
-                        height: 104,
+                        width: 108,
+                        height: 78,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Image.asset(
                             'assets/img2.png',
-                            width: 144,
-                            height: 104,
+                            width: 108,
+                            height: 78,
                             fit: BoxFit.cover,
                           );
                         },
                       )
                     : Image.asset(
                         'assets/img2.png',
-                        width: 144,
-                        height: 104,
+                        width: 108,
+                        height: 78,
                         fit: BoxFit.cover,
                       ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1983,7 +2277,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                      fontSize: 12,
                       color: AppColors.textDark,
                     ),
                   ),

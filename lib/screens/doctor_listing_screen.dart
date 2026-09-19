@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../models/doctor_model.dart';
+import '../services/doctor_service.dart';
 import 'doctor_profile_screen.dart';
 
 class DoctorListingScreen extends StatefulWidget {
   final String? systemFilter;
-  const DoctorListingScreen({super.key, this.systemFilter});
+  final String? consultationTypeFilter;
+  const DoctorListingScreen({
+    super.key,
+    this.systemFilter,
+    this.consultationTypeFilter,
+  });
 
   @override
   State<DoctorListingScreen> createState() => _DoctorListingScreenState();
@@ -15,6 +22,15 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
   final AppState _appState = AppState();
   late String _selectedSystem;
   String _selectedSpecialty = 'All';
+  late String _selectedConsultationType;
+
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<Doctor> _doctorsList = [];
+
+  // Search
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   final List<String> _systems = ['All', 'Ayurveda', 'Homeopathy', 'Unani'];
   final List<String> _specialties = [
@@ -23,22 +39,106 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
     'Homeopathy Specialist',
     'Unani Medicine Expert',
   ];
+  final List<String> _consultationTypes = ['All', 'Offline', 'Online'];
 
   @override
   void initState() {
     super.initState();
     _selectedSystem = widget.systemFilter ?? 'All';
+
+    final rawType = (widget.consultationTypeFilter ?? '').toLowerCase();
+    if (rawType == 'in_person' || rawType == 'offline' || rawType.contains('person') || rawType.contains('clinic') || rawType.contains('offline')) {
+      _selectedConsultationType = 'Offline';
+    } else if (rawType == 'online' || rawType == 'video' || rawType.contains('video') || rawType.contains('online')) {
+      _selectedConsultationType = 'Online';
+    } else {
+      _selectedConsultationType = 'All';
+    }
+
+    _fetchDoctors();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchDoctors() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final res = await DoctorService.getAllDoctors(
+      system: _selectedSystem != 'All' ? _selectedSystem : null,
+    );
+
+    if (!mounted) return;
+
+    if (res.success && res.doctors.isNotEmpty) {
+      final initialDocs = res.doctors.map((apiDoc) => Doctor.fromApiDoctor(apiDoc)).toList();
+      setState(() {
+        _isLoading = false;
+        _doctorsList = initialDocs;
+      });
+
+      final enriched = await DoctorService.enrichDoctorsWithDetails(res.doctors);
+      if (mounted) {
+        setState(() {
+          _doctorsList = enriched.map((apiDoc) => Doctor.fromApiDoctor(apiDoc)).toList();
+        });
+      }
+    } else if (res.success && res.doctors.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _doctorsList = [];
+      });
+    } else {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = res.message.isNotEmpty ? res.message : 'Failed to load doctors.';
+        _doctorsList = _appState.mockDoctors;
+      });
+    }
+  }
+
+  ImageProvider _getDoctorImageProvider(String imagePath) {
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return NetworkImage(imagePath);
+    }
+    if (imagePath.isNotEmpty) {
+      return AssetImage(imagePath);
+    }
+    return const AssetImage('assets/doctor_profile.png');
   }
 
   @override
   Widget build(BuildContext context) {
-    // Filter logic
-    final filteredDoctors = _appState.mockDoctors.where((doc) {
+    final filteredDoctors = _doctorsList.where((doc) {
       final matchesSystem =
-          _selectedSystem == 'All' || doc.system == _selectedSystem;
+          _selectedSystem == 'All' || doc.system.toLowerCase().contains(_selectedSystem.toLowerCase());
       final matchesSpecialty =
-          _selectedSpecialty == 'All' || doc.specialty == _selectedSpecialty;
-      return matchesSystem && matchesSpecialty;
+          _selectedSpecialty == 'All' || doc.specialty.toLowerCase().contains(_selectedSpecialty.toLowerCase());
+
+      bool matchesType = true;
+      if (_selectedConsultationType == 'Offline') {
+        matchesType = doc.hasInPerson;
+      } else if (_selectedConsultationType == 'Online') {
+        matchesType = doc.hasOnline;
+      }
+
+      // Search filter
+      bool matchesSearch = true;
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        matchesSearch = doc.name.toLowerCase().contains(q) ||
+            doc.specialty.toLowerCase().contains(q) ||
+            doc.system.toLowerCase().contains(q);
+      }
+
+      return matchesSystem && matchesSpecialty && matchesType && matchesSearch;
     }).toList();
 
     return Scaffold(
@@ -49,10 +149,57 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
         ),
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _fetchDoctors,
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Filter Chips Section
+          // ── Search Bar ──────────────────────────────────────────────
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search by name, specialty or system...',
+                hintStyle: const TextStyle(fontSize: 13, color: AppColors.textLight),
+                prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textLight, size: 20),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textLight),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: const Color(0xFFF1F5F9),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Filter Chips Section ─────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(
               vertical: 12.0,
@@ -62,6 +209,41 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  'Consultation Mode',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 38,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: _consultationTypes.map((type) {
+                      final isSel = _selectedConsultationType == type;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(type),
+                          selected: isSel,
+                          onSelected: (val) {
+                            if (val) setState(() => _selectedConsultationType = type);
+                          },
+                          selectedColor: AppColors.primary,
+                          labelStyle: TextStyle(
+                            color: isSel ? Colors.white : AppColors.textDark,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 const Text(
                   'Medical System',
                   style: TextStyle(
@@ -83,7 +265,10 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                           label: Text(system),
                           selected: isSel,
                           onSelected: (val) {
-                            if (val) setState(() => _selectedSystem = system);
+                            if (val) {
+                              setState(() => _selectedSystem = system);
+                              _fetchDoctors();
+                            }
                           },
                           selectedColor: AppColors.primary,
                           labelStyle: TextStyle(
@@ -138,17 +323,33 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
 
           // Doctor List View
           Expanded(
-            child: filteredDoctors.isEmpty
+            child: _isLoading
                 ? const Center(
-                    child: Text('No doctors match selected filters.'),
+                    child: CircularProgressIndicator(color: AppColors.primary),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filteredDoctors.length,
-                    itemBuilder: (context, idx) {
-                      final doc = filteredDoctors[idx];
-                      return _buildDoctorListItem(doc);
-                    },
+                : RefreshIndicator(
+                    onRefresh: _fetchDoctors,
+                    child: filteredDoctors.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 100),
+                              Center(
+                                child: Text(
+                                  'No doctors match selected filters.',
+                                  style: TextStyle(color: AppColors.textLight),
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: filteredDoctors.length,
+                            itemBuilder: (context, idx) {
+                              final doc = filteredDoctors[idx];
+                              return _buildDoctorListItem(doc);
+                            },
+                          ),
                   ),
           ),
         ],
@@ -184,7 +385,7 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   image: DecorationImage(
-                    image: AssetImage(doc.image.isNotEmpty ? doc.image : 'assets/doctor_profile.png'),
+                    image: _getDoctorImageProvider(doc.image),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -197,12 +398,15 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          doc.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: AppColors.textDark,
+                        Flexible(
+                          child: Text(
+                            doc.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: AppColors.textDark,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 4),
@@ -267,11 +471,15 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                           color: AppColors.textLight,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          doc.languages.join(', '),
-                          style: const TextStyle(
-                            color: AppColors.textLight,
-                            fontSize: 11,
+                        Expanded(
+                          child: Text(
+                            doc.languages.join(', '),
+                            style: const TextStyle(
+                              color: AppColors.textLight,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -290,12 +498,14 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Consultation Fee',
-                    style: TextStyle(color: AppColors.textLight, fontSize: 10),
+                  Text(
+                    _selectedConsultationType == 'Offline'
+                        ? 'Offline Fee'
+                        : (_selectedConsultationType == 'Online' ? 'Online Fee' : 'Consultation Fee'),
+                    style: const TextStyle(color: AppColors.textLight, fontSize: 10),
                   ),
                   Text(
-                    '₹${doc.consultationFee.toInt()}',
+                    '₹${doc.getFeeForType(_selectedConsultationType == 'Offline' ? 'in_person' : (_selectedConsultationType == 'Online' ? 'video' : null)).toInt()}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
@@ -330,17 +540,6 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                       ),
                     ),
                   ),
-                  // const SizedBox(width: 8),
-                  // ElevatedButton(
-                  //   onPressed: () {
-                  //     Navigator.push(context, MaterialPageRoute(builder: (_) => BookAppointmentScreen(doctor: doc)));
-                  //   },
-                  //   style: ElevatedButton.styleFrom(
-                  //     backgroundColor: AppColors.primary,
-                  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  //   ),
-                  //   child: const Text('Book Now', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                  // ),
                 ],
               ),
             ],

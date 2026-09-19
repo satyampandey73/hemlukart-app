@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import '../models/cart_model.dart';
 
 class CartService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/cart';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/cart';
 
-  /// API: POST https://hospital.gntechnology.de/api/cart
+  /// API: POST https://backend.chikitsakart.com/api/cart
   /// Request Body: {"productId": "f80778a9-5988-48e6-8647-4b2a90b719d2", "quantity": 1}
   /// Response: {"success": true, "message": "Added to cart", "data": {...}}
   static Future<AddToCartApiResponse> addToCart({
@@ -41,7 +41,8 @@ class CartService {
       } else {
         return AddToCartApiResponse(
           success: body['success'] == true,
-          message: body['message']?.toString() ??
+          message:
+              body['message']?.toString() ??
               'Server returned status ${response.statusCode}',
           data: body['data'] != null && body['data'] is Map<String, dynamic>
               ? CartItemData.fromJson(body['data'] as Map<String, dynamic>)
@@ -56,11 +57,9 @@ class CartService {
     }
   }
 
-  /// API: GET https://hospital.gntechnology.de/api/cart
+  /// API: GET https://backend.chikitsakart.com/api/cart
   /// Response: {"success": true, "data": {"cart": {...}, "items": [...]}}
-  static Future<GetCartApiResponse> getCart({
-    String? token,
-  }) async {
+  static Future<GetCartApiResponse> getCart({String? token}) async {
     final Uri url = Uri.parse(baseUrl);
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
@@ -73,10 +72,7 @@ class CartService {
 
     try {
       final response = await http
-          .get(
-            url,
-            headers: headers,
-          )
+          .get(url, headers: headers)
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -96,7 +92,7 @@ class CartService {
     }
   }
 
-  /// API: PUT https://hospital.gntechnology.de/api/cart/items/{itemId}
+  /// API: PUT https://backend.chikitsakart.com/api/cart/items/{itemId}
   /// Request Body: {"quantity": 5}
   /// Response: {"success": true, "message": "Cart item updated", "data": {...}}
   static Future<CartActionApiResponse> updateCartItemQuantity({
@@ -116,11 +112,7 @@ class CartService {
 
     try {
       final response = await http
-          .put(
-            url,
-            headers: headers,
-            body: jsonEncode({'quantity': quantity}),
-          )
+          .put(url, headers: headers, body: jsonEncode({'quantity': quantity}))
           .timeout(const Duration(seconds: 15));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
@@ -133,7 +125,7 @@ class CartService {
     }
   }
 
-  /// API: DELETE https://hospital.gntechnology.de/api/cart/items/{itemId}
+  /// API: DELETE https://backend.chikitsakart.com/api/cart/items/{itemId}
   /// Response: {"success": true, "message": "Item removed from cart"}
   static Future<CartActionApiResponse> removeCartItem({
     required String itemId,
@@ -151,10 +143,7 @@ class CartService {
 
     try {
       final response = await http
-          .delete(
-            url,
-            headers: headers,
-          )
+          .delete(url, headers: headers)
           .timeout(const Duration(seconds: 15));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
@@ -167,11 +156,9 @@ class CartService {
     }
   }
 
-  /// API: DELETE https://hospital.gntechnology.de/api/cart/clear
+  /// API: DELETE https://backend.chikitsakart.com/api/cart/clear
   /// Response: {"success": true, "message": "Cart cleared"}
-  static Future<CartActionApiResponse> clearCart({
-    String? token,
-  }) async {
+  static Future<CartActionApiResponse> clearCart({String? token}) async {
     final Uri url = Uri.parse('$baseUrl/clear');
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
@@ -184,10 +171,7 @@ class CartService {
 
     try {
       final response = await http
-          .delete(
-            url,
-            headers: headers,
-          )
+          .delete(url, headers: headers)
           .timeout(const Duration(seconds: 15));
 
       final Map<String, dynamic> body = jsonDecode(response.body);

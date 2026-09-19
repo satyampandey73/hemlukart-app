@@ -7,8 +7,11 @@ import '../models/product_faq_model.dart';
 import '../services/product_faq_service.dart';
 import '../models/rating_model.dart';
 import '../services/rating_service.dart';
+import '../models/banner_model.dart';
+import '../services/banner_service.dart';
 import 'cart_screen.dart';
 import 'login_screen.dart';
+import 'clinic_listing_screen.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
@@ -24,6 +27,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final PageController _promoController = PageController();
   int _currentPromoIndex = 0;
   Timer? _promoTimer;
+
+  List<BannerModel> _detailBanners = [];
+  bool _isLoadingDetailBanners = false;
 
   late List<String> _galleryImages;
   late Product _currentProduct;
@@ -47,6 +53,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         : ['assets/p1.png'];
     _appState.addListener(_rebuild);
     _startPromoAutoSlide();
+    _fetchDetailBanners();
     _fetchLiveDetails();
     _fetchRatings();
   }
@@ -104,8 +111,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     _promoTimer?.cancel();
     _promoTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted || !_promoController.hasClients) return;
-
-      final nextIndex = (_currentPromoIndex + 1) % 2;
+      final count = _detailBanners.isNotEmpty ? _detailBanners.length : 2;
+      final nextIndex = (_currentPromoIndex + 1) % count;
       _promoController.animateToPage(
         nextIndex,
         duration: const Duration(milliseconds: 500),
@@ -115,6 +122,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         setState(() => _currentPromoIndex = nextIndex);
       }
     });
+  }
+
+  Future<void> _fetchDetailBanners() async {
+    if (!mounted) return;
+    setState(() => _isLoadingDetailBanners = true);
+
+    final response = await BannerService.getProductDetailBanners();
+    if (!mounted) return;
+
+    if (response.success && response.banners.isNotEmpty) {
+      final active = response.banners
+          .where((b) => b.isActive && !b.isDeleted)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      setState(() {
+        _detailBanners = active.isNotEmpty ? active : response.banners;
+        _isLoadingDetailBanners = false;
+      });
+      // Restart auto-slide with the correct count
+      _startPromoAutoSlide();
+    } else {
+      setState(() => _isLoadingDetailBanners = false);
+    }
   }
 
   Widget _buildCartIconBtn() {
@@ -562,6 +592,86 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Find Nearby Clinic Advice Banner
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.local_hospital_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Need In-Person Clinic Care?',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Find nearby verified Ayush & Healthcare Clinics.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClinicListingScreen(),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Find Clinic',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 12),
 
@@ -938,69 +1048,105 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
 
             const SizedBox(height: 1),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(1),
-              ),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 140,
-                    child: PageView(
-                      controller: _promoController,
-                      onPageChanged: (index) {
-                        setState(() => _currentPromoIndex = index);
-                      },
-                      children: [
-                        ClipRRect(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(1),
-                          ),
-                          child: Image.asset(
-                            'assets/br1.png',
-                            width: double.infinity,
-                            height: 140,
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        ClipRRect(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(1),
-                          ),
-                          child: Image.asset(
-                            'assets/br2.png',
-                            width: double.infinity,
-                            height: 140,
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      ],
+            if (_isLoadingDetailBanners)
+              Container(
+                height: 160,
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
+                ),
+              )
+            else if (_detailBanners.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 140,
+                      child: PageView.builder(
+                        controller: _promoController,
+                        itemCount: _detailBanners.length,
+                        onPageChanged: (index) =>
+                            setState(() => _currentPromoIndex = index),
+                        itemBuilder: (context, idx) {
+                          return ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(1),
+                            ),
+                            child: Image.network(
+                              _detailBanners[idx].imageUrl,
+                              width: double.infinity,
+                              height: 140,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  color: AppColors.backgroundLight,
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      value: progress.expectedTotalBytes != null
+                                          ? progress.cumulativeBytesLoaded /
+                                              progress.expectedTotalBytes!
+                                          : null,
+                                      color: AppColors.primary,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                color: AppColors.backgroundLight,
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: AppColors.border,
+                                    size: 36,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(2, (index) {
-                      final isActive = index == _currentPromoIndex;
-                      return Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isActive
-                              ? AppColors.primary
-                              : AppColors.border,
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                ],
+                    if (_detailBanners.length > 1) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(_detailBanners.length, (index) {
+                          final isActive = index == _currentPromoIndex;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            width: isActive ? 16 : 8,
+                            height: 8,
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          );
+                        }),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 16),
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),

@@ -4,6 +4,14 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Hemlukart requires camera access for video consultation with doctors and to take profile photos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Hemlukart requires microphone access for audio during video consultation.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Hemlukart requires photo library access to let you set a profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Hemlukart requires permission to save photos to your library.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

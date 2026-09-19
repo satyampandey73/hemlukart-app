@@ -101,3 +101,76 @@ class UserWishlistProductsApiResponse {
     };
   }
 }
+
+class UserWishlistDoctorItem {
+  final String id;
+  final String targetDoctorId;
+  final String userId;
+  final String? wisherDoctorId;
+  final String? createdAt;
+
+  UserWishlistDoctorItem({
+    required this.id,
+    required this.targetDoctorId,
+    required this.userId,
+    this.wisherDoctorId,
+    this.createdAt,
+  });
+
+  factory UserWishlistDoctorItem.fromJson(Map<String, dynamic> json) {
+    return UserWishlistDoctorItem(
+      id: json['id']?.toString() ?? '',
+      targetDoctorId: json['targetDoctorId']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? '',
+      wisherDoctorId: json['wisherDoctorId']?.toString(),
+      createdAt: json['createdAt']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'targetDoctorId': targetDoctorId,
+      'userId': userId,
+      'wisherDoctorId': wisherDoctorId,
+      'createdAt': createdAt,
+    };
+  }
+}
+
+class UserWishlistDoctorsApiResponse {
+  final bool success;
+  final List<UserWishlistDoctorItem> data;
+  final String? message;
+
+  UserWishlistDoctorsApiResponse({
+    required this.success,
+    required this.data,
+    this.message,
+  });
+
+  factory UserWishlistDoctorsApiResponse.fromJson(Map<String, dynamic> json) {
+    var rawList = json['data'];
+    List<UserWishlistDoctorItem> items = [];
+    if (rawList is List) {
+      items = rawList
+          .map((item) =>
+              UserWishlistDoctorItem.fromJson(item as Map<String, dynamic>))
+          .toList();
+    }
+    return UserWishlistDoctorsApiResponse(
+      success: json['success'] == true,
+      data: items,
+      message: json['message']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'success': success,
+      'data': data.map((item) => item.toJson()).toList(),
+      if (message != null) 'message': message,
+    };
+  }
+}
+

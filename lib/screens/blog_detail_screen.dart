@@ -277,7 +277,7 @@ class _BlogDetailScreenState extends State<BlogDetailScreen> {
                             Text(
                               blog.authorName?.isNotEmpty == true
                                   ? blog.authorName!
-                                  : 'Hemlukart Health Expert',
+                                  : 'Chikitsakart Health Expert',
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,

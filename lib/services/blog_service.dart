@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import '../models/blog_model.dart';
 
 class BlogService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/blogs';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/blogs';
 
-  /// API: GET https://hospital.gntechnology.de/api/blogs
+  /// API: GET https://backend.chikitsakart.com/api/blogs
   static Future<BlogListApiResponse> getBlogs() async {
     final Uri url = Uri.parse(baseUrl);
     try {
@@ -38,7 +38,7 @@ class BlogService {
     }
   }
 
-  /// API: GET https://hospital.gntechnology.de/api/blogs/{id}
+  /// API: GET https://backend.chikitsakart.com/api/blogs/{id}
   static Future<BlogDetailApiResponse> getBlogById(String id) async {
     final Uri url = Uri.parse('$baseUrl/$id');
     try {

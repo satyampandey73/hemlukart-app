@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../services/doctor_service.dart';
 import 'doctor_listing_screen.dart';
 import 'doctor_profile_screen.dart';
 import 'book_appointment_screen.dart';
@@ -17,6 +18,38 @@ class DoctorConsultationScreen extends StatefulWidget {
 
 class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
   final AppState _appState = AppState();
+  List<Doctor> _apiDoctors = [];
+  bool _isLoadingDoctors = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDoctors();
+  }
+
+  Future<void> _fetchDoctors() async {
+    final res = await DoctorService.getAllDoctors();
+    if (!mounted) return;
+    if (res.success && res.doctors.isNotEmpty) {
+      final initialDocs = res.doctors.map((apiDoc) => Doctor.fromApiDoctor(apiDoc)).toList();
+      setState(() {
+        _isLoadingDoctors = false;
+        _apiDoctors = initialDocs;
+      });
+
+      final enriched = await DoctorService.enrichDoctorsWithDetails(res.doctors);
+      if (mounted) {
+        setState(() {
+          _apiDoctors = enriched.map((apiDoc) => Doctor.fromApiDoctor(apiDoc)).toList();
+        });
+      }
+    } else {
+      setState(() {
+        _isLoadingDoctors = false;
+        _apiDoctors = _appState.mockDoctors;
+      });
+    }
+  }
 
   final List<Map<String, dynamic>> _specialties = [
     {
@@ -163,6 +196,21 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
               child: Column(
                 children: [
                   _buildConsultModeCard(
+                    'Skip the travel!',
+                    'Consult',
+                    'Online',
+                    'Private consultation • Video call • Starts at just ₹799',
+                    'Consult Online',
+                    const Color(0xFFCFF0F5),
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DoctorListingScreen(consultationTypeFilter: 'online'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildConsultModeCard(
                     'Skip the wait!',
                     'Consult',
                     'Offline',
@@ -172,22 +220,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const ClinicListingScreen(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildConsultModeCard(
-                    'Skip the travel!',
-                    'Consult',
-                    'Online',
-                    'Private consultation • Audio call • Starts at just ₹799',
-                    'Consult Online',
-                    const Color(0xFFCFF0F5),
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const DoctorListingScreen(),
+                        builder: (_) => const DoctorListingScreen(consultationTypeFilter: 'in_person'),
                       ),
                     ),
                   ),
@@ -306,22 +339,24 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         ),
                         ElevatedButton(
                           onPressed: () {
-                            final dummyDoc = Doctor(
-                              id: 'dummy',
-                              name: 'Dr. Pathan Irshad Khan',
-                              specialty: 'General Physician',
-                              degree: 'MBBS, MD',
-                              system: 'Allopathy',
-                              experienceYears: 5,
-                              consultationFee: 199,
-                              rating: 4.8,
-                              reviewsCount: 12,
-                              image: '',
-                              languages: ['English', 'Hindi'],
-                              clinicName: 'Immediate Care Hub',
-                              clinicAddress: 'Online Portal',
-                              about: 'Immediate consult practitioner',
-                            );
+                            final targetDoc = _apiDoctors.isNotEmpty
+                                ? _apiDoctors.first
+                                : Doctor(
+                                    id: 'dummy',
+                                    name: 'Dr. Pathan Irshad Khan',
+                                    specialty: 'General Physician',
+                                    degree: 'MBBS, MD',
+                                    system: 'Allopathy',
+                                    experienceYears: 5,
+                                    consultationFee: 199,
+                                    rating: 4.8,
+                                    reviewsCount: 12,
+                                    image: '',
+                                    languages: ['English', 'Hindi'],
+                                    clinicName: 'Immediate Care Hub',
+                                    clinicAddress: 'Online Portal',
+                                    about: 'Immediate consult practitioner',
+                                  );
                             LoginScreen.checkAndNavigate(context).then((
                               loggedIn,
                             ) {
@@ -330,7 +365,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) =>
-                                        BookAppointmentScreen(doctor: dummyDoc),
+                                        BookAppointmentScreen(doctor: targetDoc),
                                   ),
                                 );
                               }
@@ -395,8 +430,8 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                       );
                     },
                     child: Container(
-                      width: 90,
-                      margin: const EdgeInsets.only(right: 12),
+                      width: 78,
+                      margin: const EdgeInsets.only(right: 6),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -553,15 +588,21 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
             ),
             SizedBox(
               height: 220,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _appState.mockDoctors.length,
-                itemBuilder: (context, idx) {
-                  final doc = _appState.mockDoctors[idx];
-                  return _buildDocCard(doc);
-                },
-              ),
+              child: _isLoadingDoctors
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _apiDoctors.isNotEmpty
+                          ? _apiDoctors.length
+                          : _appState.mockDoctors.length,
+                      itemBuilder: (context, idx) {
+                        final doc = _apiDoctors.isNotEmpty
+                            ? _apiDoctors[idx]
+                            : _appState.mockDoctors[idx];
+                        return _buildDocCard(doc);
+                      },
+                    ),
             ),
 
             const SizedBox(height: 32),
@@ -692,7 +733,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(12),
@@ -709,17 +750,17 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     text: topText,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 20,
+                      fontSize: 16,
                       color: AppColors.textDark,
                       height: 1.2,
                     ),
                   ),
-                  const TextSpan(text: '\n', style: TextStyle(height: 0.5)),
+                  const TextSpan(text: '\n', style: TextStyle(height: 0.4)),
                   TextSpan(
                     text: mainText,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 24,
+                      fontSize: 20,
                       color: AppColors.textDark,
                     ),
                   ),
@@ -728,7 +769,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     text: highlightText,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 24,
+                      fontSize: 20,
                       color: bgColor == const Color.fromRGBO(243, 232, 226, 1)
                           ? const Color(0xFF8B6F47)
                           : const Color(0xFF17A2B8),
@@ -737,47 +778,47 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             // Description
             Text(
               description,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 color: AppColors.textDark,
-                height: 1.4,
+                height: 1.3,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             // Doctor avatars
             Row(
               children: [
                 CircleAvatar(
-                  radius: 14,
+                  radius: 12,
                   backgroundImage: const AssetImage(
                     'assets/doctor_profile.png',
                   ),
                 ),
                 Transform.translate(
-                  offset: const Offset(-10, 0),
+                  offset: const Offset(-8, 0),
                   child: CircleAvatar(
-                    radius: 14,
+                    radius: 12,
                     backgroundColor: Colors.blue[200],
-                    child: const Text('👨', style: TextStyle(fontSize: 18)),
+                    child: const Text('👨', style: TextStyle(fontSize: 14)),
                   ),
                 ),
                 Transform.translate(
-                  offset: const Offset(-20, 0),
+                  offset: const Offset(-16, 0),
                   child: CircleAvatar(
-                    radius: 14,
+                    radius: 12,
                     backgroundColor: Colors.green[200],
-                    child: const Text('👩', style: TextStyle(fontSize: 18)),
+                    child: const Text('👩', style: TextStyle(fontSize: 14)),
                   ),
                 ),
                 Transform.translate(
-                  offset: const Offset(-30, 0),
+                  offset: const Offset(-24, 0),
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 24,
+                    height: 24,
                     decoration: BoxDecoration(
                       color: Colors.grey[700],
                       shape: BoxShape.circle,
@@ -787,24 +828,24 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                       '+139',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 9,
+                        fontSize: 8,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 const Text(
                   '+139 Doctors are online',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textDark,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             // Button
             SizedBox(
               width: double.infinity,
@@ -817,7 +858,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                       : const Color(0xFF17A2B8),
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -826,12 +867,12 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                   buttonText,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             // Benefits
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -841,15 +882,15 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     children: [
                       Icon(
                         Icons.verified_user,
-                        size: 20,
+                        size: 18,
                         color: AppColors.textDark,
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(height: 2),
                       Text(
                         'Verified\nDoctors',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 9,
                           color: AppColors.textDark,
                           height: 1.2,
                         ),
@@ -862,15 +903,15 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     children: [
                       Icon(
                         Icons.description,
-                        size: 20,
+                        size: 18,
                         color: AppColors.textDark,
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(height: 2),
                       Text(
                         'Digital\nPrescription',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 9,
                           color: AppColors.textDark,
                           height: 1.2,
                         ),
@@ -883,15 +924,15 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     children: [
                       Icon(
                         Icons.follow_the_signs,
-                        size: 20,
+                        size: 18,
                         color: AppColors.textDark,
                       ),
-                      SizedBox(height: 4),
+                      SizedBox(height: 2),
                       Text(
                         'Free\nFollow-up',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 9,
                           color: AppColors.textDark,
                           height: 1.2,
                         ),
@@ -934,11 +975,13 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
                       image: DecorationImage(
-                        image: AssetImage(
-                          doc.image.isNotEmpty
-                              ? doc.image
-                              : 'assets/doctor_profile.png',
-                        ),
+                        image: (doc.image.startsWith('http://') || doc.image.startsWith('https://'))
+                            ? NetworkImage(doc.image) as ImageProvider
+                            : AssetImage(
+                                doc.image.isNotEmpty
+                                    ? doc.image
+                                    : 'assets/doctor_profile.png',
+                              ),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -1027,7 +1070,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '₹${doc.consultationFee.toInt()}/Consultation',
+                  '₹${doc.getFeeForType().toInt()}/Consultation',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,

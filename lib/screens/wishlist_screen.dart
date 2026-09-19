@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../services/doctor_service.dart';
 import 'product_detail_screen.dart';
 import 'doctor_profile_screen.dart';
+import '../widgets/product_quantity_selector.dart';
 
 class WishlistScreen extends StatefulWidget {
   const WishlistScreen({super.key});
@@ -15,18 +17,76 @@ class _WishlistScreenState extends State<WishlistScreen>
     with SingleTickerProviderStateMixin {
   final AppState _appState = AppState();
   late TabController _tabController;
+  bool _isLoadingDoctors = true;
+  List<Doctor> _loadedDoctors = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _appState.fetchUserWishlistProducts();
+    _appState.addListener(_onAppStateChanged);
+    _loadData();
   }
 
   @override
   void dispose() {
+    _appState.removeListener(_onAppStateChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _onAppStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingDoctors = true;
+    });
+
+    await Future.wait([
+      _appState.fetchUserWishlistProducts(),
+      _appState.fetchUserWishlistDoctors(),
+    ]);
+
+    final List<Doctor> allDocs = [..._appState.mockDoctors];
+
+    // Fetch doctors list from backend
+    final res = await DoctorService.getAllDoctors();
+    if (res.success && res.doctors.isNotEmpty) {
+      final enriched = await DoctorService.enrichDoctorsWithDetails(res.doctors);
+      for (final apiDoc in enriched) {
+        final docObj = Doctor.fromApiDoctor(apiDoc);
+        if (!allDocs.any((d) => d.id == docObj.id)) {
+          allDocs.add(docObj);
+        }
+      }
+    }
+
+    // For any wishlisted doctor ID not yet loaded, fetch directly by ID
+    final wishIds = _appState.wishlistDoctorIds;
+    final missingIds =
+        wishIds.where((id) => !allDocs.any((d) => d.id == id)).toList();
+
+    for (final id in missingIds) {
+      final docRes = await DoctorService.getDoctorById(id);
+      if (docRes.success && docRes.doctor != null) {
+        final docObj = Doctor.fromApiDoctor(docRes.doctor!);
+        if (!allDocs.any((d) => d.id == docObj.id)) {
+          allDocs.add(docObj);
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _loadedDoctors = allDocs;
+        _isLoadingDoctors = false;
+      });
+    }
   }
 
   @override
@@ -35,7 +95,7 @@ class _WishlistScreenState extends State<WishlistScreen>
     final wishProducts = _appState.products
         .where((p) => _appState.wishlistProductIds.contains(p.id))
         .toList();
-    final wishDoctors = _appState.mockDoctors
+    final wishDoctors = _loadedDoctors
         .where((d) => _appState.wishlistDoctorIds.contains(d.id))
         .toList();
 
@@ -75,11 +135,11 @@ class _WishlistScreenState extends State<WishlistScreen>
                     padding: const EdgeInsets.all(16),
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.68,
-                        ),
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 0.68,
+                    ),
                     itemCount: wishProducts.length,
                     itemBuilder: (context, idx) {
                       final prod = wishProducts[idx];
@@ -88,19 +148,23 @@ class _WishlistScreenState extends State<WishlistScreen>
                   ),
 
             // Doctors List
-            wishDoctors.isEmpty
-                ? _buildEmptyState(
-                    'No doctors saved in wishlist.',
-                    Icons.person_outline,
+            _isLoadingDoctors || _appState.isLoadingDoctorWishlist
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: wishDoctors.length,
-                    itemBuilder: (context, idx) {
-                      final doc = wishDoctors[idx];
-                      return _buildDoctorListItem(doc);
-                    },
-                  ),
+                : wishDoctors.isEmpty
+                    ? _buildEmptyState(
+                        'No doctors saved in wishlist.',
+                        Icons.person_outline,
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: wishDoctors.length,
+                        itemBuilder: (context, idx) {
+                          final doc = wishDoctors[idx];
+                          return _buildDoctorListItem(doc);
+                        },
+                      ),
           ],
         ),
       ),
@@ -213,29 +277,7 @@ class _WishlistScreenState extends State<WishlistScreen>
                     color: AppColors.primary,
                   ),
                 ),
-                GestureDetector(
-                  onTap: () {
-                    _appState.addToCart(prod, qty: 1);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${prod.name} added to cart!'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.shopping_cart_outlined,
-                      color: Colors.white,
-                      size: 14,
-                    ),
-                  ),
-                ),
+                ProductQuantitySelector(product: prod, iconSize: 14),
               ],
             ),
           ],
@@ -257,9 +299,11 @@ class _WishlistScreenState extends State<WishlistScreen>
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundImage: AssetImage(
-              doc.image.isNotEmpty ? doc.image : 'assets/doctor_profile.png',
-            ),
+            backgroundImage: (doc.image.startsWith('http://') || doc.image.startsWith('https://'))
+                ? NetworkImage(doc.image) as ImageProvider
+                : AssetImage(
+                    doc.image.isNotEmpty ? doc.image : 'assets/doctor_profile.png',
+                  ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -281,15 +325,34 @@ class _WishlistScreenState extends State<WishlistScreen>
                     fontSize: 10,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  '₹${doc.getFeeForType().toInt()}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    color: AppColors.primary,
+                  ),
+                ),
               ],
             ),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
-            onPressed: () {
-              setState(() {
-                _appState.toggleDoctorWishlist(doc.id);
-              });
+            onPressed: () async {
+              final res = await _appState.toggleDoctorWishlist(doc.id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      res.message.isNotEmpty
+                          ? res.message
+                          : 'Removed from wishlist',
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
             },
           ),
           const SizedBox(width: 4),

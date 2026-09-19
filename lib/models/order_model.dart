@@ -37,7 +37,7 @@ class CheckoutOrderDetails {
   final double totalAmount;
   final double codAmount;
   final bool prescriptionRequired;
-  final String? prescriptionUrl;
+  final String? prescription;
   final String? note;
   final String createdAt;
   final String updatedAt;
@@ -76,7 +76,7 @@ class CheckoutOrderDetails {
     required this.totalAmount,
     required this.codAmount,
     required this.prescriptionRequired,
-    this.prescriptionUrl,
+    this.prescription,
     this.note,
     required this.createdAt,
     required this.updatedAt,
@@ -117,7 +117,10 @@ class CheckoutOrderDetails {
       totalAmount: _parseDouble(json['totalAmount']),
       codAmount: _parseDouble(json['codAmount']),
       prescriptionRequired: json['prescriptionRequired'] == true,
-      prescriptionUrl: json['prescriptionUrl']?.toString(),
+      prescription: json['prescription']?.toString() ??
+          
+          (json['file'] is Map ? json['file']['path']?.toString() : null) ??
+          (json['file'] is String ? json['file'] : null),
       note: json['note']?.toString(),
       createdAt: json['createdAt']?.toString() ?? '',
       updatedAt: json['updatedAt']?.toString() ?? '',
@@ -159,7 +162,7 @@ class CheckoutOrderDetails {
       'totalAmount': totalAmount.toStringAsFixed(2),
       'codAmount': codAmount.toStringAsFixed(2),
       'prescriptionRequired': prescriptionRequired,
-      'prescriptionUrl': prescriptionUrl,
+      'prescription': prescription,
       'note': note,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
@@ -208,25 +211,39 @@ class CheckoutOrderItem {
   });
 
   factory CheckoutOrderItem.fromJson(Map<String, dynamic> json) {
+    final dynamic prodObj = json['product'] ?? json['Product'];
+    final String prodName = json['productName']?.toString() ??
+        json['name']?.toString() ??
+        json['title']?.toString() ??
+        (prodObj is Map ? (prodObj['name'] ?? prodObj['title'])?.toString() : null) ??
+        'Product';
+    final String prodId = json['productId']?.toString() ??
+        json['product_id']?.toString() ??
+        (prodObj is Map ? prodObj['id']?.toString() : null) ??
+        '';
+    final String? sellerName = json['sellerName']?.toString() ??
+        json['seller']?['name']?.toString() ??
+        (prodObj is Map ? prodObj['brand']?.toString() : null);
+
     return CheckoutOrderItem(
       id: json['id']?.toString(),
       orderId: json['orderId']?.toString() ?? '',
-      productId: json['productId']?.toString() ?? '',
+      productId: prodId,
       skuId: json['skuId']?.toString(),
       sellerId: json['sellerId']?.toString(),
       buyerTypeAtPurchase: json['buyerTypeAtPurchase']?.toString(),
-      productName: json['productName']?.toString() ?? 'Product',
+      productName: prodName,
       quantity: json['quantity'] is int
           ? json['quantity']
           : int.tryParse(json['quantity']?.toString() ?? '1') ?? 1,
-      unitPrice: _parseDouble(json['unitPrice']),
+      unitPrice: _parseDouble(json['unitPrice'] ?? json['price'] ?? json['rate']),
       discount: _parseDouble(json['discount']),
       tax: _parseDouble(json['tax']),
-      itemTotal: _parseDouble(json['itemTotal']),
+      itemTotal: _parseDouble(json['itemTotal'] ?? json['total'] ?? json['amount']),
       status: json['status']?.toString() ?? 'placed',
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
-      sellerName: json['sellerName']?.toString(),
+      sellerName: sellerName,
     );
   }
 
@@ -262,11 +279,20 @@ class CheckoutData {
   });
 
   factory CheckoutData.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] ?? json['orderItems'] ?? json['OrderItems'] ?? json['details'];
+    final Map<String, dynamic> orderMap = json['order'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(json['order'])
+        : (json['id'] != null ? Map<String, dynamic>.from(json) : <String, dynamic>{});
+
+    if (!orderMap.containsKey('prescription')) {
+      if (json.containsKey('prescription')) {
+        orderMap['prescription'] = json['prescription'];
+      } 
+    }
+
     return CheckoutData(
-      order: CheckoutOrderDetails.fromJson(
-        json['order'] is Map<String, dynamic> ? json['order'] : {},
-      ),
-      items: (json['items'] as List<dynamic>?)
+      order: CheckoutOrderDetails.fromJson(orderMap),
+      items: (rawItems as List<dynamic>?)
               ?.map((e) => CheckoutOrderItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -283,11 +309,11 @@ class CheckoutData {
   Order toOrder(List<Product> availableProducts) {
     final List<CartItem> cartItems = items.map((item) {
       final matchingProd = availableProducts.firstWhere(
-        (p) => p.id == item.productId,
+        (p) => p.id == item.productId || (p.name.isNotEmpty && p.name.toLowerCase() == item.productName.toLowerCase()),
         orElse: () => Product(
           id: item.productId,
           name: item.productName,
-          brand: item.sellerName ?? 'Seller',
+          brand: (item.sellerName != null && item.sellerName!.isNotEmpty) ? item.sellerName! : 'Seller',
           image: 'assets/img2.png',
           price: item.unitPrice,
           originalPrice: item.unitPrice + item.discount,
@@ -325,6 +351,7 @@ class CheckoutData {
       orderNo: order.orderNo,
       paymentMode: order.paymentMode,
       deliveryAddress: formattedAddress,
+      prescription: order.prescription,
     );
   }
 }
@@ -341,12 +368,23 @@ class CheckoutApiResponse {
   });
 
   factory CheckoutApiResponse.fromJson(Map<String, dynamic> json) {
+    CheckoutData? data;
+    if (json['data'] is Map<String, dynamic>) {
+      final dataMap = Map<String, dynamic>.from(json['data']);
+      if (!dataMap.containsKey('prescription')) {
+        if (json.containsKey('prescription')) {
+          dataMap['prescription'] = json['prescription'];
+        }
+      }
+      data = CheckoutData.fromJson(dataMap);
+    } else if (json['data'] == null && (json.containsKey('prescription') || json.containsKey('id') || json.containsKey('orderNo'))) {
+      data = CheckoutData.fromJson(json);
+    }
+
     return CheckoutApiResponse(
       success: json['success'] == true,
       message: json['message']?.toString() ?? '',
-      data: json['data'] is Map<String, dynamic>
-          ? CheckoutData.fromJson(json['data'])
-          : null,
+      data: data,
     );
   }
 }
@@ -362,7 +400,8 @@ class MyOrderItem {
 
   factory MyOrderItem.fromJson(Map<String, dynamic> json) {
     final orderDetails = CheckoutOrderDetails.fromJson(json);
-    final itemsList = (json['items'] as List<dynamic>?)
+    final rawItems = json['items'] ?? json['orderItems'] ?? json['OrderItems'] ?? json['details'];
+    final itemsList = (rawItems as List<dynamic>?)
             ?.map((e) => CheckoutOrderItem.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
@@ -375,11 +414,11 @@ class MyOrderItem {
   Order toOrder(List<Product> availableProducts) {
     final List<CartItem> cartItems = items.map((item) {
       final matchingProd = availableProducts.firstWhere(
-        (p) => p.id == item.productId,
+        (p) => p.id == item.productId || (p.name.isNotEmpty && p.name.toLowerCase() == item.productName.toLowerCase()),
         orElse: () => Product(
           id: item.productId,
           name: item.productName,
-          brand: item.sellerName ?? 'Seller',
+          brand: (item.sellerName != null && item.sellerName!.isNotEmpty) ? item.sellerName! : 'Seller',
           image: 'assets/img2.png',
           price: item.unitPrice,
           originalPrice: item.unitPrice + item.discount,
@@ -417,6 +456,7 @@ class MyOrderItem {
       orderNo: orderDetails.orderNo,
       paymentMode: orderDetails.paymentMode,
       deliveryAddress: formattedAddress,
+      prescription: orderDetails.prescription,
     );
   }
 }
@@ -556,6 +596,7 @@ class SingleOrderDetailData {
       orderNo: order.orderNo,
       paymentMode: order.paymentMode,
       deliveryAddress: formattedAddress,
+      prescription: order.prescription,
     );
   }
 }

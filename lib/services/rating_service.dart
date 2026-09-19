@@ -3,10 +3,10 @@ import 'package:http/http.dart' as http;
 import '../models/rating_model.dart';
 
 class RatingService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/ratings';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/ratings';
 
   /// Add a rating/review
-  /// API: POST https://hospital.gntechnology.de/api/ratings
+  /// API: POST https://backend.chikitsakart.com/api/ratings
   /// Payload:
   /// {
   ///   "targetId": "f80778a9-5988-48e6-8647-4b2a90b719d2",
@@ -53,7 +53,8 @@ class RatingService {
           final Map<String, dynamic> body = jsonDecode(response.body);
           return AddRatingResponse(
             success: body['success'] == true,
-            message: body['message']?.toString() ??
+            message:
+                body['message']?.toString() ??
                 'Server returned status ${response.statusCode}',
           );
         } catch (_) {
@@ -72,7 +73,7 @@ class RatingService {
   }
 
   /// Get ratings for a target (e.g. product or doctor)
-  /// API: GET https://hospital.gntechnology.de/api/ratings/{targetType}/{targetId}
+  /// API: GET https://backend.chikitsakart.com/api/ratings/{targetType}/{targetId}
   static Future<GetRatingsResponse> getRatings({
     required String targetType,
     required String targetId,
@@ -106,8 +107,14 @@ class RatingService {
     }
   }
 
+  /// Get ratings and doctor details for a specific doctor
+  /// API: GET https://backend.chikitsakart.com/api/ratings/doctor/{doctorId}
+  static Future<GetRatingsResponse> getDoctorRatings(String doctorId) async {
+    return getRatings(targetType: 'doctor', targetId: doctorId);
+  }
+
   /// Get all ratings
-  /// API: GET https://hospital.gntechnology.de/api/ratings
+  /// API: GET https://backend.chikitsakart.com/api/ratings
   static Future<GetRatingsResponse> getAllRatings() async {
     final Uri url = Uri.parse(baseUrl);
     try {

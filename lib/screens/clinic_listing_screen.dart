@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../models/clinic_model.dart';
+import '../services/clinic_service.dart';
 import 'doctor_listing_screen.dart';
+import 'clinic_detail_screen.dart';
 import 'medicine_listing_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'cart_screen.dart';
@@ -26,16 +29,45 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
   String _sortBy = 'Highest Rated';
 
   // Selected Filter Checkboxes
-  final Set<String> _selectedSpecialties = {'Cardiology'};
+  final Set<String> _selectedSpecialties = {};
   final Set<String> _selectedServices = {};
   String _selectedAvailability = 'Today';
   double _patientRating = 4.0;
   RangeValues _feeRange = const RangeValues(0, 10000);
 
+  bool _isLoadingClinics = true;
+  List<Clinic> _apiClinics = [];
+  String? _clinicError;
+
   @override
   void initState() {
     super.initState();
     _appState.addListener(_onAppStateChanged);
+    _fetchClinics();
+  }
+
+  Future<void> _fetchClinics() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingClinics = true;
+      _clinicError = null;
+    });
+
+    final response = await ClinicService.getClinics();
+    if (!mounted) return;
+
+    if (response.success && response.clinics.isNotEmpty) {
+      setState(() {
+        _apiClinics = response.clinics.map((c) => Clinic.fromApiClinic(c)).toList();
+        _isLoadingClinics = false;
+      });
+    } else {
+      setState(() {
+        _clinicError = response.message.isNotEmpty ? response.message : 'Failed to fetch clinics.';
+        _apiClinics = _appState.mockClinics;
+        _isLoadingClinics = false;
+      });
+    }
   }
 
   @override
@@ -65,20 +97,21 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
   }
 
   List<Clinic> get _filteredClinics {
-    return _appState.mockClinics.where((clinic) {
+    final sourceList = _apiClinics.isNotEmpty ? _apiClinics : _appState.mockClinics;
+    return sourceList.where((clinic) {
       // Clinic Name Search
-      if (_clinicNameController.text.isNotEmpty) {
+      if (_clinicNameController.text.trim().isNotEmpty) {
         if (!clinic.name.toLowerCase().contains(
-          _clinicNameController.text.toLowerCase(),
+          _clinicNameController.text.trim().toLowerCase(),
         )) {
           return false;
         }
       }
 
       // Location Search
-      if (_locationController.text.isNotEmpty) {
+      if (_locationController.text.trim().isNotEmpty) {
         if (!clinic.location.toLowerCase().contains(
-          _locationController.text.toLowerCase(),
+          _locationController.text.trim().toLowerCase(),
         )) {
           return false;
         }
@@ -101,16 +134,6 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
           }
         }
         if (!matchService) return false;
-      }
-
-      // Rating Filter
-      if (clinic.rating < _patientRating) {
-        return false;
-      }
-
-      // Fee Filter
-      if (clinic.fee < _feeRange.start || clinic.fee > _feeRange.end) {
-        return false;
       }
 
       return true;
@@ -204,7 +227,7 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
                             children: [
                               TextSpan(
                                 text:
-                                    '${_filteredClinics.length + 18} Clinics ',
+                                    '${_filteredClinics.length} Clinics ',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -370,7 +393,7 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
                     ),
                     const SizedBox(width: 8),
                     const Text(
-                      'Hemlukart',
+                      'Chikitsakart',
                       style: TextStyle(
                         color: Color(0xFF237F79),
                         fontWeight: FontWeight.bold,
@@ -1065,6 +1088,15 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
 
   // Clinics List Grid
   Widget _buildClinicsGrid(bool isDesktop, double screenWidth) {
+    if (_isLoadingClinics) {
+      return const Padding(
+        padding: EdgeInsets.all(40.0),
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
     final clinics = _filteredClinics;
 
     if (clinics.isEmpty) {
@@ -1132,242 +1164,287 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
 
   // Clinic Card Widget matching design
   Widget _buildClinicCard(Clinic clinic) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border.withOpacity(0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        side: BorderSide(color: AppColors.border.withOpacity(0.6)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image Header Stack with Overlay Badges
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                child: Image.asset(
-                  clinic.image,
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 180,
-                    color: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(
-                      Icons.local_hospital,
-                      size: 48,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ClinicDetailScreen(
+                clinicId: clinic.id,
+                initialClinic: clinic,
               ),
-              // Top Badges Overlay
-              Positioned(
-                top: 10,
-                left: 10,
-                child: Row(
-                  children: [
-                    if (clinic.isVerified)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF147A6F),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'VERIFIED',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    if (clinic.isPremium)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F4740),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'PREMIUM',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        clinic.specialty.toUpperCase(),
-                        style: const TextStyle(
-                          color: AppColors.textDark,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // Card Content
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image Header Stack with Overlay Badges
+            Stack(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        clinic.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textDark,
+                (clinic.image.startsWith('http://') ||
+                        clinic.image.startsWith('https://'))
+                    ? Image.network(
+                        clinic.image,
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Image.asset(
+                          'assets/clinical_marketplace.jpg',
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : Image.asset(
+                        clinic.image.trim().isNotEmpty
+                            ? clinic.image.trim()
+                            : 'assets/clinical_marketplace.jpg',
+                        height: 180,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Image.asset(
+                          'assets/clinical_marketplace.jpg',
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 14),
-                          const SizedBox(width: 2),
-                          Text(
-                            clinic.rating.toString(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                              color: Color(0xFF92400E),
-                            ),
+                // Top Badges Overlay
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  child: Row(
+                    children: [
+                      if (clinic.isVerified)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 8),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      size: 14,
-                      color: AppColors.textLight,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        clinic.location,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textLight,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-                const Divider(height: 1),
-                const SizedBox(height: 12),
-
-                // Card Footer
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${clinic.doctorsCount} Doctors Available',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => DoctorListingScreen(
-                              systemFilter: clinic.specialty,
-                            ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF147A6F),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        );
-                      },
-                      child: Row(
-                        children: const [
-                          Text(
-                            'View Doctors',
+                          child: const Text(
+                            'VERIFIED',
                             style: TextStyle(
-                              fontSize: 12,
+                              color: Colors.white,
+                              fontSize: 9,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                          Icon(
-                            Icons.chevron_right,
-                            size: 16,
-                            color: AppColors.primary,
+                        ),
+                      if (clinic.isPremium)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                        ],
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F4740),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'PREMIUM',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          clinic.specialty.toUpperCase(),
+                          style: const TextStyle(
+                            color: AppColors.textDark,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+
+            // Card Content
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          clinic.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.star, color: Colors.amber, size: 14),
+                            const SizedBox(width: 2),
+                            Text(
+                              clinic.rating.toString(),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 14,
+                        color: AppColors.textLight,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          clinic.location,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+
+                  // Card Footer
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${clinic.doctorsCount} Doctors Available',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ClinicDetailScreen(
+                                    clinicId: clinic.id,
+                                    initialClinic: clinic,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              child: Text(
+                                'View Clinic',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DoctorListingScreen(
+                                    systemFilter: clinic.specialty,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Row(
+                              children: [
+                                Text(
+                                  'Doctors',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

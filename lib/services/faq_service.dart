@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import '../models/faq_model.dart';
 
 class FaqService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/faqs';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/faqs';
 
-  /// API: GET https://hospital.gntechnology.de/api/faqs
+  /// API: GET https://backend.chikitsakart.com/api/faqs
   static Future<FaqApiResponse> getFaqs() async {
     final Uri url = Uri.parse(baseUrl);
     try {

@@ -3,9 +3,9 @@ import 'package:http/http.dart' as http;
 import '../models/brand_model.dart';
 
 class BrandService {
-  static const String baseUrl = 'https://hospital.gntechnology.de/api/brands';
+  static const String baseUrl = 'https://backend.chikitsakart.com/api/brands';
 
-  /// API: GET https://hospital.gntechnology.de/api/brands
+  /// API: GET https://backend.chikitsakart.com/api/brands
   static Future<BrandApiResponse> getBrands() async {
     final Uri url = Uri.parse(baseUrl);
     try {
