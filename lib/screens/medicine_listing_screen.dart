@@ -12,10 +12,11 @@ import 'login_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'doctor_profile_screen.dart';
 import 'book_appointment_screen.dart';
+import 'my_prescriptions_screen.dart';
+import 'my_orders_screen.dart';
 import '../models/category_model.dart';
 import '../services/category_service.dart';
 import '../widgets/product_quantity_selector.dart';
-import '../models/doctor_model.dart';
 import '../services/doctor_service.dart';
 import '../models/testimonial_model.dart';
 import '../services/testimonial_service.dart';
@@ -97,34 +98,41 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
 
   final List<Map<String, dynamic>> _quickActions = [
     {
-      'name': 'Upload\nPrescription',
-      'icon': Icons.upload_file,
-      'color': const Color(0xFF0D9488),
-    },
-    {
-      'name': 'Consult\nDoctor',
-      'icon': Icons.medical_services_outlined,
-      'color': const Color(0xFF2563EB),
-    },
-    {
-      'name': 'Find\nClinic',
-      'icon': Icons.local_hospital_outlined,
-      'color': const Color(0xFF059669),
-    },
-    {
+      'id': 'book_appointment',
       'name': 'Book\nAppointment',
       'icon': Icons.calendar_month_outlined,
       'color': const Color(0xFF7C3AED),
     },
     {
+      'id': 'consult_doctor',
+      'name': 'Consult\nDoctor',
+      'icon': Icons.medical_services_outlined,
+      'color': const Color(0xFF2563EB),
+    },
+    {
+      'id': 'find_clinic',
+      'name': 'Find\nClinic',
+      'icon': Icons.local_hospital_outlined,
+      'color': const Color(0xFF059669),
+    },
+    {
+      'id': 'view_prescription',
+      'name': 'View\nPrescription',
+      'icon': Icons.description_outlined,
+      'color': const Color(0xFF0D9488),
+    },
+    {
+      'id': 'order_history',
       'name': 'Order\nHistory',
       'icon': Icons.receipt_long_outlined,
       'color': const Color(0xFFD97706),
     },
     {
+      'id': 'lab_tests',
       'name': 'Lab\nTests',
       'icon': Icons.science_outlined,
       'color': const Color(0xFFDB2777),
+      'isComingSoon': true,
     },
   ];
 
@@ -329,7 +337,10 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -950,28 +961,56 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
         itemBuilder: (context, idx) {
           final qa = _quickActions[idx];
           return GestureDetector(
-            onTap: () {
-              if (idx == 0) {
-                _showUploadPrescriptionDialog(context);
-              } else if (idx == 1) {
+            onTap: () async {
+              final id = qa['id'] ?? '';
+              if (id == 'view_prescription') {
+                if (await LoginScreen.checkAndNavigate(context)) {
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MyPrescriptionsScreen(),
+                      ),
+                    );
+                  }
+                }
+              } else if (id == 'consult_doctor') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const DoctorConsultationScreen(),
                   ),
                 );
-              } else if (idx == 2) {
+              } else if (id == 'find_clinic') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const ClinicListingScreen(),
                   ),
                 );
-              } else if (idx == 3) {
+              } else if (id == 'book_appointment') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const DoctorListingScreen(),
+                  ),
+                );
+              } else if (id == 'order_history') {
+                if (await LoginScreen.checkAndNavigate(context)) {
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MyOrdersScreen(),
+                      ),
+                    );
+                  }
+                }
+              } else if (id == 'lab_tests' || qa['isComingSoon'] == true) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('🧪 Lab Tests are coming soon! Stay tuned.'),
+                    behavior: SnackBarBehavior.floating,
                   ),
                 );
               } else {
@@ -984,36 +1023,67 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                 );
               }
             },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: (qa['color'] as Color).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: (qa['color'] as Color).withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    qa['icon'] as IconData,
-                    color: qa['color'] as Color,
-                    size: 22,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    qa['name'] as String,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: qa['color'] as Color,
-                      height: 1.1,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: (qa['color'] as Color).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (qa['color'] as Color).withValues(alpha: 0.2),
                     ),
                   ),
-                ],
-              ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        qa['icon'] as IconData,
+                        color: qa['color'] as Color,
+                        size: 22,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        qa['name'] as String,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: qa['color'] as Color,
+                          height: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (qa['isComingSoon'] == true)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDB2777),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'SOON',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 7,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           );
         },

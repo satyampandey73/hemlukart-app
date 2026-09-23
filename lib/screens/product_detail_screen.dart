@@ -104,7 +104,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _startPromoAutoSlide() {

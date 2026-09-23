@@ -31,7 +31,10 @@ class _ShippingAddressesScreenState extends State<ShippingAddressesScreen> {
   }
 
   void _onStateChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _showAddressFormModal({ShippingAddressModel? addressToEdit}) {

@@ -80,7 +80,10 @@ class _ClinicListingScreenState extends State<ClinicListingScreen> {
   }
 
   void _onAppStateChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _clearAllFilters() {

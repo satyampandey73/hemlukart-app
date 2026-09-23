@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../services/appointment_service.dart';
@@ -40,7 +41,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   bool _isCallEnded = false;   // guard: prevents duplicate end triggers
 
   Timer? _callDurationTimer;
-  Timer? _activeCallCheckTimer;
   int _callDurationSeconds = 0;
 
   @override
@@ -55,7 +55,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   @override
   void dispose() {
     _callDurationTimer?.cancel();
-    _activeCallCheckTimer?.cancel();
     if (!_isEndingCall) {
       _callManager.endCall(widget.appointmentId);
     }
@@ -67,7 +66,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _isCallEnded = true;
     _isEndingCall = true;
     _callDurationTimer?.cancel();
-    _activeCallCheckTimer?.cancel();
 
     final token = (widget.isDoctor ? _appState.doctorToken : _appState.authToken) ?? _appState.activeChatToken;
     if (widget.videoCallId != null && token != null) {
@@ -122,37 +120,30 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       await _handleRemoteCallEnded();
     };
 
-    final token = (widget.isDoctor ? _appState.doctorToken : _appState.authToken) ?? _appState.activeChatToken;
+    String? token = (widget.isDoctor ? _appState.doctorToken : _appState.authToken) ?? _appState.activeChatToken;
+    if (token == null || token.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      token = (widget.isDoctor ? prefs.getString('doctor_token') : prefs.getString('auth_token')) ??
+          prefs.getString('auth_token') ??
+          prefs.getString('doctor_token');
+    }
 
     if (token == null || token.isEmpty) {
       setState(() {
-        _statusMessage = 'Authentication error: Not logged in';
+        _statusMessage = 'Authentication error: Not logged in. Please log in to join.';
       });
       return;
     }
 
-    // Check active call status every 3s as a fail-safe detection
-    _activeCallCheckTimer?.cancel();
-    _activeCallCheckTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      if (!mounted || _isEndingCall || _isCallEnded) return;
-      try {
-        final checkToken = (widget.isDoctor ? _appState.doctorToken : _appState.authToken) ?? _appState.activeChatToken;
-        if (checkToken == null || checkToken.isEmpty) return;
-        final res = await VideoCallService.getActiveVideoCall(
-          appointmentId: widget.appointmentId,
-          token: checkToken,
-        );
-        if (!res.exists || res.videoCall == null || res.videoCall!.status.toLowerCase() == 'ended' || res.videoCall!.status.toLowerCase() == 'completed') {
-          print('[VideoCallScreen] Active call poll indicates call has ended.');
-          await _handleRemoteCallEnded();
-        }
-      } catch (_) {}
-    });
+    final String? userId = widget.isDoctor
+        ? (_appState.currentDoctorProfile?.id ?? _appState.currentUser?.id)
+        : _appState.currentUser?.id;
 
     await _callManager.startCall(
       appointmentId: widget.appointmentId,
       token: token,
       isDoctor: widget.isDoctor,
+      userId: userId,
     );
     if (mounted) setState(() {});
   }
@@ -183,7 +174,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     });
 
     _callDurationTimer?.cancel();
-    _activeCallCheckTimer?.cancel();
 
     final token = (widget.isDoctor ? _appState.doctorToken : _appState.authToken) ?? _appState.activeChatToken;
 
@@ -232,78 +222,81 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         child: Stack(
           children: [
             // Remote Video View (Fullscreen)
-            Positioned.fill(
-              child: (_callManager.isPeerConnected &&
-                      _callManager.hasRemoteVideo &&
-                      _callManager.remoteRenderer.textureId != null)
-                  ? RTCVideoView(
-                      _callManager.remoteRenderer,
-                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                    )
-                  : Container(
-                      color: const Color(0xFF0F172A),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            backgroundImage: (widget.peerAvatar != null && widget.peerAvatar!.startsWith('http'))
-                                ? NetworkImage(widget.peerAvatar!) as ImageProvider
-                                : const AssetImage('assets/d1.jpg'),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            widget.peerName,
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            widget.peerSubtitle ?? (widget.isDoctor ? 'Patient' : 'Ayush Doctor'),
-                            style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.7)),
-                          ),
-                          const SizedBox(height: 24),
-                          if (!_callManager.isPeerConnected) ...[
-                            const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                            ),
-                            const SizedBox(height: 12),
-                          ] else ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.mic, color: Colors.green, size: 16),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Connected (Audio Only)',
-                                    style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              _statusMessage,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                          ),
-                        ],
+            if (_callManager.remoteRenderer.textureId != null)
+              Positioned.fill(
+                child: RTCVideoView(
+                  _callManager.remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                ),
+              ),
+
+            // Waiting / Audio-Only Overlay (shows when peer is not connected or video is absent)
+            if (!_callManager.isPeerConnected || !_callManager.hasRemoteVideo)
+              Positioned.fill(
+                child: Container(
+                  color: const Color(0xFF0F172A),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 48,
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        backgroundImage: (widget.peerAvatar != null && widget.peerAvatar!.startsWith('http'))
+                            ? NetworkImage(widget.peerAvatar!) as ImageProvider
+                            : const AssetImage('assets/d1.jpg'),
                       ),
-                    ),
-            ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.peerName,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.peerSubtitle ?? (widget.isDoctor ? 'Patient' : 'Ayush Doctor'),
+                        style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.7)),
+                      ),
+                      const SizedBox(height: 24),
+                      if (!_callManager.isPeerConnected) ...[
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                        ),
+                        const SizedBox(height: 12),
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.mic, color: Colors.green, size: 16),
+                              SizedBox(width: 6),
+                              Text(
+                                'Connected (Audio Only)',
+                                style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
+                          _statusMessage,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // Local Video Preview (PiP Top-Right Window)
             Positioned(

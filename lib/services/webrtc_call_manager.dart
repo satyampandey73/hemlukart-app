@@ -24,7 +24,7 @@ class WebRtcCallManager {
   bool get hasRemoteVideo {
     if (_remoteStream == null) return false;
     final videoTracks = _remoteStream!.getVideoTracks();
-    return videoTracks.isNotEmpty && videoTracks.any((t) => t.enabled);
+    return videoTracks.isNotEmpty;
   }
 
   Timer? _fallbackOfferTimer;
@@ -45,9 +45,10 @@ class WebRtcCallManager {
     required String appointmentId,
     required String token,
     required bool isDoctor,
+    String? userId,
   }) async {
     print(
-      '[WebRTC] Starting video call for appointment: $appointmentId (isDoctor: $isDoctor)',
+      '[WebRTC] Starting video call for appointment: $appointmentId (isDoctor: $isDoctor, userId: $userId)',
     );
     onCallStatusChanged?.call('Connecting to room signaling server...');
 
@@ -60,6 +61,7 @@ class WebRtcCallManager {
       token: token,
       appointmentId: appointmentId,
       isDoctor: isDoctor,
+      userId: userId,
     );
   }
 
@@ -113,6 +115,7 @@ class WebRtcCallManager {
     required String token,
     required String appointmentId,
     required bool isDoctor,
+    String? userId,
   }) {
     final String cleanToken = token.replaceAll('Bearer ', '').trim();
     final String bearerToken = 'Bearer $cleanToken';
@@ -141,38 +144,70 @@ class WebRtcCallManager {
           .enableReconnection()
           .build(),
     );
+    _socket?.connect();
 
     _socket?.onConnect((_) {
       isConnected = true;
       print(
         '[WebRTC Socket] Connected successfully! Socket ID: ${_socket?.id}',
       );
-      onCallStatusChanged?.call('Connected to room signaling server');
+      onCallStatusChanged?.call(isDoctor
+          ? 'Connected to room. Waiting for patient to join...'
+          : 'Connected to room. Waiting for doctor to join...');
 
-      // Join room with appointmentId object
-      print('[WebRTC Socket] Emitting join-room for: $appointmentId');
+      final roomPayload = {
+        'appointmentId': appointmentId,
+        'roomId': appointmentId,
+        'role': isDoctor ? 'doctor' : 'patient',
+        if (userId != null && userId.isNotEmpty) 'userId': userId,
+      };
+
+      print('[WebRTC Socket] Emitting join-room: $roomPayload');
       _socket?.emitWithAck(
         'join-room',
-        {'appointmentId': appointmentId},
-        ack: (response) {
-          print('[WebRTC Socket] join-room object ack response: $response');
+        roomPayload,
+        ack: (response) async {
+          print('[WebRTC Socket] join-room ack response: $response');
+          final respMap = _parseMap(response);
+          if (respMap != null && (respMap['success'] == true || respMap['role'] != null)) {
+            final int usersInRoom = respMap['usersInRoom'] is int
+                ? respMap['usersInRoom'] as int
+                : int.tryParse(respMap['usersInRoom']?.toString() ?? '0') ?? 0;
+            print('[WebRTC Socket] Joined as ${isDoctor ? "doctor" : "patient"}. usersInRoom: $usersInRoom');
+
+            if (usersInRoom > 1 && isDoctor) {
+              Future.delayed(const Duration(milliseconds: 1000), () async {
+                if (!isPeerConnected && isConnected) {
+                  print('[WebRTC] Doctor detected peer already in room ($usersInRoom users). Creating initial offer...');
+                  await _createPeerConnection(appointmentId);
+                  await _createOffer(appointmentId);
+                }
+              });
+            } else if (usersInRoom == 1 && !isDoctor) {
+              print('[WebRTC Socket] Patient alone in room. Emitting patient-ready event to server.');
+              _socket?.emit('patient-ready', {
+                'roomId': appointmentId,
+                'appointmentId': appointmentId,
+              });
+            }
+          }
         },
       );
+      _socket?.emit('join-room', appointmentId);
+      _socket?.emit('join', roomPayload);
+      _socket?.emit('join', appointmentId);
 
-      // If Doctor joins and peer connection is not yet initiated after 3s, create offer as fallback
-      if (isDoctor) {
-        _fallbackOfferTimer?.cancel();
-        _fallbackOfferTimer = Timer(const Duration(milliseconds: 3000), () async {
-          if (_peerConnection == null && isConnected) {
-            print(
-              '[WebRTC Fallback] Doctor fallback timer triggered. Creating PeerConnection & Offer...',
-            );
-            onCallStatusChanged?.call('Initializing video offer...');
-            await _createPeerConnection(appointmentId);
-            await _createOffer(appointmentId);
-          }
-        });
-      }
+      // Offer negotiation fallback timer (safety fallback):
+      _fallbackOfferTimer?.cancel();
+      _fallbackOfferTimer = Timer(Duration(milliseconds: isDoctor ? 2500 : 5500), () async {
+        if (!isPeerConnected && isConnected) {
+          print(
+            '[WebRTC Fallback] Negotiation timer triggered (isDoctor: $isDoctor). Creating PeerConnection & Offer...',
+          );
+          await _createPeerConnection(appointmentId);
+          await _createOffer(appointmentId);
+        }
+      });
     });
 
     _socket?.onConnectError((err) {
@@ -185,7 +220,7 @@ class WebRtcCallManager {
           'Authentication failed ($msg). Please log out and log in again.',
         );
       } else {
-        onCallStatusChanged?.call('Socket connection error: $msg');
+        onCallStatusChanged?.call('Connecting to room server...');
       }
     });
 
@@ -193,23 +228,52 @@ class WebRtcCallManager {
       print('[WebRTC Socket ERROR] Socket error: $err');
     });
 
-    // 1. User Joined event
-    _socket?.on('user-joined', (data) async {
-      print('[WebRTC Socket EVENT] user-joined received: $data');
+    // Helper to extract SDP map from various backend response shapes
+    Map? extractSdp(dynamic data, String type) {
+      final parsed = _parseMap(data);
+      if (parsed == null) return null;
+      if (parsed['sdp'] != null) return parsed;
+      final inner = parsed[type] ?? parsed['description'] ?? parsed['data'];
+      final innerMap = _parseMap(inner);
+      if (innerMap != null && innerMap['sdp'] != null) return innerMap;
+      if (inner is String && inner.contains('v=0')) {
+        return {'sdp': inner, 'type': type};
+      }
+      return null;
+    }
+
+    // Peer Arrival / Readiness events (matching website)
+    void handlePeerArrival(String eventName, dynamic data) async {
+      print('[WebRTC Socket EVENT] $eventName received: $data');
       onCallStatusChanged?.call(
-        'Peer joined video call. Establishing WebRTC stream...',
+        'Participant joined video call. Establishing WebRTC stream...',
       );
       await _createPeerConnection(appointmentId);
-      await _createOffer(appointmentId);
-    });
+      if (isDoctor) {
+        // Doctor creates offer when peer joins or patient signals readiness
+        await _createOffer(appointmentId);
+      } else {
+        // Patient prepares PeerConnection and awaits Doctor's offer
+        _fallbackOfferTimer?.cancel();
+        _fallbackOfferTimer = Timer(const Duration(seconds: 4), () async {
+          if (!isPeerConnected && isConnected) {
+            print('[WebRTC Fallback] Patient waiting for doctor offer timed out (4s). Generating offer as fallback...');
+            await _createOffer(appointmentId);
+          }
+        });
+      }
+    }
+
+    _socket?.on('user-joined', (data) => handlePeerArrival('user-joined', data));
+    _socket?.on('patient-ready', (data) => handlePeerArrival('patient-ready', data));
+    _socket?.on('peer-ready', (data) => handlePeerArrival('peer-ready', data));
+    _socket?.on('peer-joined', (data) => handlePeerArrival('peer-joined', data));
 
     // 2. Receive WebRTC Offer
     _socket?.on('offer', (data) async {
       print('[WebRTC Socket EVENT] offer received: $data');
       onCallStatusChanged?.call('Receiving incoming video call offer...');
-      final parsed = _parseMap(data);
-      final offerData = parsed != null ? (parsed['offer'] ?? parsed) : null;
-      final offerMap = _parseMap(offerData);
+      final offerMap = extractSdp(data, 'offer');
       if (offerMap != null) {
         await _createPeerConnection(appointmentId);
         await _handleOffer(appointmentId, offerMap);
@@ -220,37 +284,62 @@ class WebRtcCallManager {
     _socket?.on('answer', (data) async {
       print('[WebRTC Socket EVENT] answer received: $data');
       onCallStatusChanged?.call('Receiving video call answer...');
-      final parsed = _parseMap(data);
-      final answerData = parsed != null ? (parsed['answer'] ?? parsed) : null;
-      final answerMap = _parseMap(answerData);
+      final answerMap = extractSdp(data, 'answer');
       if (answerMap != null) {
         await _handleAnswer(answerMap);
       }
     });
 
     // 4. Receive ICE candidate
-    _socket?.on('ice-candidate', (data) async {
-      print('[WebRTC Socket EVENT] ice-candidate received: $data');
+    void handleCandidate(dynamic data) async {
+      print('[WebRTC Socket EVENT] candidate received: $data');
       final parsed = _parseMap(data);
-      final candData = parsed != null ? (parsed['candidate'] ?? parsed) : null;
+      if (parsed == null) return;
+      final candData = parsed['candidate'] ?? parsed;
       final candMap = _parseMap(candData);
+
+      String candidateStr = '';
+      String sdpMid = '';
+      int lineIndex = 0;
+
       if (candMap != null) {
-        int lineIndex = 0;
-        if (candMap['sdpMLineIndex'] != null) {
-          if (candMap['sdpMLineIndex'] is int) {
-            lineIndex = candMap['sdpMLineIndex'] as int;
-          } else if (candMap['sdpMLineIndex'] is String) {
-            lineIndex = int.tryParse(candMap['sdpMLineIndex'] as String) ?? 0;
+        if (candMap['candidate'] is Map) {
+          final inner = candMap['candidate'] as Map;
+          candidateStr = inner['candidate']?.toString() ?? '';
+          sdpMid = inner['sdpMid']?.toString() ?? '';
+          final lineVal = inner['sdpMLineIndex'];
+          if (lineVal is int) {
+            lineIndex = lineVal;
+          } else if (lineVal != null) {
+            lineIndex = int.tryParse(lineVal.toString()) ?? 0;
+          }
+        } else {
+          candidateStr = candMap['candidate']?.toString() ?? '';
+          sdpMid = candMap['sdpMid']?.toString() ?? '';
+          final lineVal = candMap['sdpMLineIndex'];
+          if (lineVal is int) {
+            lineIndex = lineVal;
+          } else if (lineVal != null) {
+            lineIndex = int.tryParse(lineVal.toString()) ?? 0;
           }
         }
+      } else if (parsed['candidate'] is String) {
+        candidateStr = parsed['candidate'].toString();
+        sdpMid = parsed['sdpMid']?.toString() ?? '';
+      }
+
+      if (candidateStr.isNotEmpty) {
         final candidate = RTCIceCandidate(
-          candMap['candidate']?.toString() ?? '',
-          candMap['sdpMid']?.toString() ?? '',
+          candidateStr,
+          sdpMid,
           lineIndex,
         );
         await _addIceCandidate(candidate);
       }
-    });
+    }
+
+    _socket?.on('ice-candidate', handleCandidate);
+    _socket?.on('candidate', handleCandidate);
 
     // 5. Peer Left / Call Ended events
     void handlePeerLeft(String eventName, dynamic data) {
@@ -286,11 +375,23 @@ class WebRtcCallManager {
         {'urls': 'stun:stun.l.google.com:19302'},
         {'urls': 'stun:stun1.l.google.com:19302'},
         {'urls': 'stun:stun2.l.google.com:19302'},
-        {'urls': 'stun:stun3.l.google.com:19302'},
-        {'urls': 'stun:stun4.l.google.com:19302'},
+        {
+          'urls': 'turn:openrelay.metered.ca:80',
+          'username': 'openrelayproject',
+          'credential': 'openrelayproject',
+        },
+        {
+          'urls': 'turn:openrelay.metered.ca:443',
+          'username': 'openrelayproject',
+          'credential': 'openrelayproject',
+        },
+        {
+          'urls': 'turn:openrelay.metered.ca:443?transport=tcp',
+          'username': 'openrelayproject',
+          'credential': 'openrelayproject',
+        },
         {'urls': 'stun:global.stun.twilio.com:3478'},
         {'urls': 'stun:stun.services.mozilla.com'},
-        {'urls': 'stun:stun.stunprotocol.org:3478'},
       ],
       'sdpSemantics': 'unified-plan',
       'iceTransportPolicy': 'all',
@@ -339,18 +440,24 @@ class WebRtcCallManager {
 
     // Send local ICE candidates to peer via socket
     _peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
+      if (candidate.candidate == null || candidate.candidate!.isEmpty) return;
       print(
         '[WebRTC EVENT] Generated local ICE candidate: ${candidate.sdpMid}',
       );
-      _socket?.emit('ice-candidate', {
+      final candMap = {
+        'candidate': candidate.candidate,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      };
+      final payload = {
         'roomId': appointmentId,
         'appointmentId': appointmentId,
-        'candidate': {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        },
-      });
+        'candidate': candMap,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      };
+      _socket?.emit('ice-candidate', payload);
+      _socket?.emit('candidate', payload);
     };
 
     _peerConnection?.onIceConnectionState = (RTCIceConnectionState state) {
@@ -369,10 +476,10 @@ class WebRtcCallManager {
         _restartIce(appointmentId);
       } else if (state ==
           RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
-        onCallStatusChanged?.call('Participant disconnected. Ending call in 3s...');
+        onCallStatusChanged?.call('Participant network reconnecting...');
         _peerDisconnectTimer?.cancel();
-        _peerDisconnectTimer = Timer(const Duration(seconds: 3), () {
-          print('[WebRTC] ICE Disconnect timeout reached (3s). Triggering onCallEnded.');
+        _peerDisconnectTimer = Timer(const Duration(seconds: 15), () {
+          print('[WebRTC] ICE Disconnect timeout reached (15s). Triggering onCallEnded.');
           isPeerConnected = false;
           onCallEnded?.call();
         });
@@ -389,9 +496,10 @@ class WebRtcCallManager {
         _peerDisconnectTimer?.cancel();
         isPeerConnected = true;
       } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+        onCallStatusChanged?.call('Participant network reconnecting...');
         _peerDisconnectTimer?.cancel();
-        _peerDisconnectTimer = Timer(const Duration(seconds: 3), () {
-          print('[WebRTC] PeerConnection Disconnect timeout reached (3s). Triggering onCallEnded.');
+        _peerDisconnectTimer = Timer(const Duration(seconds: 15), () {
+          print('[WebRTC] PeerConnection Disconnect timeout reached (15s). Triggering onCallEnded.');
           isPeerConnected = false;
           onCallEnded?.call();
         });
@@ -460,6 +568,9 @@ class WebRtcCallManager {
   }
 
   Future<void> _handleOffer(String appointmentId, Map offerData) async {
+    if (_peerConnection == null) {
+      await _createPeerConnection(appointmentId);
+    }
     if (_peerConnection == null) return;
 
     try {
@@ -468,6 +579,14 @@ class WebRtcCallManager {
       final String type = offerData['type']?.toString() ?? 'offer';
 
       final RTCSessionDescription description = RTCSessionDescription(sdp, type);
+
+      // Handle collision (glare) if local offer was already in flight
+      final state = _peerConnection!.signalingState;
+      if (state == RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+        print('[WebRTC] Signaling collision detected. Rolling back local offer to accept incoming offer.');
+        await _peerConnection!.setLocalDescription(RTCSessionDescription('', 'rollback'));
+      }
+
       await _peerConnection!.setRemoteDescription(description);
 
       // Drain queued ICE candidates received before remote description
@@ -513,6 +632,7 @@ class WebRtcCallManager {
   }
 
   Future<void> _addIceCandidate(RTCIceCandidate candidate) async {
+    if (candidate.candidate == null || candidate.candidate!.isEmpty) return;
     if (_peerConnection != null) {
       final remoteDesc = await _peerConnection!.getRemoteDescription();
       if (remoteDesc != null) {

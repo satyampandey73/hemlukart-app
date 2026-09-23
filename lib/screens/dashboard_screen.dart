@@ -7,6 +7,7 @@ import 'product_catalog_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'account_settings_screen.dart';
 import 'my_appointments_screen.dart';
+import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int initialTab;
@@ -23,7 +24,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialTab;
+    _currentIndex = (widget.initialTab == 4 && !_appState.isLoggedIn)
+        ? 0
+        : widget.initialTab;
     _appState.addListener(_rebuild);
     _appState.onNewChatNotification = _handlePatientChatNotification;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -100,7 +103,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _onTabChanged(int index) {
+  Future<void> _onTabChanged(int index) async {
+    if (index == 4) {
+      if (!_appState.isLoggedIn) {
+        final loggedIn = await LoginScreen.checkAndNavigate(context);
+        if (!loggedIn || !_appState.isLoggedIn) {
+          return;
+        }
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _currentIndex = index;
     });

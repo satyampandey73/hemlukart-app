@@ -43,9 +43,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   }
 
   void _onStateChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _fetchOrderDetail() async {

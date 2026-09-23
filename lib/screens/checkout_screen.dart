@@ -54,7 +54,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _onStateChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

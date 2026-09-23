@@ -5,6 +5,7 @@ import '../constants/order_status.dart';
 import 'order_tracking_screen.dart';
 import 'product_detail_screen.dart';
 import 'medicine_listing_screen.dart';
+import 'login_screen.dart';
 
 class MyOrdersScreen extends StatefulWidget {
   const MyOrdersScreen({super.key});
@@ -33,6 +34,9 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     });
 
     if (_appState.isLoggedIn) {
+      if (_appState.apiProducts.isEmpty) {
+        _appState.fetchProductsFromApi();
+      }
       _appState.fetchMyOrders();
     }
   }
@@ -46,120 +50,22 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
   }
 
   void _onAppStateChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _refreshOrders() async {
+    if (_appState.apiProducts.isEmpty) {
+      _appState.fetchProductsFromApi();
+    }
     await _appState.fetchMyOrders();
   }
 
-  // Get orders list (uses state orders or fallback mock orders covering enum statuses if empty)
+  // Get orders list strictly from live API state
   List<Order> _getAllOrders() {
-    if (_appState.orders.isNotEmpty) {
-      return _appState.orders;
-    }
-
-    // Fallback demonstration orders if appState has zero orders
-    final sampleProd1 = _appState.products.isNotEmpty
-        ? _appState.products[0]
-        : const Product(
-            id: 'p1',
-            name: 'Paracetamol 500mg Tablet',
-            brand: 'Dolo',
-            category: 'Medicine',
-            description: 'Effective fever and pain reliever tablet.',
-            price: 45.0,
-            originalPrice: 50.0,
-            rating: 4.5,
-            reviewsCount: 120,
-            image: 'assets/img1.png',
-            isOutOfStock: false,
-          );
-
-    final sampleProd2 = _appState.products.length > 1
-        ? _appState.products[1]
-        : const Product(
-            id: 'p2',
-            name: 'Vitamin C 1000mg Chewable',
-            brand: 'Limcee',
-            category: 'Supplements',
-            description: 'Immunity booster vitamin c tablets.',
-            price: 180.0,
-            originalPrice: 200.0,
-            rating: 4.8,
-            reviewsCount: 95,
-            image: 'assets/img2.png',
-            isOutOfStock: false,
-          );
-
-    return [
-      Order(
-        id: 'OD05062026105',
-        orderNo: 'OD05062026105',
-        items: [
-          CartItem(product: sampleProd1, quantity: 2),
-        ],
-        totalAmount: 90.0,
-        discount: 10.0,
-        status: 'out_for_delivery',
-        orderDate: '31 Jul 2026, 09:15 AM',
-        paymentMode: 'Online Payment (UPI)',
-        deliveryAddress: 'Flat 402, Sunshine Heights, MG Road, Mumbai',
-      ),
-      Order(
-        id: 'OD05062026101',
-        orderNo: 'OD05062026101',
-        items: [
-          CartItem(product: sampleProd1, quantity: 2),
-          CartItem(product: sampleProd2, quantity: 1),
-        ],
-        totalAmount: 270.0,
-        discount: 30.0,
-        status: 'dispatched',
-        orderDate: '30 Jul 2026, 02:45 PM',
-        paymentMode: 'Online Payment (UPI)',
-        deliveryAddress: 'Flat 402, Sunshine Heights, MG Road, Mumbai',
-      ),
-      Order(
-        id: 'OD05062026098',
-        orderNo: 'OD05062026098',
-        items: [
-          CartItem(product: sampleProd2, quantity: 2),
-        ],
-        totalAmount: 360.0,
-        discount: 40.0,
-        status: 'delivered',
-        orderDate: '24 Jul 2026, 11:15 AM',
-        paymentMode: 'Cash on Delivery (COD)',
-        deliveryAddress: 'Flat 402, Sunshine Heights, MG Road, Mumbai',
-      ),
-      Order(
-        id: 'OD05062026085',
-        orderNo: 'OD05062026085',
-        items: [
-          CartItem(product: sampleProd1, quantity: 1),
-        ],
-        totalAmount: 45.0,
-        discount: 5.0,
-        status: 'rto',
-        orderDate: '20 Jul 2026, 04:30 PM',
-        paymentMode: 'Online Payment',
-        deliveryAddress: 'Flat 402, Sunshine Heights, MG Road, Mumbai',
-      ),
-      Order(
-        id: 'OD05062026082',
-        orderNo: 'OD05062026082',
-        items: [
-          CartItem(product: sampleProd1, quantity: 1),
-        ],
-        totalAmount: 45.0,
-        discount: 5.0,
-        status: 'confirmed',
-        orderDate: '18 Jul 2026, 09:30 AM',
-        paymentMode: 'Online Payment (Debit Card)',
-        deliveryAddress: 'Flat 402, Sunshine Heights, MG Road, Mumbai',
-      ),
-    ];
+    return _appState.orders;
   }
 
   bool _matchesStatus(Order order, int tabIndex) {
@@ -267,15 +173,84 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildOrdersList(allOrders, 0),
-          _buildOrdersList(allOrders, 1),
-          _buildOrdersList(allOrders, 2),
-          _buildOrdersList(allOrders, 3),
-          _buildOrdersList(allOrders, 4),
-        ],
+      body: !_appState.isLoggedIn
+          ? _buildLoggedOutView()
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOrdersList(allOrders, 0),
+                _buildOrdersList(allOrders, 1),
+                _buildOrdersList(allOrders, 2),
+                _buildOrdersList(allOrders, 3),
+                _buildOrdersList(allOrders, 4),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildLoggedOutView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.shopping_bag_outlined,
+                size: 64,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Sign in to view your orders',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Keep track of your purchases, deliveries, and order history.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textLight, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: 200,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Sign In',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

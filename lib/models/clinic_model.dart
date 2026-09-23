@@ -148,3 +148,61 @@ class SingleClinicApiResponse {
     );
   }
 }
+
+class MyClinicsApiResponse {
+  final bool success;
+  final List<ApiClinic> clinics;
+  final String message;
+
+  MyClinicsApiResponse({
+    required this.success,
+    required this.clinics,
+    this.message = '',
+  });
+
+  factory MyClinicsApiResponse.fromJson(Map<String, dynamic> json) {
+    final rawList = json['clinics'] ?? json['data'] ?? json['myClinics'];
+    return MyClinicsApiResponse(
+      success: json['success'] ?? true,
+      clinics: rawList != null && rawList is List
+          ? rawList
+              .whereType<Map<String, dynamic>>()
+              .map((e) => ApiClinic.fromJson(e))
+              .toList()
+          : [],
+      message: json['message']?.toString() ?? '',
+    );
+  }
+}
+
+class ClinicMutationResponse {
+  final bool success;
+  final ApiClinic? clinic;
+  final String message;
+
+  ClinicMutationResponse({
+    required this.success,
+    this.clinic,
+    this.message = '',
+  });
+
+  factory ClinicMutationResponse.fromJson(Map<String, dynamic> json) {
+    bool isSuccess = json['success'] ?? false;
+    ApiClinic? clinicObj;
+
+    if (json['clinic'] != null && json['clinic'] is Map<String, dynamic>) {
+      clinicObj = ApiClinic.fromJson(json['clinic'] as Map<String, dynamic>);
+      isSuccess = true;
+    } else if (json['data'] != null && json['data'] is Map<String, dynamic>) {
+      clinicObj = ApiClinic.fromJson(json['data'] as Map<String, dynamic>);
+      isSuccess = true;
+    }
+
+    return ClinicMutationResponse(
+      success: isSuccess,
+      clinic: clinicObj,
+      message: json['message']?.toString() ?? '',
+    );
+  }
+}
+

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/my_appointments_model.dart';
@@ -38,7 +39,9 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     _appState.addListener(_onAppStateChanged);
 
     if (_appState.isLoggedIn) {
-      _loadAppointments();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadAppointments();
+      });
     }
   }
 
@@ -253,10 +256,18 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
   }
 
   Future<void> _joinPatientVideoCall(UserAppointmentItem apt) async {
-    final token = _appState.authToken;
+    String? token = _appState.authToken ?? _appState.activeChatToken;
     if (token == null || token.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('auth_token') ?? prefs.getString('doctor_token');
+    }
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to join video call')),
+        const SnackBar(
+          content: Text('Please log in to your patient account to join the video call'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
       return;
     }
@@ -267,19 +278,11 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
         appointmentId: apt.id,
         token: token,
       );
-      if (!activeRes.exists || activeRes.videoCall == null || activeRes.videoCall!.status.toLowerCase() == 'ended') {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Doctor has not started the video call yet. Please try again shortly.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      callId = activeRes.videoCall?.id;
-      if (callId != null) {
-        await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
+      if (activeRes.videoCall != null) {
+        callId = activeRes.videoCall?.id;
+        if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
+          await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
+        }
       }
     } catch (_) {}
 
@@ -747,7 +750,10 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => AppointmentDetailScreen(appointmentId: apt.id),
+            builder: (_) => AppointmentDetailScreen(
+              appointmentId: apt.id,
+              isForDoctor: false,
+            ),
           ),
         );
       },
@@ -1006,10 +1012,8 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                       runSpacing: 8,
                       alignment: WrapAlignment.end,
                       children: [
-                        if (apt.status.toLowerCase() == 'confirmed' ||
-                            apt.status.toLowerCase() == 'completed' ||
-                            apt.status.toLowerCase() == 'approved') ...[
-                          if (apt.consultationType.toLowerCase() == 'video')
+                        if (apt.status.toLowerCase() != 'cancelled') ...[
+                          if (apt.isVideoConsultation)
                             ElevatedButton.icon(
                               onPressed: () => _joinPatientVideoCall(apt),
                               icon: const Icon(

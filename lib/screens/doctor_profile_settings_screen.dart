@@ -4,6 +4,8 @@ import '../constants/app_state.dart';
 import '../models/doctor_model.dart';
 import '../services/doctor_auth_service.dart';
 import 'login_screen.dart';
+import 'doctor_manage_schedules_screen.dart';
+import 'doctor_my_clinics_screen.dart';
 
 class DoctorProfileSettingsScreen extends StatefulWidget {
   /// When [embeddedMode] is true the screen is rendered inside the doctor
@@ -441,6 +443,104 @@ class _DoctorProfileSettingsScreenState
   Widget _buildPersonalTab() {
     final doc = _doctor!;
     return _tabScroll([
+      // Practice & Clinic Quick Access Banner
+      Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0F766E), Color(0xFF0D9488)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0D9488).withValues(alpha: 0.25),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.tune_rounded, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'Practice & Availability Setup',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Set your weekly consultation timings, fees, and manage clinic locations.',
+              style: TextStyle(color: Color(0xFFCCFBF1), fontSize: 11, height: 1.3),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorManageSchedulesScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.calendar_month_rounded, size: 16),
+                    label: const Text('My Schedule', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF0F766E),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorMyClinicsScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.local_hospital_rounded, size: 16),
+                    label: const Text('My Clinics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.15),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      side: const BorderSide(color: Colors.white38),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
       _sectionCard('Contact Details', Icons.person_outline, [
         _infoRow(Icons.person_rounded, 'Full Name', doc.fullName, const Color(0xFF2563EB)),
         _infoRow(Icons.phone_android_rounded, 'Mobile', doc.mobile ?? 'N/A', const Color(0xFF059669)),

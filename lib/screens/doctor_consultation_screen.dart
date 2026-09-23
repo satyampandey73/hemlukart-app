@@ -6,7 +6,6 @@ import 'doctor_listing_screen.dart';
 import 'doctor_profile_screen.dart';
 import 'book_appointment_screen.dart';
 import 'login_screen.dart';
-import 'clinic_listing_screen.dart';
 
 class DoctorConsultationScreen extends StatefulWidget {
   const DoctorConsultationScreen({super.key});
@@ -49,6 +48,30 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
         _apiDoctors = _appState.mockDoctors;
       });
     }
+  }
+
+  Doctor get _highestExperienceDoctor {
+    final list = _apiDoctors.isNotEmpty ? _apiDoctors : _appState.mockDoctors;
+    if (list.isEmpty) {
+      return const Doctor(
+        id: 'dummy',
+        name: 'Dr. Pathan Irshad Khan',
+        specialty: 'General Physician',
+        degree: 'MBBS, MD',
+        system: 'Allopathy',
+        experienceYears: 5,
+        consultationFee: 199,
+        rating: 4.8,
+        reviewsCount: 12,
+        image: '',
+        languages: ['English', 'Hindi'],
+        clinicName: 'Immediate Care Hub',
+        clinicAddress: 'Online Portal',
+        about: 'Immediate consult practitioner',
+      );
+    }
+    return list.reduce((curr, next) =>
+        curr.experienceYears >= next.experienceYears ? curr : next);
   }
 
   final List<Map<String, dynamic>> _specialties = [
@@ -130,19 +153,45 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.canPop(context);
+    final topPadding = MediaQuery.of(context).padding.top;
+
     return Scaffold(
-      backgroundColor: AppColors.backgroundLight.withOpacity(0.3),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Section Header
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                canPop ? (topPadding + 10) : 20,
+                16,
+                24,
+              ),
               color: AppColors.primary,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (canPop) ...[
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
                   const Text(
                     'Consult Top Doctors',
                     style: TextStyle(
@@ -230,171 +279,220 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
 
             const SizedBox(height: 24),
 
-            // Immediate Care general physician banner
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [
-                      Color.fromARGB(255, 250, 251, 252),
-                      Color.fromARGB(255, 247, 248, 248),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.withOpacity(0.1)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
+            // Immediate Care highest experience doctor banner
+            Builder(
+              builder: (context) {
+                final topDoc = _highestExperienceDoctor;
+                final fee = topDoc.getFeeForType().toInt();
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color.fromARGB(255, 250, 251, 252),
+                          Color.fromARGB(255, 247, 248, 248),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[600],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'IMMEDIATE CARE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.15)),
                     ),
-                    const SizedBox(height: 12),
-                    Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
-                          radius: 28,
-                          backgroundImage: const AssetImage(
-                            'assets/doctor_profile.png',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'Dr. Pathan Irshad Khan',
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[600],
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'EXPERIENCED PHYSICIAN',
                                 style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: AppColors.textDark,
                                 ),
                               ),
-                              SizedBox(height: 2),
-                              Text(
-                                'General Physician • 5 Yrs Exp',
-                                style: TextStyle(
-                                  color: AppColors.textLight,
-                                  fontSize: 12,
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.amber.shade200),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.star, color: Colors.amber, size: 12),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${topDoc.rating}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.amber.shade900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => DoctorProfileScreen(doctor: topDoc),
+                              ),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 28,
+                                backgroundImage: (topDoc.image.startsWith('http://') ||
+                                        topDoc.image.startsWith('https://'))
+                                    ? NetworkImage(topDoc.image) as ImageProvider
+                                    : AssetImage(
+                                        topDoc.image.isNotEmpty
+                                            ? topDoc.image
+                                            : 'assets/doctor_profile.png',
+                                      ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      topDoc.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                        color: AppColors.textDark,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${topDoc.specialty} • ${topDoc.experienceYears} Yrs Exp',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AppColors.textLight,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    if (topDoc.degree.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        topDoc.degree,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.blue.shade700,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        _buildBadge('General Health'),
-                        const SizedBox(width: 4),
-                        _buildBadge('Child Care'),
-                        const SizedBox(width: 4),
-                        _buildBadge('Blood Sugar'),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              '₹199/- only',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: AppColors.primary,
-                              ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            _buildBadge(topDoc.specialty.isNotEmpty ? topDoc.specialty : 'General Health'),
+                            const SizedBox(width: 4),
+                            _buildBadge('${topDoc.experienceYears}+ Yrs Exp'),
+                            const SizedBox(width: 4),
+                            _buildBadge(topDoc.system.isNotEmpty ? topDoc.system : 'Verified Specialist'),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  fee > 0 ? '₹$fee/- only' : '₹199/- only',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                const Text(
+                                  'Get 20% cashback on PLUS',
+                                  style: TextStyle(
+                                    color: AppColors.textLight,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              'Get 20% cashback on PLUS',
-                              style: TextStyle(
-                                color: AppColors.textLight,
-                                fontSize: 10,
+                            ElevatedButton(
+                              onPressed: () async {
+                                if (await LoginScreen.checkAndNavigate(context)) {
+                                  if (context.mounted) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            BookAppointmentScreen(doctor: topDoc),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue[600],
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                              child: const Text(
+                                'Consult Now ⚡',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        ElevatedButton(
-                          onPressed: () {
-                            final targetDoc = _apiDoctors.isNotEmpty
-                                ? _apiDoctors.first
-                                : Doctor(
-                                    id: 'dummy',
-                                    name: 'Dr. Pathan Irshad Khan',
-                                    specialty: 'General Physician',
-                                    degree: 'MBBS, MD',
-                                    system: 'Allopathy',
-                                    experienceYears: 5,
-                                    consultationFee: 199,
-                                    rating: 4.8,
-                                    reviewsCount: 12,
-                                    image: '',
-                                    languages: ['English', 'Hindi'],
-                                    clinicName: 'Immediate Care Hub',
-                                    clinicAddress: 'Online Portal',
-                                    about: 'Immediate consult practitioner',
-                                  );
-                            LoginScreen.checkAndNavigate(context).then((
-                              loggedIn,
-                            ) {
-                              if (loggedIn && mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        BookAppointmentScreen(doctor: targetDoc),
-                                  ),
-                                );
-                              }
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[600],
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          child: const Text(
-                            'Consult Now ⚡',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
 
             const SizedBox(height: 24),
@@ -511,7 +609,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     decoration: BoxDecoration(
                       color: concern['color'],
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.black.withOpacity(0.02)),
+                      border: Border.all(color: Colors.black.withValues(alpha: 0.02)),
                     ),
                     child: Row(
                       children: [
@@ -706,7 +804,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.6),
+        color: Colors.white.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -737,7 +835,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withOpacity(0.05)),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -963,7 +1061,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border.withOpacity(0.5)),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -999,7 +1097,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
+                            color: Colors.black.withValues(alpha: 0.08),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),

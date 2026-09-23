@@ -8,11 +8,13 @@ import '../services/eprescription_service.dart';
 import '../models/doctor_model.dart';
 import '../models/my_appointments_model.dart';
 import 'appointment_detail_screen.dart';
-import 'dashboard_screen.dart';
 import 'eprescription_detail_screen.dart';
-import 'login_screen.dart';
 import 'doctor_profile_settings_screen.dart';
 import 'patient_detail_screen.dart';
+import 'doctor_manage_schedules_screen.dart';
+import 'doctor_my_clinics_screen.dart';
+import '../services/video_call_service.dart';
+import 'video_call_screen.dart';
 
 class DoctorDashboardScreen extends StatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -50,7 +52,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
     try {
       final aptRes = await AppointmentService.getDoctorAppointments(token: token);
-      if (aptRes.success && aptRes.appointments.isNotEmpty) {
+      if (aptRes.success) {
         if (mounted) setState(() => _doctorAppointments = aptRes.appointments);
       }
     } catch (_) {}
@@ -241,13 +243,16 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     final doc = _apiDoctorProfile;
     final displayName = doc != null && doc.fullName.isNotEmpty
         ? 'Dr. ${doc.fullName}'
-        : 'Dr. Richardson';
+        : 'Doctor Portal';
     final subTitle = doc != null
         ? (doc.currentDesignation ??
             doc.ayushSystem ??
-            'Senior Clinician • Chikitsakart')
-        : 'Senior Clinician • Chikitsakart';
+            'Chikitsakart Doctor Portal')
+        : 'Chikitsakart Doctor Portal';
     final photoUrl = doc?.documents?.profilePhoto ?? '';
+    final initial = (doc != null && doc.fullName.isNotEmpty)
+        ? doc.fullName.trim()[0].toUpperCase()
+        : 'D';
 
     return AppBar(
       backgroundColor: AppColors.primary,
@@ -264,9 +269,19 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             child: CircleAvatar(
               radius: 18,
               backgroundColor: Colors.white24,
-              backgroundImage: photoUrl.isNotEmpty
+              backgroundImage: (photoUrl.isNotEmpty && photoUrl.startsWith('http'))
                   ? NetworkImage(photoUrl)
-                  : const AssetImage('assets/d1.jpg') as ImageProvider,
+                  : null,
+              child: (photoUrl.isEmpty || !photoUrl.startsWith('http'))
+                  ? Text(
+                      initial,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    )
+                  : null,
             ),
           ),
           const SizedBox(width: 10),
@@ -310,6 +325,11 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       ),
       actions: [
         IconButton(
+          icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+          onPressed: _fetchDoctorDashboardData,
+          tooltip: 'Sync Dashboard',
+        ),
+        IconButton(
           icon: const Icon(Icons.search_rounded, color: Colors.white),
           onPressed: _showGlobalSearchSheet,
           tooltip: 'Search Records',
@@ -318,24 +338,37 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     );
   }
 
+  bool _isToday(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return false;
+    try {
+      final dt = DateTime.parse(dateStr).toLocal();
+      final now = DateTime.now();
+      return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ===========================================================================
   // TAB 0: DASHBOARD OVERVIEW
   // ===========================================================================
   Widget _buildDashboardOverview() {
     final allAppointments = _doctorAppointments.isNotEmpty ? _doctorAppointments : <UserAppointmentItem>[];
+    final todayAppointments = allAppointments.where((a) => _isToday(a.appointmentDate)).toList();
+    final todayCompleted = todayAppointments.where((a) => a.status.toLowerCase() == 'completed').length;
 
     // Apply filter to the appointments list
     final displayAppointments = allAppointments.where((apt) {
+      if (_selectedFilter == 'Today') {
+        return _isToday(apt.appointmentDate);
+      }
       if (_selectedFilter == 'All') return true;
       final status = apt.status.toLowerCase();
       if (_selectedFilter == 'Upcoming') {
-        if (status == 'cancelled' || status == 'completed' || status == 'in-progress' || status == 'in_progress') {
+        if (status == 'cancelled' || status == 'completed') {
           return false;
         }
-        return status == 'pending' || status == 'confirmed' || status == 'scheduled';
-      }
-      if (_selectedFilter == 'In-Progress') {
-        return status == 'in-progress' || status == 'in_progress';
+        return status == 'pending' || status == 'confirmed' || status == 'scheduled' || status == 'in-progress' || status == 'in_progress';
       }
       if (_selectedFilter == 'Completed') {
         return status == 'completed';
@@ -346,150 +379,287 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       return true;
     }).toList();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(14.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Availability Status Card
-          // Key Statistics Grid (Mobile 2x2 Layout)
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  title: "Today's Appts",
-                  value: '${_doctorAppointments.length}',
-                  subtitle: '${_doctorAppointments.where((a) => a.status.toLowerCase() == 'completed').length} Completed',
-                  icon: Icons.calendar_today_rounded,
-                  color: const Color(0xFF2563EB),
-                  bgTint: const Color(0xFFEFF6FF),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Total Patients',
-                  value: '${_doctorAppointments.map((a) => a.patientName).toSet().length}',
-                  subtitle: 'From API Queue',
-                  icon: Icons.people_outline_rounded,
-                  color: const Color(0xFF059669),
-                  bgTint: const Color(0xFFECFDF5),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Pending Review',
-                  value: '${_apiPrescriptions.where((r) => r['status']?.toString().toLowerCase().contains('pending') == true).length}',
-                  subtitle: 'Rx Pending',
-                  icon: Icons.pending_actions_rounded,
-                  color: const Color(0xFFDC2626),
-                  bgTint: const Color(0xFFFEF2F2),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildStatCard(
-                  title: 'Active Consults',
-                  value: '${_doctorAppointments.where((a) => a.status.toLowerCase() == 'in-progress' || a.status.toLowerCase() == 'confirmed' || a.status.toLowerCase() == 'pending').length}',
-                  subtitle: 'Active Slots',
-                  icon: Icons.videocam_rounded,
-                  color: const Color(0xFFD97706),
-                  bgTint: const Color(0xFFFEF3C7),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          // Quick Action Horizontal Bar
-          // Today's Live Queue Header & Filters
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Appointments',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
-                ),
-              ),
-              Text(
-                '${displayAppointments.length} ${_selectedFilter == 'All' ? 'scheduled' : _selectedFilter.toLowerCase()}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textLight),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Filter Chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: ['All', 'Upcoming', 'In-Progress', 'Completed', 'Cancelled'].map((filter) {
-                final isSelected = _selectedFilter == filter;
-                final isCancelledChip = filter == 'Cancelled';
-                final selectedChipColor = isCancelledChip
-                    ? const Color(0xFFDC2626)
-                    : AppColors.primary;
-                final selectedBorderColor = isCancelledChip
-                    ? const Color(0xFFDC2626)
-                    : AppColors.primary;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6.0),
-                  child: ChoiceChip(
-                    label: Text(filter),
-                    selected: isSelected,
-                    selectedColor: selectedChipColor,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.textDark,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 11,
-                    ),
-                    backgroundColor: Colors.white,
-                    side: BorderSide(
-                      color: isSelected ? selectedBorderColor : const Color(0xFFCBD5E1),
-                    ),
-                    onSelected: (selected) {
-                      if (selected) setState(() => _selectedFilter = filter);
-                    },
+    return RefreshIndicator(
+      onRefresh: _fetchDoctorDashboardData,
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(14.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Key Statistics Grid (Live API Data)
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    title: "Today's Appts",
+                    value: '${todayAppointments.length}',
+                    subtitle: '$todayCompleted Completed',
+                    icon: Icons.calendar_today_rounded,
+                    color: const Color(0xFF2563EB),
+                    bgTint: const Color(0xFFEFF6FF),
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Total Patients',
+                    value: '${_doctorAppointments.map((a) => a.patientName).where((n) => n.trim().isNotEmpty).toSet().length}',
+                    subtitle: 'Unique Patients',
+                    icon: Icons.people_outline_rounded,
+                    color: const Color(0xFF059669),
+                    bgTint: const Color(0xFFECFDF5),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-
-          if (displayAppointments.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.event_available, size: 40, color: Color(0xFF94A3B8)),
-                  const SizedBox(height: 8),
-                  Text(
-                    _selectedFilter == 'All'
-                        ? 'No appointments found.'
-                        : 'No $_selectedFilter appointments.',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textLight),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Pending Review',
+                    value: '${_apiPrescriptions.where((r) => r['status']?.toString().toLowerCase().contains('pending') == true || r['status']?.toString().toLowerCase() == 'sent').length}',
+                    subtitle: 'Rx Pending',
+                    icon: Icons.pending_actions_rounded,
+                    color: const Color(0xFFDC2626),
+                    bgTint: const Color(0xFFFEF2F2),
                   ),
-                ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildStatCard(
+                    title: 'Active Consults',
+                    value: '${_doctorAppointments.where((a) => a.status.toLowerCase() == 'in-progress' || a.status.toLowerCase() == 'in_progress' || a.status.toLowerCase() == 'confirmed' || a.status.toLowerCase() == 'pending' || a.status.toLowerCase() == 'scheduled').length}',
+                    subtitle: 'Active Slots',
+                    icon: Icons.videocam_rounded,
+                    color: const Color(0xFFD97706),
+                    bgTint: const Color(0xFFFEF3C7),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Practice Setup Quick Access Row
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorManageSchedulesScreen(),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.calendar_month_rounded,
+                                color: AppColors.primary, size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'My Schedule',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                                Text(
+                                  'Slots & Timings',
+                                  style: TextStyle(fontSize: 10, color: AppColors.textLight),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded,
+                              size: 12, color: AppColors.textLight),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorMyClinicsScreen(),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.local_hospital_rounded,
+                                color: Color(0xFF0284C7), size: 16),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'My Clinics',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                                Text(
+                                  'Locations & Staff',
+                                  style: TextStyle(fontSize: 10, color: AppColors.textLight),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded,
+                              size: 12, color: AppColors.textLight),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+
+            // Today's Live Queue Header & Filters
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Appointments',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                Text(
+                  '${displayAppointments.length} ${_selectedFilter == 'All' ? 'scheduled' : _selectedFilter.toLowerCase()}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Filter Chips
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: ['All', 'Today', 'Upcoming', 'Completed', 'Cancelled'].map((filter) {
+                  final isSelected = _selectedFilter == filter;
+                  final isCancelledChip = filter == 'Cancelled';
+                  final selectedChipColor = isCancelledChip
+                      ? const Color(0xFFDC2626)
+                      : AppColors.primary;
+                  final selectedBorderColor = isCancelledChip
+                      ? const Color(0xFFDC2626)
+                      : AppColors.primary;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: ChoiceChip(
+                      label: Text(filter),
+                      selected: isSelected,
+                      selectedColor: selectedChipColor,
+                      labelStyle: TextStyle(
+                        color: isSelected ? Colors.white : AppColors.textDark,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 11,
+                      ),
+                      backgroundColor: Colors.white,
+                      side: BorderSide(
+                        color: isSelected ? selectedBorderColor : const Color(0xFFCBD5E1),
+                      ),
+                      onSelected: (selected) {
+                        if (selected) setState(() => _selectedFilter = filter);
+                      },
+                    ),
+                  );
+                }).toList(),
               ),
-            )
-          else
-            ...displayAppointments.map((apt) => _buildAppointmentCard(apt)),
-        ],
+            ),
+            const SizedBox(height: 12),
+
+            if (displayAppointments.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.event_available, size: 40, color: Color(0xFF94A3B8)),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedFilter == 'All'
+                          ? 'No appointments found.'
+                          : 'No $_selectedFilter appointments.',
+                      style: const TextStyle(fontSize: 13, color: AppColors.textLight),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...displayAppointments.map((apt) => _buildAppointmentCard(apt)),
+          ],
+        ),
       ),
     );
   }
@@ -1964,24 +2134,72 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            // Action button
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AppointmentDetailScreen(appointmentId: apt.id),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AppointmentDetailScreen(
+                          appointmentId: apt.id,
+                          isForDoctor: true,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.info_outline, size: 14),
+                    label: const Text('Details', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      foregroundColor: AppColors.textDark,
+                    ),
                   ),
                 ),
-                icon: const Icon(Icons.info_outline, size: 14),
-                label: const Text('Details', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  foregroundColor: AppColors.textDark,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final token = AppState().doctorToken ?? AppState().activeChatToken;
+                      if (token == null || token.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please log in as a doctor to start video call')),
+                        );
+                        return;
+                      }
+                      final res = await VideoCallService.startVideoCall(appointmentId: apt.id, token: token);
+                      if (!context.mounted) return;
+                      if (res.success || res.videoCall != null) {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => VideoCallScreen(
+                              appointmentId: apt.id,
+                              videoCallId: res.videoCall?.id,
+                              isDoctor: true,
+                              peerName: apt.patientName.isNotEmpty ? apt.patientName : 'Patient',
+                              peerSubtitle: '${apt.patientAge ?? 30} Yrs • ${apt.patientMobile ?? ""}',
+                              peerAvatar: 'assets/d2.jpg',
+                            ),
+                          ),
+                        );
+                        _fetchDoctorDashboardData();
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(res.message ?? 'Unable to start video call')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.videocam_rounded, size: 16, color: Colors.white),
+                    label: const Text('Start Call', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -2171,6 +2389,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               MaterialPageRoute(
                 builder: (_) => AppointmentDetailScreen(
                   appointmentId: id,
+                  isForDoctor: true,
                 ),
               ),
             ).then((_) => _fetchDoctorDashboardData());
@@ -2212,73 +2431,33 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Text('$time • ${type == 'video' ? '🎥 Video' : '🏥 In-Person'} • $complaint',
                   style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
               const SizedBox(height: 8),
-              // Primary actions row
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        if (id.isNotEmpty) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AppointmentDetailScreen(appointmentId: id),
-                            ),
-                          ).then((_) => _fetchDoctorDashboardData());
-                        }
-                      },
-                      style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          side: const BorderSide(color: AppColors.primary)),
-                      child: const Text('View Details & Rx',
-                          style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.bold)),
-                    ),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    if (id.isNotEmpty) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AppointmentDetailScreen(
+                            appointmentId: id,
+                            isForDoctor: true,
+                          ),
+                        ),
+                      ).then((_) => _fetchDoctorDashboardData());
+                    }
+                  },
+                  icon: const Icon(Icons.visibility_outlined, size: 14),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    side: const BorderSide(color: AppColors.primary),
+                    foregroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  const SizedBox(width: 6),
-                  if (isActive)
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => setState(() => _currentIndex = 3),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary, padding: const EdgeInsets.symmetric(vertical: 4)),
-                        child: const Text('Start Call', style: TextStyle(fontSize: 11, color: Colors.white)),
-                      ),
-                    ),
-                ],
-              ),
-              // Cancel & Reschedule — only for active appointments
-              if (isActive && id.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showDoctorRescheduleDialog(appointmentId: id, patientName: patientName),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          side: const BorderSide(color: Color(0xFF2563EB)),
-                          foregroundColor: const Color(0xFF2563EB),
-                        ),
-                        icon: const Icon(Icons.event_repeat, size: 13),
-                        label: const Text('Reschedule', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showDoctorCancelDialog(appointmentId: id, patientName: patientName),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          side: const BorderSide(color: Colors.red),
-                          foregroundColor: Colors.red,
-                        ),
-                        icon: const Icon(Icons.cancel_outlined, size: 13),
-                        label: const Text('Cancel', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ],
+                  label: const Text('View Details',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
-              ],
+              ),
             ],
           ),
         ),

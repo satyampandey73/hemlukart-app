@@ -32,6 +32,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool isPatient = true;
 
+  int get _otpLength => isPatient ? 4 : 6;
+
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _otpController = TextEditingController(); // combined value
@@ -49,14 +51,18 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _receivedOtp;
 
   String _getOtpString() =>
-      _otpBoxControllers.map((c) => c.text).join();
+      _otpBoxControllers.take(_otpLength).map((c) => c.text).join();
 
   @override
   void dispose() {
     _mobileController.dispose();
     _otpController.dispose();
-    for (final c in _otpBoxControllers) c.dispose();
-    for (final f in _otpFocusNodes) f.dispose();
+    for (final c in _otpBoxControllers) {
+      c.dispose();
+    }
+    for (final f in _otpFocusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -97,6 +103,13 @@ class _LoginScreenState extends State<LoginScreen> {
         _receivedOtp = otp;
         if (otp != null && otp.isNotEmpty) {
           _otpController.text = otp;
+          for (int i = 0; i < 6; i++) {
+            if (i < otp.length && i < _otpLength) {
+              _otpBoxControllers[i].text = otp[i];
+            } else {
+              _otpBoxControllers[i].clear();
+            }
+          }
         }
       });
 
@@ -120,10 +133,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleVerifyOtp() async {
     final otpText = _otpController.text.trim();
-    if (otpText.isEmpty) {
+    if (otpText.isEmpty || otpText.length < _otpLength) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter the verification OTP'),
+        SnackBar(
+          content: Text('Please enter the complete $_otpLength-digit verification OTP'),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -323,7 +336,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => isPatient = true),
+                          onTap: () {
+                            if (!isPatient) {
+                              setState(() {
+                                isPatient = true;
+                                _otpSent = false;
+                                _otpController.clear();
+                                for (final c in _otpBoxControllers) {
+                                  c.clear();
+                                }
+                              });
+                            }
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             decoration: BoxDecoration(
@@ -349,7 +373,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => isPatient = false),
+                          onTap: () {
+                            if (isPatient) {
+                              setState(() {
+                                isPatient = false;
+                                _otpSent = false;
+                                _otpController.clear();
+                                for (final c in _otpBoxControllers) {
+                                  c.clear();
+                                }
+                              });
+                            }
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             decoration: BoxDecoration(
@@ -468,85 +503,88 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        // 6-box OTP input
+                        // OTP input boxes (4 for patient, 6 for doctor)
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(6, (i) {
-                            return SizedBox(
-                              width: 44,
-                              height: 52,
-                              child: KeyboardListener(
-                                focusNode: FocusNode(),
-                                onKeyEvent: (event) {
-                                  if (event is KeyDownEvent &&
-                                      event.logicalKey ==
-                                          LogicalKeyboardKey.backspace) {
-                                    if (_otpBoxControllers[i].text.isEmpty &&
-                                        i > 0) {
-                                      _otpBoxControllers[i - 1].clear();
-                                      _otpFocusNodes[i - 1].requestFocus();
-                                    }
-                                  }
-                                },
-                                child: TextField(
-                                  controller: _otpBoxControllers[i],
-                                  focusNode: _otpFocusNodes[i],
-                                  keyboardType:
-                                      TextInputType.numberWithOptions(
-                                    signed: false,
-                                    decimal: false,
-                                  ),
-                                  textInputAction: i < 5
-                                      ? TextInputAction.next
-                                      : TextInputAction.done,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                    LengthLimitingTextInputFormatter(1),
-                                  ],
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textDark,
-                                  ),
-                                  decoration: InputDecoration(
-                                    counterText: '',
-                                    filled: true,
-                                    fillColor: Colors.white,
-                                    contentPadding: EdgeInsets.zero,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(
-                                          color: AppColors.border),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(
-                                          color: AppColors.border),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(
-                                          color: AppColors.primary, width: 2),
-                                    ),
-                                  ),
-                                  onChanged: (val) {
-                                    if (val.isNotEmpty) {
-                                      // advance to next box
-                                      if (i < 5) {
-                                        _otpFocusNodes[i + 1].requestFocus();
-                                      } else {
-                                        _otpFocusNodes[i].unfocus();
-                                      }
-                                    } else {
-                                      // backspace: go to previous box
-                                      if (i > 0) {
+                          children: List.generate(_otpLength, (i) {
+                            return Expanded(
+                              child: Container(
+                                margin: EdgeInsets.symmetric(
+                                  horizontal: isPatient ? 6 : 3,
+                                ),
+                                height: 54,
+                                child: KeyboardListener(
+                                  focusNode: FocusNode(),
+                                  onKeyEvent: (event) {
+                                    if (event is KeyDownEvent &&
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.backspace) {
+                                      if (_otpBoxControllers[i].text.isEmpty &&
+                                          i > 0) {
+                                        _otpBoxControllers[i - 1].clear();
                                         _otpFocusNodes[i - 1].requestFocus();
                                       }
                                     }
-                                    // sync combined controller
-                                    _otpController.text = _getOtpString();
                                   },
+                                  child: TextField(
+                                    controller: _otpBoxControllers[i],
+                                    focusNode: _otpFocusNodes[i],
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      signed: false,
+                                      decimal: false,
+                                    ),
+                                    textInputAction: i < _otpLength - 1
+                                        ? TextInputAction.next
+                                        : TextInputAction.done,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(1),
+                                    ],
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: isPatient ? 22 : 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textDark,
+                                    ),
+                                    decoration: InputDecoration(
+                                      counterText: '',
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      contentPadding: EdgeInsets.zero,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.border),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.border),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.primary, width: 2),
+                                      ),
+                                    ),
+                                    onChanged: (val) {
+                                      if (val.isNotEmpty) {
+                                        // advance to next box
+                                        if (i < _otpLength - 1) {
+                                          _otpFocusNodes[i + 1].requestFocus();
+                                        } else {
+                                          _otpFocusNodes[i].unfocus();
+                                        }
+                                      } else {
+                                        // backspace: go to previous box
+                                        if (i > 0) {
+                                          _otpFocusNodes[i - 1].requestFocus();
+                                        }
+                                      }
+                                      // sync combined controller
+                                      _otpController.text = _getOtpString();
+                                    },
+                                  ),
                                 ),
                               ),
                             );

@@ -89,10 +89,10 @@ class _PatientRegistrationFormState extends State<PatientRegistrationForm> {
 
   Future<void> _handleVerifyOtp() async {
     final otpText = _otpController.text.trim();
-    if (otpText.isEmpty) {
+    if (otpText.isEmpty || otpText.length < 4) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter the OTP'),
+          content: Text('Please enter the complete 4-digit OTP'),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -296,7 +296,7 @@ class _PatientRegistrationFormState extends State<PatientRegistrationForm> {
               keyboardType: TextInputType.number,
               controller: _otpController,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              maxLength: 6,
+              maxLength: 4,
             ),
             const SizedBox(height: 24),
             PrimaryButton(

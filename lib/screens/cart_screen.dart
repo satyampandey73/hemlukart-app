@@ -34,7 +34,10 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

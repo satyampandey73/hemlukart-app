@@ -394,20 +394,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
   void _rebuild() {
     if (!mounted) return;
-
-    final phase = SchedulerBinding.instance.schedulerPhase;
-    if (phase == SchedulerPhase.persistentCallbacks ||
-        phase == SchedulerPhase.midFrameMicrotasks) {
-      if (_rebuildScheduled) return;
-      _rebuildScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _rebuildScheduled = false;
-        if (mounted) setState(() {});
-      });
-      return;
-    }
-
-    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Widget _buildSectionHeader(

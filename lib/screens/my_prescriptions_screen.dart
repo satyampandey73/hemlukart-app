@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../services/eprescription_service.dart';
 import 'eprescription_detail_screen.dart';
+import 'login_screen.dart';
 
 class MyPrescriptionsScreen extends StatefulWidget {
   const MyPrescriptionsScreen({super.key});
@@ -52,12 +53,22 @@ class _MyPrescriptionsScreenState extends State<MyPrescriptionsScreen> {
 
   Future<void> _loadPrescriptions() async {
     if (!mounted) return;
+    final appState = AppState();
+    if (!appState.isLoggedIn || appState.authToken == null || appState.authToken!.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _prescriptions = [];
+        _hasError = false;
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
 
-    final token = AppState().authToken;
+    final token = appState.authToken;
     final res = await EPrescriptionService.getPatientPrescriptions(
       token: token,
       limit: 50,
@@ -251,6 +262,10 @@ class _MyPrescriptionsScreenState extends State<MyPrescriptionsScreen> {
   }
 
   Widget _buildBody() {
+    if (!AppState().isLoggedIn) {
+      return _buildLoggedOutView();
+    }
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.primary),
@@ -333,6 +348,73 @@ class _MyPrescriptionsScreenState extends State<MyPrescriptionsScreen> {
         padding: const EdgeInsets.all(14),
         itemCount: _prescriptions.length,
         itemBuilder: (context, index) => _buildPrescriptionCard(_prescriptions[index]),
+      ),
+    );
+  }
+
+  Widget _buildLoggedOutView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.receipt_long_rounded,
+                size: 64,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Sign in to view your prescriptions',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Access e-prescriptions, doctor advice, and medication schedules issued for your consultations.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textLight, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: 200,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  ).then((_) => _loadPrescriptions());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Sign In',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

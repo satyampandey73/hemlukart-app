@@ -33,9 +33,10 @@ class _OrderPlacedScreenState extends State<OrderPlacedScreen> {
   }
 
   void _onStateChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

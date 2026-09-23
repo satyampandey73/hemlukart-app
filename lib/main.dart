@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Wellness Market Registration',
+      title: 'Chikitsakart',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

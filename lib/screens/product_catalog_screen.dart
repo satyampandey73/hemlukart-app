@@ -113,7 +113,10 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _startPromoBannerAutoSlide() {

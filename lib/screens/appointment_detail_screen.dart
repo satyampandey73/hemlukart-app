@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/my_appointments_model.dart';
@@ -11,11 +12,13 @@ import '../services/eprescription_service.dart';
 class AppointmentDetailScreen extends StatefulWidget {
   final String appointmentId;
   final AppointmentDetailModel? initialDetail;
+  final bool? isForDoctor;
 
   const AppointmentDetailScreen({
     super.key,
     required this.appointmentId,
     this.initialDetail,
+    this.isForDoctor,
   });
 
   @override
@@ -24,6 +27,11 @@ class AppointmentDetailScreen extends StatefulWidget {
 
 class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   final AppState _appState = AppState();
+
+  bool get _isDoctorView {
+    if (widget.isForDoctor != null) return widget.isForDoctor!;
+    return _appState.isDoctorLoggedIn;
+  }
   bool _isLoading = true;
   String? _errorMessage;
   AppointmentDetailModel? _detail;
@@ -752,9 +760,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   _buildDetailItem(Icons.event, 'Appointment Date', detail.formattedDateTime),
                   const SizedBox(height: 10),
                   _buildDetailItem(
-                    detail.consultationType == 'video' ? Icons.videocam : Icons.location_on,
+                    detail.isVideoConsultation ? Icons.videocam : Icons.location_on,
                     'Consultation Mode',
-                    detail.consultationType == 'video' ? 'Video Consultation' : 'In-Person Visit',
+                    detail.isVideoConsultation ? 'Video Consultation' : 'In-Person Visit',
                   ),
                   const SizedBox(height: 10),
                   _buildDetailItem(Icons.timer, 'Duration', '${detail.durationMinutes} Minutes'),
@@ -853,14 +861,24 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
             if (detail.status.toLowerCase() != 'cancelled') ...[
               const SizedBox(height: 20),
-              if (detail.consultationType.toLowerCase() == 'video' && (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved')) ...[
+              if (detail.isVideoConsultation && detail.status.toLowerCase() != 'cancelled') ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () async {
-                      if (_appState.isDoctorLoggedIn) {
-                        final token = _appState.doctorToken;
-                        if (token == null) return;
+                      if (_isDoctorView) {
+                        String? token = _appState.doctorToken ?? _appState.activeChatToken;
+                        if (token == null || token.isEmpty) {
+                          final prefs = await SharedPreferences.getInstance();
+                          token = prefs.getString('doctor_token') ?? prefs.getString('auth_token');
+                        }
+                        if (token == null || token.isEmpty) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please log in as a doctor to start video call')),
+                          );
+                          return;
+                        }
                         final res = await VideoCallService.startVideoCall(appointmentId: detail.id, token: token);
                         if (!mounted) return;
                         if (res.success || res.videoCall != null) {
@@ -886,23 +904,29 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                           );
                         }
                       } else {
-                        final token = _appState.authToken;
-                        if (token == null) return;
-                        final activeRes = await VideoCallService.getActiveVideoCall(appointmentId: detail.id, token: token);
-                        if (!mounted) return;
-                        if (!activeRes.exists || activeRes.videoCall == null || activeRes.videoCall!.status.toLowerCase() == 'ended') {
+                        String? token = _appState.authToken ?? _appState.activeChatToken;
+                        if (token == null || token.isEmpty) {
+                          final prefs = await SharedPreferences.getInstance();
+                          token = prefs.getString('auth_token') ?? prefs.getString('doctor_token');
+                        }
+                        if (token == null || token.isEmpty) {
+                          if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Doctor has not started the video call yet. Please try again shortly.'),
-                              backgroundColor: Colors.orange,
-                            ),
+                            const SnackBar(content: Text('Please log in to your patient account to join video call')),
                           );
                           return;
                         }
-                        String? callId = activeRes.videoCall?.id;
-                        if (callId != null) {
-                          await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
-                        }
+                        String? callId;
+                        try {
+                          final activeRes = await VideoCallService.getActiveVideoCall(appointmentId: detail.id, token: token);
+                          if (activeRes.videoCall != null) {
+                            callId = activeRes.videoCall?.id;
+                            if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
+                              await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
+                            }
+                          }
+                        } catch (_) {}
+
                         if (!mounted) return;
                         await Navigator.push(
                           context,
@@ -911,7 +935,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                               appointmentId: detail.id,
                               videoCallId: callId,
                               isDoctor: false,
-                              peerName: detail.doctorName != null ? 'Dr. ${detail.doctorName}' : 'Doctor Consultation',
+                              peerName: detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor Consultation',
                               peerSubtitle: detail.doctorSpecialty ?? 'Ayush Specialist',
                               peerAvatar: detail.displayDoctorPhoto,
                             ),
@@ -924,7 +948,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     },
                     icon: const Icon(Icons.videocam_rounded, color: Colors.white),
                     label: Text(
-                      _appState.isDoctorLoggedIn ? 'Start Video Call' : 'Join Video Call',
+                      _isDoctorView ? 'Start Video Call' : 'Join Video Call',
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                     style: ElevatedButton.styleFrom(

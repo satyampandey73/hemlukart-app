@@ -223,6 +223,19 @@ class UserAppointmentItem {
     }
     return '';
   }
+
+  /// Whether this appointment represents an online or video consultation
+  bool get isVideoConsultation {
+    final t = consultationType.toLowerCase().trim();
+    return t == 'video' ||
+        t == 'video_call' ||
+        t == 'online' ||
+        t == 'telehealth' ||
+        t == 'telemedicine' ||
+        t.contains('video') ||
+        t.contains('online') ||
+        t.contains('tele');
+  }
 }
 
 class AppointmentDetailModel {
@@ -419,6 +432,19 @@ class AppointmentDetailModel {
       return doctorDocuments!.degreeCertificates!.first;
     }
     return '';
+  }
+
+  /// Whether this appointment represents an online or video consultation
+  bool get isVideoConsultation {
+    final t = consultationType.toLowerCase().trim();
+    return t == 'video' ||
+        t == 'video_call' ||
+        t == 'online' ||
+        t == 'telehealth' ||
+        t == 'telemedicine' ||
+        t.contains('video') ||
+        t.contains('online') ||
+        t.contains('tele');
   }
 }
 

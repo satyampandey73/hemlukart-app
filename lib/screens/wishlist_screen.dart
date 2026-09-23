@@ -36,9 +36,10 @@ class _WishlistScreenState extends State<WishlistScreen>
   }
 
   void _onAppStateChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _loadData() async {
