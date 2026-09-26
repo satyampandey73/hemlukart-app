@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../models/clinic_model.dart';
 import '../models/doctor_schedule_model.dart';
+import '../services/clinic_service.dart';
 import '../services/doctor_schedule_service.dart';
 
 class DoctorManageSchedulesScreen extends StatefulWidget {
@@ -63,11 +65,41 @@ class _DoctorManageSchedulesScreenState
   };
 
   bool _hasUnsavedChanges = false;
+  List<ApiClinic> _myClinics = [];
+  List<ApiClinic> _associateClinics = [];
 
   @override
   void initState() {
     super.initState();
     _fetchSchedules();
+    _loadClinics();
+  }
+
+  Future<void> _loadClinics() async {
+    final token = AppState().doctorToken ?? AppState().activeToken ?? '';
+    try {
+      final results = await Future.wait([
+        token.isNotEmpty
+            ? ClinicService.getMyClinics(token: token)
+            : Future.value(MyClinicsApiResponse(success: false, clinics: [])),
+        ClinicService.getClinics(limit: 100),
+      ]);
+      final myRes = results[0] as MyClinicsApiResponse;
+      final allRes = results[1] as ClinicsApiResponse;
+
+      if (!mounted) return;
+
+      final myClinicsList = myRes.success ? myRes.clinics : <ApiClinic>[];
+      final myIds = myClinicsList.map((c) => c.id).toSet();
+      final associateClinicsList = allRes.success
+          ? allRes.clinics.where((c) => !myIds.contains(c.id)).toList()
+          : <ApiClinic>[];
+
+      setState(() {
+        _myClinics = myClinicsList;
+        _associateClinics = associateClinicsList;
+      });
+    } catch (_) {}
   }
 
   Future<void> _fetchSchedules() async {
@@ -163,6 +195,8 @@ class _DoctorManageSchedulesScreenState
             ),
           ),
         );
+        // Re-fetch from server to keep UI in sync with persisted data
+        await _fetchSchedules();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -193,33 +227,316 @@ class _DoctorManageSchedulesScreenState
       builder: (ctx) => _SessionEditorModal(
         dayOfWeek: _selectedDay,
         initialItem: existingItem,
-        onSave: (newItem) {
-          setState(() {
-            _hasUnsavedChanges = true;
-            final list = _schedulesByDay[_selectedDay] ?? [];
-            if (editIndex != null && editIndex >= 0 && editIndex < list.length) {
-              list[editIndex] = newItem;
-            } else {
-              list.add(newItem);
-            }
-            _schedulesByDay[_selectedDay] = list;
-          });
+        existingDaySessions: _schedulesByDay[_selectedDay] ?? [],
+        myClinics: _myClinics,
+        associateClinics: _associateClinics,
+        onSave: (newItem) async {
+          return await _handleSaveSession(
+            newItem: newItem,
+            existingItem: existingItem,
+            editIndex: editIndex,
+          );
         },
       ),
     );
   }
 
-  void _deleteSession(int index) {
+  Future<String?> _handleSaveSession({
+    required DoctorScheduleItem newItem,
+    DoctorScheduleItem? existingItem,
+    int? editIndex,
+  }) async {
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) {
+      return 'Doctor session not found. Please log in again.';
+    }
+
+    final scheduleId = existingItem?.id ?? newItem.id;
+
+    // 1. UPDATE EXISTING SCHEDULE BY ID (PUT /api/schedules/:id)
+    if (existingItem != null && scheduleId != null && scheduleId.isNotEmpty) {
+      setState(() => _isSaving = true);
+      final res = await DoctorScheduleService.updateScheduleById(
+        token: token,
+        scheduleId: scheduleId,
+        schedule: newItem,
+      );
+
+      if (!mounted) return res.message.isNotEmpty ? res.message : 'Failed to update session.';
+      setState(() => _isSaving = false);
+
+      if (res.success) {
+        if (editIndex != null &&
+            editIndex >= 0 &&
+            editIndex < (_schedulesByDay[_selectedDay]?.length ?? 0)) {
+          setState(() {
+            _schedulesByDay[_selectedDay]![editIndex] = newItem.copyWith(id: scheduleId);
+            _hasUnsavedChanges = false;
+          });
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+            content: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white),
+                SizedBox(width: 8),
+                Text(
+                  'Session updated successfully!',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        );
+        await _fetchSchedules();
+        return null;
+      } else {
+        return res.message.isNotEmpty ? res.message : 'Failed to update session.';
+      }
+    }
+
+    // 2. CREATE NEW SCHEDULE (POST /api/schedules)
+    setState(() => _isSaving = true);
+    final res = await DoctorScheduleService.createSchedules(
+      token: token,
+      schedules: [newItem],
+    );
+
+    if (!mounted) return res.message.isNotEmpty ? res.message : 'Failed to save session.';
+    setState(() => _isSaving = false);
+
+    if (res.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white),
+              SizedBox(width: 8),
+              Text(
+                'Session added successfully!',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+      await _fetchSchedules();
+      return null;
+    } else {
+      return res.message.isNotEmpty ? res.message : 'Failed to save session.';
+    }
+  }
+
+  Future<void> _handleToggleAvailability(int index, bool val) async {
+    final currentDayList = _schedulesByDay[_selectedDay];
+    if (currentDayList == null || index < 0 || index >= currentDayList.length) return;
+
+    final originalItem = currentDayList[index];
+    if (originalItem.isAvailable == val) return;
+
+    final updatedItem = originalItem.copyWith(isAvailable: val);
+
+    // 1. Optimistic instant UI update
     setState(() {
-      _hasUnsavedChanges = true;
-      _schedulesByDay[_selectedDay]?.removeAt(index);
+      currentDayList[index] = updatedItem;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        content: Text('Session removed. Tap Save to apply.'),
+
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) {
+      // Revert if no token
+      setState(() {
+        currentDayList[index] = originalItem;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFDC2626),
+          content: Text('Doctor session not found. Please log in again.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final scheduleId = originalItem.id;
+      if (scheduleId != null && scheduleId.isNotEmpty) {
+        final res = await DoctorScheduleService.updateScheduleById(
+          token: token,
+          scheduleId: scheduleId,
+          schedule: updatedItem,
+        );
+        if (!res.success) {
+          // Revert optimistic update on failure
+          if (mounted) {
+            setState(() {
+              currentDayList[index] = originalItem;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: const Color(0xFFDC2626),
+                behavior: SnackBarBehavior.floating,
+                content: Text(res.message.isNotEmpty
+                    ? res.message
+                    : 'Failed to update availability.'),
+              ),
+            );
+          }
+        }
+      } else {
+        // Fallback if no backend ID: bulk sync without full page reload
+        final allItems = _flattenSchedules();
+        final res = await DoctorScheduleService.saveSchedules(
+          token: token,
+          schedules: allItems,
+          isUpdate: true,
+        );
+        if (!res.success) {
+          if (mounted) {
+            setState(() {
+              currentDayList[index] = originalItem;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: const Color(0xFFDC2626),
+                behavior: SnackBarBehavior.floating,
+                content: Text(res.message.isNotEmpty
+                    ? res.message
+                    : 'Failed to update availability.'),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          currentDayList[index] = originalItem;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            content: Text('Error updating availability: $e'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSession(int index) async {
+    final currentDayList = _schedulesByDay[_selectedDay] ?? [];
+    if (index < 0 || index >= currentDayList.length) return;
+    final itemToDelete = currentDayList[index];
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Session', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete this session (${itemToDelete.startTime} - ${itemToDelete.endTime})?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
+
+    if (confirmed != true) return;
+
+    final token = AppState().doctorToken;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _isSaving = true);
+
+    // If item has a backend ID, call DELETE /api/schedules/:id directly
+    if (itemToDelete.id != null && itemToDelete.id!.isNotEmpty) {
+      final res = await DoctorScheduleService.deleteScheduleById(
+        token: token,
+        scheduleId: itemToDelete.id!,
+      );
+
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      if (res.success) {
+        setState(() {
+          _schedulesByDay[_selectedDay]?.removeAt(index);
+          _hasUnsavedChanges = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+            content: Text('Session deleted successfully!'),
+          ),
+        );
+        await _fetchSchedules();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            content: Text(res.message.isNotEmpty ? res.message : 'Failed to delete session.'),
+          ),
+        );
+      }
+    } else {
+      // If item was newly created locally without an ID, remove and bulk-sync
+      final Map<String, List<DoctorScheduleItem>> updatedMap = {};
+      for (var day in _daysOfWeek) {
+        updatedMap[day] = List.from(_schedulesByDay[day] ?? []);
+      }
+      updatedMap[_selectedDay]?.removeAt(index);
+
+      final List<DoctorScheduleItem> allItems = [];
+      for (var day in _daysOfWeek) {
+        allItems.addAll(updatedMap[day] ?? []);
+      }
+
+      final res = await DoctorScheduleService.saveSchedules(
+        token: token,
+        schedules: allItems,
+        isUpdate: true,
+      );
+
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      if (res.success) {
+        setState(() {
+          _schedulesByDay = updatedMap;
+          _hasUnsavedChanges = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+            content: Text('Session deleted successfully!'),
+          ),
+        );
+        await _fetchSchedules();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            content: Text(res.message.isNotEmpty ? res.message : 'Failed to delete session.'),
+          ),
+        );
+      }
+    }
   }
 
   void _showCopyDayDialog() {
@@ -343,23 +660,60 @@ class _DoctorManageSchedulesScreenState
               ElevatedButton(
                 onPressed: selectedTargets.isEmpty
                     ? null
-                    : () {
-                        setState(() {
-                          _hasUnsavedChanges = true;
-                          for (var target in selectedTargets) {
-                            _schedulesByDay[target] = currentDaySessions
-                                .map((s) => s.copyWith(dayOfWeek: target))
-                                .toList();
-                          }
-                        });
+                    : () async {
+                        final Map<String, List<DoctorScheduleItem>> updatedMap = {};
+                        for (var day in _daysOfWeek) {
+                          updatedMap[day] = List.from(_schedulesByDay[day] ?? []);
+                        }
+                        for (var target in selectedTargets) {
+                          updatedMap[target] = currentDaySessions
+                              .map((s) => s.copyWith(dayOfWeek: target))
+                              .toList();
+                        }
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: const Color(0xFF059669),
-                            content: Text(
-                                'Copied to ${selectedTargets.length} day(s). Tap Save to apply.'),
-                          ),
+
+                        final token = AppState().doctorToken;
+                        if (token == null || token.isEmpty) return;
+
+                        final List<DoctorScheduleItem> allItems = [];
+                        for (var day in _daysOfWeek) {
+                          allItems.addAll(updatedMap[day] ?? []);
+                        }
+
+                        final scaffoldMessenger = ScaffoldMessenger.of(context);
+                        setState(() => _isSaving = true);
+                        final res = await DoctorScheduleService.saveSchedules(
+                          token: token,
+                          schedules: allItems,
+                          isUpdate: true,
                         );
+                        if (!mounted) return;
+                        setState(() => _isSaving = false);
+
+                        if (res.success) {
+                          setState(() {
+                            _schedulesByDay = updatedMap;
+                            _hasUnsavedChanges = false;
+                          });
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFF059669),
+                              behavior: SnackBarBehavior.floating,
+                              content: Text('Replicated to ${selectedTargets.length} day(s) & saved!'),
+                            ),
+                          );
+                          _fetchSchedules();
+                        } else {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFFDC2626),
+                              behavior: SnackBarBehavior.floating,
+                              content: Text(res.message.isNotEmpty
+                                  ? res.message
+                                  : 'Failed to replicate schedules.'),
+                            ),
+                          );
+                        }
                       },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -390,34 +744,42 @@ class _DoctorManageSchedulesScreenState
     return hhmm;
   }
 
-  Color _sessionColor(String name) {
-    switch (name.toLowerCase()) {
-      case 'morning':
-        return const Color(0xFFEA580C);
-      case 'afternoon':
-        return const Color(0xFFD97706);
-      case 'evening':
-        return const Color(0xFF0D9488);
-      case 'night':
-        return const Color(0xFF4F46E5);
-      default:
-        return AppColors.primary;
+  String _formatSessionDisplayName(String sessionName) {
+    final raw = sessionName.trim();
+    if (raw.isEmpty) return 'Consultation Session';
+    final parts = raw.split('_');
+    final base = parts[0];
+    final capitalized = base.isNotEmpty
+        ? '${base[0].toUpperCase()}${base.substring(1)}'
+        : 'Session';
+
+    if (parts.length > 1 && parts[1].length >= 4) {
+      final hh = parts[1].substring(0, 2);
+      final mm = parts[1].substring(2, 4);
+      final hour = int.tryParse(hh) ?? 0;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final h12 = hour % 12 == 0 ? 12 : hour % 12;
+      return '$capitalized Session ($h12:$mm $period)';
     }
+    return '$capitalized Session';
+  }
+
+  Color _sessionColor(String name) {
+    final s = name.toLowerCase();
+    if (s.contains('morning')) return const Color(0xFFEA580C);
+    if (s.contains('afternoon')) return const Color(0xFFD97706);
+    if (s.contains('evening')) return const Color(0xFF0D9488);
+    if (s.contains('night')) return const Color(0xFF4F46E5);
+    return AppColors.primary;
   }
 
   IconData _sessionIcon(String name) {
-    switch (name.toLowerCase()) {
-      case 'morning':
-        return Icons.wb_sunny_outlined;
-      case 'afternoon':
-        return Icons.wb_twilight_outlined;
-      case 'evening':
-        return Icons.nights_stay_outlined;
-      case 'night':
-        return Icons.bedtime_outlined;
-      default:
-        return Icons.access_time_rounded;
-    }
+    final s = name.toLowerCase();
+    if (s.contains('morning')) return Icons.wb_sunny_outlined;
+    if (s.contains('afternoon')) return Icons.wb_twilight_outlined;
+    if (s.contains('evening')) return Icons.nights_stay_outlined;
+    if (s.contains('night')) return Icons.bedtime_outlined;
+    return Icons.access_time_rounded;
   }
 
   @override
@@ -796,16 +1158,20 @@ class _DoctorManageSchedulesScreenState
                                             children: [
                                               Row(
                                                 children: [
-                                                  Text(
-                                                    '${item.sessionName[0].toUpperCase()}${item.sessionName.substring(1)} Session',
-                                                    style: const TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 14,
-                                                      color: AppColors.textDark,
+                                                  Flexible(
+                                                    child: Text(
+                                                      _formatSessionDisplayName(item.sessionName),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 14,
+                                                        color: AppColors.textDark,
+                                                      ),
                                                     ),
                                                   ),
-                                                  const SizedBox(width: 8),
-                                                  if (!item.isAvailable)
+                                                  if (!item.isAvailable) ...[
+                                                    const SizedBox(width: 8),
                                                     Container(
                                                       padding: const EdgeInsets.symmetric(
                                                           horizontal: 6, vertical: 2),
@@ -823,6 +1189,7 @@ class _DoctorManageSchedulesScreenState
                                                         ),
                                                       ),
                                                     ),
+                                                  ],
                                                 ],
                                               ),
                                               const SizedBox(height: 4),
@@ -842,16 +1209,9 @@ class _DoctorManageSchedulesScreenState
                                         // Quick Availability Toggle
                                         Switch(
                                           value: item.isAvailable,
-                                          activeColor: AppColors.primary,
-                                          onChanged: (val) {
-                                            setState(() {
-                                              _hasUnsavedChanges = true;
-                                              _schedulesByDay[_selectedDay]![
-                                                  index] = item.copyWith(
-                                                isAvailable: val,
-                                              );
-                                            });
-                                          },
+                                          activeThumbColor: AppColors.primary,
+                                          activeTrackColor: AppColors.primary.withValues(alpha: 0.4),
+                                          onChanged: (val) => _handleToggleAvailability(index, val),
                                         ),
                                       ],
                                     ),
@@ -887,6 +1247,23 @@ class _DoctorManageSchedulesScreenState
                                                   const Color(0xFF7C3AED),
                                                   const Color(0xFFF5F3FF),
                                                 ),
+                                                if (item.clinicId != null && item.clinicId!.trim().isNotEmpty) ...[
+                                                  const SizedBox(width: 6),
+                                                  Builder(builder: (context) {
+                                                    final all = [..._myClinics, ..._associateClinics];
+                                                    final clinic = all.firstWhere(
+                                                      (c) => c.id == item.clinicId,
+                                                      orElse: () => ApiClinic(id: '', clinicName: 'Clinic'),
+                                                    );
+                                                    final cName = clinic.clinicName.isNotEmpty ? clinic.clinicName : 'Clinic';
+                                                    return _infoChip(
+                                                      Icons.local_hospital_outlined,
+                                                      cName,
+                                                      const Color(0xFF0D9488),
+                                                      const Color(0xFFF0FDFA),
+                                                    );
+                                                  }),
+                                                ],
                                                 const SizedBox(width: 6),
                                                 // Fee chip
                                                 _infoChip(
@@ -1021,11 +1398,17 @@ class _DoctorManageSchedulesScreenState
 class _SessionEditorModal extends StatefulWidget {
   final String dayOfWeek;
   final DoctorScheduleItem? initialItem;
-  final ValueChanged<DoctorScheduleItem> onSave;
+  final List<DoctorScheduleItem> existingDaySessions;
+  final List<ApiClinic>? myClinics;
+  final List<ApiClinic>? associateClinics;
+  final Future<String?> Function(DoctorScheduleItem newItem) onSave;
 
   const _SessionEditorModal({
     required this.dayOfWeek,
     this.initialItem,
+    required this.existingDaySessions,
+    this.myClinics,
+    this.associateClinics,
     required this.onSave,
   });
 
@@ -1034,26 +1417,317 @@ class _SessionEditorModal extends StatefulWidget {
 }
 
 class _SessionEditorModalState extends State<_SessionEditorModal> {
-  late String _sessionName;
+  late String _baseShift;
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   late int _slotDuration;
   late String _consultationType;
   late TextEditingController _feeController;
   late bool _isAvailable;
+  bool _isSaving = false;
+  String? _modalError;
+
+  String? _selectedClinicId;
+  List<ApiClinic> _myClinics = [];
+  List<ApiClinic> _associateClinics = [];
+  bool _isLoadingClinics = false;
 
   @override
   void initState() {
     super.initState();
     final item = widget.initialItem;
-    _sessionName = item?.sessionName ?? 'morning';
+    _baseShift = _detectBaseShift(item?.sessionName ?? 'morning');
     _startTime = _parseTime(item?.startTime ?? '09:00');
     _endTime = _parseTime(item?.endTime ?? '13:00');
     _slotDuration = item?.slotDuration ?? 30;
-    _consultationType = item?.consultationType ?? 'video';
-    _feeController =
-        TextEditingController(text: item?.consultationFee.toString() ?? '500');
+
+    final rawType = (item?.consultationType ?? 'video').toLowerCase().trim();
+    if (rawType == 'online') {
+      _consultationType = 'video';
+    } else if (rawType == 'offline' || rawType == 'clinic') {
+      _consultationType = 'in_person';
+    } else if (['video', 'in_person', 'audio'].contains(rawType)) {
+      _consultationType = rawType;
+    } else {
+      _consultationType = 'video';
+    }
+
+    _selectedClinicId = item?.clinicId;
+
+    _feeController = TextEditingController(
+      text: item != null
+          ? item.consultationFee.toString().replaceAll('.00', '').replaceAll('.0', '')
+          : '500',
+    );
     _isAvailable = item?.isAvailable ?? true;
+
+    if (widget.myClinics != null &&
+        (widget.myClinics!.isNotEmpty || (widget.associateClinics ?? []).isNotEmpty)) {
+      _myClinics = List.from(widget.myClinics!);
+      _associateClinics = List.from(widget.associateClinics ?? []);
+      _ensureInitialClinicSelection();
+    } else {
+      _fetchClinics();
+    }
+  }
+
+  void _ensureInitialClinicSelection() {
+    if (_consultationType == 'in_person' &&
+        (_selectedClinicId == null || _selectedClinicId!.trim().isEmpty)) {
+      if (_myClinics.isNotEmpty) {
+        _selectedClinicId = _myClinics.first.id;
+      } else if (_associateClinics.isNotEmpty) {
+        _selectedClinicId = _associateClinics.first.id;
+      }
+    }
+  }
+
+  Future<void> _fetchClinics() async {
+    setState(() => _isLoadingClinics = true);
+    final token = AppState().doctorToken ?? AppState().activeToken ?? '';
+    try {
+      final results = await Future.wait([
+        token.isNotEmpty
+            ? ClinicService.getMyClinics(token: token)
+            : Future.value(MyClinicsApiResponse(success: false, clinics: [])),
+        ClinicService.getClinics(limit: 100),
+      ]);
+      final myRes = results[0] as MyClinicsApiResponse;
+      final allRes = results[1] as ClinicsApiResponse;
+
+      if (!mounted) return;
+
+      final myClinicsList = myRes.success ? myRes.clinics : <ApiClinic>[];
+      final myIds = myClinicsList.map((c) => c.id).toSet();
+      final associateClinicsList = allRes.success
+          ? allRes.clinics.where((c) => !myIds.contains(c.id)).toList()
+          : <ApiClinic>[];
+
+      setState(() {
+        _myClinics = myClinicsList;
+        _associateClinics = associateClinicsList;
+        _isLoadingClinics = false;
+        _ensureInitialClinicSelection();
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingClinics = false);
+      }
+    }
+  }
+
+  List<int> get _durationOptions {
+    final set = <int>{15, 20, 30, 45, 60, _slotDuration};
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  List<String> get _typeOptions {
+    final set = <String>{'video', 'in_person', 'audio', _consultationType};
+    return set.toList();
+  }
+
+  List<String> get _shiftOptions {
+    final set = <String>{'morning', 'afternoon', 'evening', 'night', _baseShift};
+    return set.toList();
+  }
+
+  String _detectBaseShift(String raw) {
+    final s = raw.toLowerCase().trim();
+    if (s.contains('afternoon')) return 'afternoon';
+    if (s.contains('evening')) return 'evening';
+    if (s.contains('night')) return 'night';
+    return 'morning';
+  }
+
+  String _determineSessionName() {
+    // 1. If editing an existing session, preserve its sessionName so the backend updates the existing session!
+    if (widget.initialItem != null) {
+      final oldName = widget.initialItem!.sessionName.toLowerCase().trim();
+      final oldBase = _detectBaseShift(oldName);
+      // If user kept the same base shift (e.g. morning is still morning), preserve exact sessionName
+      if (_baseShift == oldBase) {
+        return widget.initialItem!.sessionName;
+      }
+      // If user explicitly changed the shift (e.g. from morning to afternoon)
+      final bool baseTaken = widget.existingDaySessions.any((s) =>
+          s.id != widget.initialItem!.id &&
+          s.sessionName.toLowerCase().trim() == _baseShift);
+      if (!baseTaken) {
+        return _baseShift;
+      }
+      final hh = _startTime.hour.toString().padLeft(2, '0');
+      final mm = _startTime.minute.toString().padLeft(2, '0');
+      return '${_baseShift}_$hh$mm';
+    }
+
+    // 2. If adding a brand new session:
+    // If the base shift (e.g. "morning") is not yet used on this day, use plain "morning"
+    final bool isBaseShiftTaken = widget.existingDaySessions.any(
+      (s) => s.sessionName.toLowerCase().trim() == _baseShift,
+    );
+
+    if (!isBaseShiftTaken) {
+      return _baseShift; // e.g. "morning", "afternoon", "evening", "night"
+    }
+
+    // If "morning" already exists, append start time to distinguish 2nd session
+    final hh = _startTime.hour.toString().padLeft(2, '0');
+    final mm = _startTime.minute.toString().padLeft(2, '0');
+    final candidate = '${_baseShift}_$hh$mm';
+
+    bool isTaken(String name) => widget.existingDaySessions.any(
+      (s) => s.sessionName.toLowerCase().trim() == name.toLowerCase().trim(),
+    );
+
+    if (!isTaken(candidate)) {
+      return candidate;
+    }
+
+    int suffix = 2;
+    while (isTaken('${candidate}_$suffix')) {
+      suffix++;
+    }
+    return '${candidate}_$suffix';
+  }
+
+  Future<void> _submitSession() async {
+    final startMin = _startTime.hour * 60 + _startTime.minute;
+    final endMin = _endTime.hour * 60 + _endTime.minute;
+    if (endMin <= startMin) {
+      setState(() => _modalError = 'End Time must be after Start Time');
+      return;
+    }
+
+    if (_consultationType == 'in_person') {
+      if (_selectedClinicId == null || _selectedClinicId!.trim().isEmpty) {
+        setState(() => _modalError = 'Please select a clinic for In-Person consultation');
+        return;
+      }
+    }
+
+    final fee = double.tryParse(_feeController.text.trim()) ?? 500;
+    if (fee <= 0) {
+      setState(() => _modalError = 'Please enter a valid consultation fee');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _modalError = null;
+    });
+
+    final sessionName = _determineSessionName();
+
+    final newItem = DoctorScheduleItem(
+      id: widget.initialItem?.id,
+      doctorId: widget.initialItem?.doctorId,
+      clinicId: _consultationType == 'in_person' ? _selectedClinicId?.trim() : null,
+      dayOfWeek: widget.dayOfWeek,
+      sessionName: sessionName,
+      startTime: _formatTime24(_startTime),
+      endTime: _formatTime24(_endTime),
+      slotDuration: _slotDuration,
+      consultationType: _consultationType,
+      consultationFee: fee,
+      isAvailable: _isAvailable,
+    );
+
+    final errorMsg = await widget.onSave(newItem);
+    if (!mounted) return;
+
+    if (errorMsg == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _isSaving = false;
+        _modalError = errorMsg;
+      });
+    }
+  }
+
+  List<DropdownMenuItem<String>> _buildClinicDropdownItems() {
+    final List<DropdownMenuItem<String>> items = [];
+
+    if (_myClinics.isNotEmpty) {
+      items.add(
+        const DropdownMenuItem<String>(
+          enabled: false,
+          value: '__hdr_my_clinics__',
+          child: Row(
+            children: [
+              Icon(Icons.home_work_rounded, size: 14, color: AppColors.primary),
+              SizedBox(width: 6),
+              Text(
+                '── MY CLINICS ──',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      for (final c in _myClinics) {
+        items.add(
+          DropdownMenuItem<String>(
+            value: c.id,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text(
+                '🏥 ${c.clinicName}${c.city != null && c.city!.trim().isNotEmpty ? " (${c.city!.trim()})" : ""}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (_associateClinics.isNotEmpty) {
+      items.add(
+        const DropdownMenuItem<String>(
+          enabled: false,
+          value: '__hdr_associate_clinics__',
+          child: Row(
+            children: [
+              Icon(Icons.apartment_rounded, size: 14, color: Color(0xFF2563EB)),
+              SizedBox(width: 6),
+              Text(
+                '── ASSOCIATE CLINICS ──',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2563EB),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      for (final c in _associateClinics) {
+        items.add(
+          DropdownMenuItem<String>(
+            value: c.id,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text(
+                '🏥 ${c.clinicName}${c.city != null && c.city!.trim().isNotEmpty ? " (${c.city!.trim()})" : ""}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return items;
   }
 
   @override
@@ -1168,20 +1842,30 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: _sessionName,
+                  value: _shiftOptions.contains(_baseShift)
+                      ? _baseShift
+                      : _shiftOptions.first,
                   isExpanded: true,
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'morning', child: Text('🌅 Morning Session')),
-                    DropdownMenuItem(
-                        value: 'afternoon', child: Text('☀️ Afternoon Session')),
-                    DropdownMenuItem(
-                        value: 'evening', child: Text('🌆 Evening Session')),
-                    DropdownMenuItem(
-                        value: 'night', child: Text('🌙 Night Session')),
-                  ],
+                  items: _shiftOptions.map((s) {
+                    String label;
+                    if (s == 'morning') {
+                      label = '🌅 Morning Session';
+                    } else if (s == 'afternoon') {
+                      label = '☀️ Afternoon Session';
+                    } else if (s == 'evening') {
+                      label = '🌆 Evening Session';
+                    } else if (s == 'night') {
+                      label = '🌙 Night Session';
+                    } else {
+                      label = s.toUpperCase();
+                    }
+                    return DropdownMenuItem<String>(
+                      value: s,
+                      child: Text(label),
+                    );
+                  }).toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _sessionName = val);
+                    if (val != null) setState(() => _baseShift = val);
                   },
                 ),
               ),
@@ -1287,15 +1971,16 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
-                            value: _slotDuration,
+                            value: _durationOptions.contains(_slotDuration)
+                                ? _slotDuration
+                                : _durationOptions.first,
                             isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(value: 15, child: Text('15 min')),
-                              DropdownMenuItem(value: 20, child: Text('20 min')),
-                              DropdownMenuItem(value: 30, child: Text('30 min')),
-                              DropdownMenuItem(value: 45, child: Text('45 min')),
-                              DropdownMenuItem(value: 60, child: Text('60 min')),
-                            ],
+                            items: _durationOptions
+                                .map((d) => DropdownMenuItem<int>(
+                                      value: d,
+                                      child: Text('$d min'),
+                                    ))
+                                .toList(),
                             onChanged: (val) {
                               if (val != null) setState(() => _slotDuration = val);
                             },
@@ -1322,20 +2007,34 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: _consultationType,
+                            value: _typeOptions.contains(_consultationType)
+                                ? _consultationType
+                                : _typeOptions.first,
                             isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'video', child: Text('📹 Video')),
-                              DropdownMenuItem(
-                                  value: 'in_person',
-                                  child: Text('🏥 In-Person')),
-                              DropdownMenuItem(
-                                  value: 'audio', child: Text('📞 Audio')),
-                            ],
+                            items: _typeOptions.map((t) {
+                              String label;
+                              if (t == 'video') {
+                                label = '📹 Video';
+                              } else if (t == 'in_person') {
+                                label = '🏥 In-Person';
+                              } else if (t == 'audio') {
+                                label = '📞 Audio';
+                              } else {
+                                label = t.toUpperCase();
+                              }
+                              return DropdownMenuItem<String>(
+                                value: t,
+                                child: Text(label),
+                              );
+                            }).toList(),
                             onChanged: (val) {
                               if (val != null) {
-                                setState(() => _consultationType = val);
+                                setState(() {
+                                  _consultationType = val;
+                                  if (val == 'in_person') {
+                                    _ensureInitialClinicSelection();
+                                  }
+                                });
                               }
                             },
                           ),
@@ -1346,6 +2045,86 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                 ),
               ],
             ),
+
+            if (_consultationType == 'in_person') ...[
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Text(
+                        'Select Clinic',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Text('*',
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  if (_isLoadingClinics)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.primary),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _modalError != null &&
+                            (_selectedClinicId == null ||
+                                _selectedClinicId!.isEmpty)
+                        ? Colors.red
+                        : const Color(0xFFCBD5E1),
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    menuMaxHeight: 280,
+                    borderRadius: BorderRadius.circular(12),
+                    dropdownColor: Colors.white,
+                    icon: const Icon(Icons.arrow_drop_down_rounded,
+                        color: AppColors.primary, size: 26),
+                    value: (_myClinics.any((c) => c.id == _selectedClinicId) ||
+                            _associateClinics
+                                .any((c) => c.id == _selectedClinicId))
+                        ? _selectedClinicId
+                        : null,
+                    hint: Text(
+                      _isLoadingClinics
+                          ? 'Loading clinics...'
+                          : (_myClinics.isEmpty && _associateClinics.isEmpty
+                              ? 'No clinics available'
+                              : 'Choose clinic for in-person visits *'),
+                      style: const TextStyle(
+                          color: Color(0xFF94A3B8), fontSize: 13),
+                    ),
+                    isExpanded: true,
+                    items: _buildClinicDropdownItems(),
+                    onChanged: (val) {
+                      if (val != null && !val.startsWith('__hdr_')) {
+                        setState(() {
+                          _selectedClinicId = val;
+                          _modalError = null;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 14),
 
@@ -1380,37 +2159,46 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                 ),
                 Switch(
                   value: _isAvailable,
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
+                  activeTrackColor: AppColors.primary.withValues(alpha: 0.4),
                   onChanged: (val) => setState(() => _isAvailable = val),
                 ),
               ],
             ),
 
-            const SizedBox(height: 16),
+            if (_modalError != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded,
+                        color: Color(0xFFDC2626), size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _modalError!,
+                        style: const TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Save Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  final fee = double.tryParse(_feeController.text.trim()) ?? 500;
-                  final newItem = DoctorScheduleItem(
-                    id: widget.initialItem?.id,
-                    doctorId: widget.initialItem?.doctorId,
-                    clinicId: widget.initialItem?.clinicId,
-                    dayOfWeek: widget.dayOfWeek,
-                    sessionName: _sessionName,
-                    startTime: _formatTime24(_startTime),
-                    endTime: _formatTime24(_endTime),
-                    slotDuration: _slotDuration,
-                    consultationType: _consultationType,
-                    consultationFee: fee,
-                    isAvailable: _isAvailable,
-                  );
-
-                  widget.onSave(newItem);
-                  Navigator.pop(context);
-                },
+                onPressed: _isSaving ? null : _submitSession,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1418,14 +2206,25 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Text(
-                  widget.initialItem == null ? 'Add Session' : 'Update Session',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : Text(
+                        widget.initialItem == null
+                            ? 'Add Session'
+                            : 'Update Session',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
               ),
             ),
           ],

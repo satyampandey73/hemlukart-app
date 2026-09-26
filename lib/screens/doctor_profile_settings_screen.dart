@@ -24,6 +24,7 @@ class _DoctorProfileSettingsScreenState
   bool _isLoading = true;
   String? _error;
   ApiDoctor? _doctor;
+  final Map<String, bool> _expandedSections = {};
 
   late TabController _tabController;
   final List<String> _tabs = [
@@ -1024,7 +1025,16 @@ class _DoctorProfileSettingsScreenState
   }
 
   Widget _sectionCard(
-      String title, IconData icon, List<Widget> rows) {
+    String title,
+    IconData icon,
+    List<Widget> rows, {
+    bool isCollapsible = true,
+    bool defaultExpanded = false,
+  }) {
+    final bool isExpanded = isCollapsible
+        ? (_expandedSections[title] ?? defaultExpanded)
+        : true;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -1033,38 +1043,91 @@ class _DoctorProfileSettingsScreenState
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, color: AppColors.primary, size: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: isCollapsible
+                  ? () {
+                      setState(() {
+                        _expandedSections[title] = !isExpanded;
+                      });
+                    }
+                  : null,
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(14),
+                bottom: Radius.circular(isExpanded ? 0 : 14),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, color: AppColors.primary, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                    if (isCollapsible)
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: AnimatedRotation(
+                          turns: isExpanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: AppColors.textDark)),
-              ],
+              ),
             ),
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          ...rows,
-        ],
+            AnimatedCrossFade(
+              firstChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  ...rows,
+                  const SizedBox(height: 4),
+                ],
+              ),
+              secondChild: const SizedBox.shrink(),
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              duration: const Duration(milliseconds: 200),
+            ),
+          ],
+        ),
       ),
     );
   }

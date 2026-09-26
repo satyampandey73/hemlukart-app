@@ -33,12 +33,15 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
       });
     });
 
-    if (_appState.isLoggedIn) {
-      if (_appState.apiProducts.isEmpty) {
-        _appState.fetchProductsFromApi();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_appState.isLoggedIn) {
+        if (_appState.apiProducts.isEmpty) {
+          _appState.fetchProductsFromApi();
+        }
+        _appState.fetchMyOrders();
       }
-      _appState.fetchMyOrders();
-    }
+    });
   }
 
   @override
@@ -521,6 +524,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                                               : 'assets/img1.png',
                                         ),
                                   fit: BoxFit.contain,
+                                  onError: (_, __) {},
                                 ),
                               ),
                             ),

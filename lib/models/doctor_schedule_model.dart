@@ -85,22 +85,54 @@ class DoctorScheduleItem {
     );
   }
 
+  /// Formats time to 24-hour 'HH:MM' in IST
+  static String formatToIstTime(String raw) {
+    final clean = raw.trim();
+    if (clean.isEmpty) return '09:00';
+
+    if (clean.contains('T')) {
+      try {
+        final dt = DateTime.parse(clean);
+        final ist = dt.isUtc ? dt.add(const Duration(hours: 5, minutes: 30)) : dt;
+        return '${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    final isPm = clean.toUpperCase().contains('PM');
+    final isAm = clean.toUpperCase().contains('AM');
+
+    final digitsAndColon = clean.replaceAll(RegExp(r'[^\d:]'), '');
+    final parts = digitsAndColon.split(':');
+
+    if (parts.isNotEmpty) {
+      int h = int.tryParse(parts[0]) ?? 9;
+      int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+
+      if (isPm && h < 12) {
+        h += 12;
+      } else if (isAm && h == 12) {
+        h = 0;
+      }
+
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+    }
+
+    return '09:00';
+  }
+
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = {
       'dayOfWeek': dayOfWeek.toLowerCase(),
       'sessionName': sessionName.toLowerCase(),
-      'startTime': startTime,
-      'endTime': endTime,
+      'startTime': formatToIstTime(startTime),
+      'endTime': formatToIstTime(endTime),
       'slotDuration': slotDuration,
       'consultationType': consultationType,
       'consultationFee': consultationFee,
       'isAvailable': isAvailable,
     };
-    if (clinicId != null && clinicId!.isNotEmpty) {
-      data['clinicId'] = clinicId;
-    }
-    if (id != null && id!.isNotEmpty) {
-      data['id'] = id;
+    if (clinicId != null && clinicId!.trim().isNotEmpty) {
+      data['clinicId'] = clinicId!.trim();
     }
     return data;
   }

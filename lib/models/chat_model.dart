@@ -7,6 +7,11 @@ class ChatMessageModel {
   final bool isRead;
   final String createdAt;
 
+  final String? fileUrl;
+  final String? fileType;
+  final String? fileName;
+  final int? fileSize;
+
   ChatMessageModel({
     required this.id,
     required this.appointmentId,
@@ -15,6 +20,10 @@ class ChatMessageModel {
     required this.message,
     this.isRead = false,
     required this.createdAt,
+    this.fileUrl,
+    this.fileType,
+    this.fileName,
+    this.fileSize,
   });
 
   static bool _parseBool(dynamic val) {
@@ -44,6 +53,10 @@ class ChatMessageModel {
       message: json['message']?.toString() ?? json['text']?.toString() ?? '',
       isRead: readVal,
       createdAt: json['createdAt']?.toString() ?? json['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+      fileUrl: json['fileUrl']?.toString() ?? json['file']?.toString() ?? json['attachmentUrl']?.toString() ?? json['documentUrl']?.toString(),
+      fileType: json['fileType']?.toString() ?? json['mimeType']?.toString(),
+      fileName: json['fileName']?.toString() ?? json['originalName']?.toString(),
+      fileSize: json['fileSize'] is int ? json['fileSize'] as int : int.tryParse(json['fileSize']?.toString() ?? ''),
     );
   }
 
@@ -56,6 +69,10 @@ class ChatMessageModel {
       'message': message,
       'isRead': isRead,
       'createdAt': createdAt,
+      if (fileUrl != null) 'fileUrl': fileUrl,
+      if (fileType != null) 'fileType': fileType,
+      if (fileName != null) 'fileName': fileName,
+      if (fileSize != null) 'fileSize': fileSize,
     };
   }
 
@@ -213,3 +230,60 @@ class UnreadCountApiResponse {
     );
   }
 }
+
+class ConsultationDocumentModel {
+  final String id;
+  final String appointmentId;
+  final String? description;
+  final String fileUrl;
+  final String? fileName;
+  final String? fileType;
+  final int? fileSize;
+  final String? uploadedBy;
+  final String createdAt;
+
+  ConsultationDocumentModel({
+    required this.id,
+    required this.appointmentId,
+    this.description,
+    required this.fileUrl,
+    this.fileName,
+    this.fileType,
+    this.fileSize,
+    this.uploadedBy,
+    required this.createdAt,
+  });
+
+  factory ConsultationDocumentModel.fromJson(Map<String, dynamic> json) {
+    return ConsultationDocumentModel(
+      id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
+      appointmentId: json['appointmentId']?.toString() ?? '',
+      description: json['description']?.toString(),
+      fileUrl: json['fileUrl']?.toString() ?? json['url']?.toString() ?? json['path']?.toString() ?? '',
+      fileName: json['fileName']?.toString() ?? json['originalName']?.toString() ?? json['name']?.toString(),
+      fileType: json['fileType']?.toString() ?? json['mimeType']?.toString() ?? json['type']?.toString(),
+      fileSize: json['fileSize'] is int
+          ? json['fileSize'] as int
+          : int.tryParse(json['fileSize']?.toString() ?? ''),
+      uploadedBy: json['uploadedBy']?.toString() ?? json['senderType']?.toString() ?? json['role']?.toString(),
+      createdAt: json['createdAt']?.toString() ?? DateTime.now().toIso8601String(),
+    );
+  }
+
+  String get formattedDate {
+    if (createdAt.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(createdAt).toLocal();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year;
+      final hour = (dt.hour % 12 == 0) ? 12 : (dt.hour % 12);
+      final min = dt.minute.toString().padLeft(2, '0');
+      final period = dt.hour >= 12 ? 'PM' : 'AM';
+      return '$day/$month/$year $hour:$min $period';
+    } catch (_) {
+      return createdAt;
+    }
+  }
+}
+

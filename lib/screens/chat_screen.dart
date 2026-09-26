@@ -69,8 +69,20 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
 
     if (res.success) {
+      final pendingTemp = _messages.where((m) => m.id.startsWith('temp_')).toList();
+      final List<ChatMessageModel> merged = List.from(res.messages);
+
+      for (final temp in pendingTemp) {
+        final alreadyInServer = res.messages.any((m) =>
+            m.senderType == temp.senderType &&
+            m.message == temp.message);
+        if (!alreadyInServer) {
+          merged.add(temp);
+        }
+      }
+
       setState(() {
-        _messages = res.messages;
+        _messages = merged;
         _isLoading = false;
       });
       if (!isBackground) {
@@ -91,9 +103,28 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty || _isSending) return;
 
     _msgController.clear();
+
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final isDoctorLoggedIn = _appState.isDoctorLoggedIn;
+    final currentUserId = isDoctorLoggedIn
+        ? (_appState.currentDoctorProfile?.id ?? _appState.currentUser?.id ?? 'doctor')
+        : (_appState.currentUser?.id ?? 'user');
+
+    final optimisticMsg = ChatMessageModel(
+      id: tempId,
+      appointmentId: widget.appointmentId,
+      senderId: currentUserId,
+      senderType: isDoctorLoggedIn ? 'doctor' : 'user',
+      message: text,
+      isRead: false,
+      createdAt: DateTime.now().toIso8601String(),
+    );
+
     setState(() {
+      _messages.add(optimisticMsg);
       _isSending = true;
     });
+    _scrollToBottom();
 
     final res = await _appState.sendChatMessage(
       appointmentId: widget.appointmentId,
@@ -107,8 +138,19 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     if (res.success) {
-      _fetchMessages();
+      if (res.data != null) {
+        final idx = _messages.indexWhere((m) => m.id == tempId);
+        if (idx != -1) {
+          setState(() {
+            _messages[idx] = res.data!;
+          });
+        }
+      }
+      _fetchMessages(isBackground: true);
     } else {
+      setState(() {
+        _messages.removeWhere((m) => m.id == tempId);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(res.message ?? 'Failed to send message'),
@@ -149,6 +191,7 @@ class _ChatScreenState extends State<ChatScreen> {
               backgroundImage: (widget.recipientAvatar != null && widget.recipientAvatar!.startsWith('http'))
                   ? NetworkImage(widget.recipientAvatar!) as ImageProvider
                   : const AssetImage('assets/d1.jpg'),
+              onBackgroundImageError: (_, __) {},
             ),
             const SizedBox(width: 10),
             Expanded(

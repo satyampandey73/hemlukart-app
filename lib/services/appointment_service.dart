@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/appointment_slot_model.dart';
 import '../models/book_appointment_model.dart';
 import '../models/my_appointments_model.dart';
 
@@ -8,24 +7,110 @@ class AppointmentService {
   static const String baseUrl =
       'https://backend.chikitsakart.com/api/appointments';
 
-  /// API 1: GET https://backend.chikitsakart.com/api/appointments/slots/{doctorId}?date={YYYY-MM-DD}
-  /// Fetches available and booked time slots for a given doctor and date.
-  static Future<AppointmentSlotsApiResponse> getAppointmentSlots({
+  /// Formats date to 'YYYY-MM-DD' in Indian Standard Time (IST)
+  static String formatToIstDate(dynamic input) {
+    if (input == null) {
+      final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+      return '${nowIst.year.toString().padLeft(4, '0')}-${nowIst.month.toString().padLeft(2, '0')}-${nowIst.day.toString().padLeft(2, '0')}';
+    }
+
+    if (input is DateTime) {
+      if (input.hour == 0 && input.minute == 0) {
+        return '${input.year.toString().padLeft(4, '0')}-${input.month.toString().padLeft(2, '0')}-${input.day.toString().padLeft(2, '0')}';
+      }
+      final ist = input.toUtc().add(const Duration(hours: 5, minutes: 30));
+      return '${ist.year.toString().padLeft(4, '0')}-${ist.month.toString().padLeft(2, '0')}-${ist.day.toString().padLeft(2, '0')}';
+    }
+
+    final String str = input.toString().trim();
+    if (str.isEmpty) {
+      final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+      return '${nowIst.year.toString().padLeft(4, '0')}-${nowIst.month.toString().padLeft(2, '0')}-${nowIst.day.toString().padLeft(2, '0')}';
+    }
+
+    // If already YYYY-MM-DD
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(str)) {
+      return str;
+    }
+
+    // If ISO with T
+    if (str.contains('T')) {
+      try {
+        final dt = DateTime.parse(str);
+        final ist = dt.isUtc ? dt.add(const Duration(hours: 5, minutes: 30)) : dt;
+        return '${ist.year.toString().padLeft(4, '0')}-${ist.month.toString().padLeft(2, '0')}-${ist.day.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    // If DD/MM/YYYY or DD-MM-YYYY
+    if (str.contains('/') || str.contains('-')) {
+      final sep = str.contains('/') ? '/' : '-';
+      final parts = str.split(sep);
+      if (parts.length == 3) {
+        if (parts[0].length == 4) {
+          return '${parts[0]}-${parts[1].padLeft(2, '0')}-${parts[2].padLeft(2, '0')}';
+        } else if (parts[2].length == 4) {
+          return '${parts[2]}-${parts[1].padLeft(2, '0')}-${parts[0].padLeft(2, '0')}';
+        }
+      }
+    }
+
+    return str;
+  }
+
+  /// Formats time to 'HH:MM' (24-hour IST time)
+  static String formatToIstTime(String? input) {
+    if (input == null || input.trim().isEmpty) return '09:00';
+    final str = input.trim();
+
+    // If ISO with T
+    if (str.contains('T')) {
+      try {
+        final dt = DateTime.parse(str);
+        final ist = dt.isUtc ? dt.add(const Duration(hours: 5, minutes: 30)) : dt;
+        return '${ist.hour.toString().padLeft(2, '0')}:${ist.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    final isPm = str.toUpperCase().contains('PM');
+    final isAm = str.toUpperCase().contains('AM');
+
+    // Strip non-digits and colon
+    final digitsAndColon = str.replaceAll(RegExp(r'[^\d:]'), '');
+    final parts = digitsAndColon.split(':');
+
+    if (parts.isNotEmpty) {
+      int h = int.tryParse(parts[0]) ?? 9;
+      int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+
+      if (isPm && h < 12) {
+        h += 12;
+      } else if (isAm && h == 12) {
+        h = 0;
+      }
+
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+    }
+
+    return '09:00';
+  }
+
+  /// API: GET https://backend.chikitsakart.com/api/appointments/doctor/{doctorId}?limit=100
+  /// Fetches all active appointments for a doctor so booked slots can be identified accurately.
+  static Future<MyAppointmentsApiResponse> getDoctorAppointmentsByDoctorId({
     required String doctorId,
-    required String date,
     String? token,
   }) async {
     if (doctorId.trim().isEmpty) {
-      return AppointmentSlotsApiResponse(
+      return MyAppointmentsApiResponse(
         success: false,
-        date: date,
-        slots: [],
+        appointments: [],
         message: 'Doctor ID is required',
       );
     }
 
     final String trimmedId = doctorId.trim();
-    final Uri url = Uri.parse('$baseUrl/slots/$trimmedId?date=$date');
+    final Uri url = Uri.parse('$baseUrl/doctor/$trimmedId?limit=100');
 
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
@@ -41,23 +126,23 @@ class AppointmentService {
           .get(url, headers: headers)
           .timeout(const Duration(seconds: 15));
 
+      final Map<String, dynamic> body = jsonDecode(response.body);
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final Map<String, dynamic> body = jsonDecode(response.body);
-        return AppointmentSlotsApiResponse.fromJson(body);
+        return MyAppointmentsApiResponse.fromJson(body);
       } else {
-        return AppointmentSlotsApiResponse(
+        return MyAppointmentsApiResponse(
           success: false,
-          date: date,
-          slots: [],
-          message: 'Failed with status code: ${response.statusCode}',
+          appointments: [],
+          message: body['message'] as String? ??
+              'Failed to fetch doctor appointments with status code: ${response.statusCode}',
         );
       }
     } catch (e) {
-      return AppointmentSlotsApiResponse(
+      return MyAppointmentsApiResponse(
         success: false,
-        date: date,
-        slots: [],
-        message: 'Error fetching appointment slots: $e',
+        appointments: [],
+        message: 'Error fetching doctor appointments: $e',
       );
     }
   }
@@ -90,20 +175,8 @@ class AppointmentService {
       headers['Authorization'] = 'Bearer $token';
     }
 
-    String formattedDate = appointmentDate.trim();
-    String formattedTime = (appointmentTime ?? '').trim();
-
-    if (formattedDate.contains('T')) {
-      try {
-        final dt = DateTime.parse(formattedDate).toUtc();
-        formattedDate =
-            '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-        if (formattedTime.isEmpty) {
-          formattedTime =
-              '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-        }
-      } catch (_) {}
-    }
+    final String formattedDate = formatToIstDate(appointmentDate);
+    final String formattedTime = formatToIstTime(appointmentTime);
 
     num? feeNum;
     if (consultationFee != null) {

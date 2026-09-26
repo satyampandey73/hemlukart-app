@@ -13,8 +13,17 @@ import 'doctor_profile_settings_screen.dart';
 import 'patient_detail_screen.dart';
 import 'doctor_manage_schedules_screen.dart';
 import 'doctor_my_clinics_screen.dart';
+import 'clinic_listing_screen.dart';
 import '../services/video_call_service.dart';
 import 'video_call_screen.dart';
+import 'cart_screen.dart';
+import 'medicine_listing_screen.dart';
+import 'my_orders_screen.dart';
+import 'product_detail_screen.dart';
+import 'new_home_screen.dart';
+import 'product_catalog_screen.dart';
+import 'doctor_consultation_screen.dart';
+import 'doctor_eprescriptions_screen.dart';
 
 class DoctorDashboardScreen extends StatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -166,19 +175,43 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     super.dispose();
   }
 
+  void _handleHomeTabChange(int index) {
+    if (!mounted) return;
+    if (index == 0) {
+      setState(() => _currentIndex = 0);
+    } else if (index == 1) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProductCatalogScreen()),
+      );
+    } else if (index == 2) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProductCatalogScreen()),
+      );
+    } else if (index == 3) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const DoctorConsultationScreen()),
+      );
+    } else if (index == 4) {
+      setState(() => _currentIndex = 3);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
+      NewHomeScreen(onTabChange: _handleHomeTabChange),
       _buildDashboardOverview(),
       _buildPatientRecordsTab(),
-      _buildEPrescriptionsTab(),
-      _buildTelehealthTab(),
       const DoctorProfileSettingsScreen(embeddedMode: true),
     ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF3F6FB),
-      appBar: _currentIndex == 4 ? null : _buildMobileAppBar(),
+      appBar: (_currentIndex == 0 || _currentIndex == 3) ? null : _buildMobileAppBar(),
+      drawer: _buildDoctorDrawer(),
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
@@ -209,6 +242,11 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           elevation: 0,
           items: const [
             BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home, color: AppColors.primary),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
               icon: Icon(Icons.grid_view_rounded),
               activeIcon: Icon(Icons.grid_view_rounded, color: AppColors.primary),
               label: 'Overview',
@@ -219,21 +257,254 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               label: 'Patients',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.description_outlined),
-              activeIcon: Icon(Icons.description),
-              label: 'Prescription',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.videocam_outlined),
-              activeIcon: Icon(Icons.videocam),
-              label: 'Telehealth',
-            ),
-            BottomNavigationBarItem(
               icon: Icon(Icons.person_outline_rounded),
               activeIcon: Icon(Icons.person_rounded, color: AppColors.primary),
               label: 'Profile',
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDoctorDrawer() {
+    final doc = _apiDoctorProfile;
+    final displayName = doc != null && doc.fullName.isNotEmpty
+        ? 'Dr. ${doc.fullName}'
+        : 'Doctor Portal';
+    final subTitle = doc != null
+        ? (doc.currentDesignation ??
+            doc.ayushSystem ??
+            'Ayurvedic Physician')
+        : 'Ayush Practitioner';
+    final photoUrl = doc?.documents?.profilePhoto ?? '';
+    final initial = (doc != null && doc.fullName.isNotEmpty)
+        ? doc.fullName.trim()[0].toUpperCase()
+        : 'D';
+
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Doctor Profile Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.primary, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: AppColors.primary.withOpacity(0.1),
+                      backgroundImage: (photoUrl.isNotEmpty && photoUrl.startsWith('http'))
+                          ? NetworkImage(photoUrl)
+                          : null,
+                      child: (photoUrl.isEmpty || !photoUrl.startsWith('http'))
+                          ? Text(
+                              initial,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                                fontSize: 18,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified, color: Color(0xFF0D9488), size: 16),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subTitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Menu items matching user screenshot
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                children: [
+                  _buildDrawerItem(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'E-Prescriptions',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorEPrescriptionsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  _buildDrawerItem(
+                    icon: Icons.access_time_filled_rounded,
+                    label: 'My Schedule',
+                    isSelected: false,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorManageSchedulesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.apartment_rounded,
+                    label: 'My Clinics',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorMyClinicsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  _buildDrawerItem(
+                    icon: Icons.store_mall_directory_rounded,
+                    label: 'Offline Clinics',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ClinicListingScreen(
+                            doctorId: _apiDoctorProfile?.id,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  _buildDrawerItem(
+                    icon: Icons.call_rounded,
+                    label: 'Telehealth',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => Scaffold(
+                            backgroundColor: const Color(0xFFF3F6FB),
+                            appBar: AppBar(
+                              title: const Text(
+                                'Telehealth Consultations',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              backgroundColor: AppColors.primary,
+                              iconTheme: const IconThemeData(color: Colors.white),
+                              elevation: 0,
+                            ),
+                            body: SafeArea(child: _buildTelehealthTab()),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  _buildDrawerItem(
+                    icon: Icons.shopping_bag_rounded,
+                    label: 'My Orders',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const MyOrdersScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isSelected = false,
+  }) {
+    return Material(
+      color: isSelected ? const Color(0xFFF1F5F9) : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -258,6 +529,13 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       backgroundColor: AppColors.primary,
       elevation: 0,
       automaticallyImplyLeading: false,
+      leading: Builder(
+        builder: (ctx) => IconButton(
+          icon: const Icon(Icons.menu_rounded, color: Colors.white),
+          onPressed: () => Scaffold.of(ctx).openDrawer(),
+        ),
+      ),
+      titleSpacing: 0,
       title: Row(
         children: [
           Container(
@@ -329,6 +607,56 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           onPressed: _fetchDoctorDashboardData,
           tooltip: 'Sync Dashboard',
         ),
+        // Live Cart Button with Quantity Badge
+        AnimatedBuilder(
+          animation: AppState(),
+          builder: (context, _) {
+            final cartCount = AppState().cart.fold<int>(
+              0,
+              (sum, item) => sum + item.quantity,
+            );
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.shopping_cart_outlined, color: Colors.white),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CartScreen()),
+                    );
+                  },
+                  tooltip: 'Doctor Cart',
+                ),
+                if (cartCount > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '$cartCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
         IconButton(
           icon: const Icon(Icons.search_rounded, color: Colors.white),
           onPressed: _showGlobalSearchSheet,
@@ -341,9 +669,19 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   bool _isToday(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return false;
     try {
-      final dt = DateTime.parse(dateStr).toLocal();
-      final now = DateTime.now();
-      return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      final clean = dateStr.trim();
+      final nowIst = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+
+      // 1. Plain YYYY-MM-DD
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(clean)) {
+        final todayStr = '${nowIst.year.toString().padLeft(4, '0')}-${nowIst.month.toString().padLeft(2, '0')}-${nowIst.day.toString().padLeft(2, '0')}';
+        return clean == todayStr;
+      }
+
+      // 2. ISO timestamp or other parsed string
+      final dt = DateTime.parse(clean);
+      final dtIst = dt.isUtc ? dt.add(const Duration(hours: 5, minutes: 30)) : dt;
+      return dtIst.year == nowIst.year && dtIst.month == nowIst.month && dtIst.day == nowIst.day;
     } catch (_) {
       return false;
     }
@@ -440,141 +778,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-
-            // Practice Setup Quick Access Row
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const DoctorManageSchedulesScreen(),
-                        ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.02),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.calendar_month_rounded,
-                                color: AppColors.primary, size: 16),
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'My Schedule',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textDark,
-                                  ),
-                                ),
-                                Text(
-                                  'Slots & Timings',
-                                  style: TextStyle(fontSize: 10, color: AppColors.textLight),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.arrow_forward_ios_rounded,
-                              size: 12, color: AppColors.textLight),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const DoctorMyClinicsScreen(),
-                        ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.02),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.local_hospital_rounded,
-                                color: Color(0xFF0284C7), size: 16),
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'My Clinics',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textDark,
-                                  ),
-                                ),
-                                Text(
-                                  'Locations & Staff',
-                                  style: TextStyle(fontSize: 10, color: AppColors.textLight),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.arrow_forward_ios_rounded,
-                              size: 12, color: AppColors.textLight),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
             // Today's Live Queue Header & Filters
             Row(
@@ -661,6 +865,275 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDoctorProductsSection() {
+    final appState = AppState();
+    final products = appState.apiProducts;
+
+    if (products.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.local_pharmacy_rounded, color: Color(0xFF0D9488), size: 18),
+                const SizedBox(width: 6),
+                const Text(
+                  'Ayush Pharmacy',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
+                  ),
+                  child: const Text(
+                    'Doctor Pricing',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0D9488),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MedicineListingScreen()),
+                );
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Row(
+                children: [
+                  Text(
+                    'View All',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  SizedBox(width: 2),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 235,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: products.take(10).length,
+            separatorBuilder: (_, index) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final prod = products[index];
+              final hasDiscount = prod.price < prod.originalPrice;
+              final badgeLabel = prod.roleDiscountLabel.isNotEmpty
+                  ? prod.roleDiscountLabel
+                  : (hasDiscount ? '${prod.effectiveDiscountPercent}% OFF' : '');
+
+              return Container(
+                width: 155,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ProductDetailScreen(product: prod),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Product Image & Doctor Discount Tag
+                          Stack(
+                            children: [
+                              Container(
+                                height: 85,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: prod.image.startsWith('http')
+                                      ? Image.network(
+                                          prod.image,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (ctx, err, stack) => const Icon(
+                                            Icons.medication_rounded,
+                                            size: 32,
+                                            color: AppColors.textLight,
+                                          ),
+                                        )
+                                      : Image.asset(
+                                          prod.image.isNotEmpty ? prod.image : 'assets/p1.png',
+                                          fit: BoxFit.contain,
+                                        ),
+                                ),
+                              ),
+                              if (badgeLabel.isNotEmpty)
+                                Positioned(
+                                  top: 4,
+                                  left: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0D9488),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      badgeLabel,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            prod.brand.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textLight,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            prod.name,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textDark,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const Spacer(),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                '₹${prod.price.toInt()}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              if (hasDiscount) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  '₹${prod.originalPrice.toInt()}',
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: AppColors.textLight,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 28,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                appState.addToCart(prod, qty: 1);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Added ${prod.name} to cart at Doctor Price (₹${prod.price.toInt()})!'),
+                                    backgroundColor: const Color(0xFF0D9488),
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                    action: SnackBarAction(
+                                      label: 'View Cart',
+                                      textColor: Colors.white,
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (_) => const CartScreen()),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.add_shopping_cart_rounded, size: 12),
+                              label: const Text('Add', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.zero,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 18),
+      ],
     );
   }
 
@@ -1195,9 +1668,13 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   }
 
   // ===========================================================================
-  // TAB 2: E-PRESCRIPTIONS (Adapted from Image 2)
+  // TAB 2: E-PRESCRIPTIONS
   // ===========================================================================
   Widget _buildEPrescriptionsTab() {
+    return const DoctorEPrescriptionsScreen(isEmbedded: true);
+  }
+
+  Widget _oldBuildEPrescriptionsTab() {
     // Results come directly from the API — no client-side filtering needed.
     // _apiPrescriptions already reflects the current search + status filter.
     final List<Map<String, dynamic>> results = _apiPrescriptions;
@@ -2341,9 +2818,12 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       patientName = item['patientName'] ?? 'Patient';
       id = item['id'] ?? '';
       status = item['status'] ?? 'Scheduled';
-      time = item['time'] ?? '10:00 AM';
-      type = item['type'] ?? 'Video';
-      complaint = item['complaint'] ?? 'General Consult';
+      final rawDate = item['appointmentDate']?.toString();
+      final rawTime = (item['appointmentTime'] ?? item['time'])?.toString();
+      time = UserAppointmentItem.formatDateTimeInIst(dateStr: rawDate, timeStr: rawTime);
+      if (time.isEmpty) time = '10:00 AM';
+      type = item['type'] ?? item['consultationType'] ?? 'Video';
+      complaint = item['complaint'] ?? item['symptoms'] ?? 'General Consult';
     }
 
     final bool isActive = status.toLowerCase() != 'cancelled' && status.toLowerCase() != 'completed';
@@ -2901,7 +3381,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                setState(() => _currentIndex = 1);
+                setState(() => _currentIndex = 2);
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, minimumSize: const Size(double.infinity, 40)),
               child: const Text('Search in Patient Records', style: TextStyle(color: Colors.white)),

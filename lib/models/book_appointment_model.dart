@@ -4,6 +4,7 @@ class BookedAppointment {
   final String? doctorId;
   final String? clinicId;
   final String? appointmentDate;
+  final String? appointmentTime;
   final int? durationMinutes;
   final String? consultationType;
   final String? patientName;
@@ -31,6 +32,7 @@ class BookedAppointment {
     this.doctorId,
     this.clinicId,
     this.appointmentDate,
+    this.appointmentTime,
     this.durationMinutes,
     this.consultationType,
     this.patientName,
@@ -60,6 +62,7 @@ class BookedAppointment {
       doctorId: json['doctorId'] as String?,
       clinicId: json['clinicId'] as String?,
       appointmentDate: json['appointmentDate'] as String?,
+      appointmentTime: (json['appointmentTime'] ?? json['time'] ?? json['slotTime'] ?? json['startTime'])?.toString(),
       durationMinutes: json['durationMinutes'] is int
           ? json['durationMinutes'] as int
           : int.tryParse(json['durationMinutes']?.toString() ?? ''),

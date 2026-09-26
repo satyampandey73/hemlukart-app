@@ -30,12 +30,15 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     'Cancelled',
   ];
   int _currentPage = 1;
-  final int _limit = 10;
+  final int _limit = 50;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _appState.addListener(_onAppStateChanged);
 
     if (_appState.isLoggedIn) {
@@ -59,18 +62,17 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     });
   }
 
-  Future<void> _loadAppointments({String? status}) async {
+  Future<void> _loadAppointments() async {
     await _appState.fetchMyAppointments(
       page: _currentPage,
       limit: _limit,
-      status: status,
+      status: null,
     );
+    if (mounted) setState(() {});
   }
 
   Future<void> _refresh() async {
-    final statusIndex = _tabController.index;
-    final status = statusIndex == 0 ? null : _tabs[statusIndex].toLowerCase();
-    await _loadAppointments(status: status);
+    await _loadAppointments();
   }
 
   void _showCancelDialog(UserAppointmentItem apt) {
@@ -256,6 +258,24 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
   }
 
   Future<void> _joinPatientVideoCall(UserAppointmentItem apt) async {
+    final s = apt.status
+        .toLowerCase()
+        .trim()
+        .replaceAll(' ', '_')
+        .replaceAll('-', '_');
+    if (s.contains('pending')) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Appointment is pending doctor confirmation. You can join once confirmed.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     String? token = _appState.authToken ?? _appState.activeChatToken;
     if (token == null || token.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
@@ -508,15 +528,22 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
+    switch (status.toLowerCase().trim().replaceAll(' ', '_')) {
       case 'confirmed':
       case 'approved':
+      case 'scheduled':
         return Colors.green;
+      case 'in_progress':
+      case 'inprogress':
+      case 'in-progress':
+      case 'active':
+        return const Color(0xFF0D9488);
       case 'pending':
         return Colors.orange;
       case 'completed':
         return Colors.blue;
       case 'cancelled':
+      case 'canceled':
         return Colors.red;
       default:
         return AppColors.primary;
@@ -538,6 +565,11 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
         backgroundColor: AppColors.primary,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: _refresh,
+            tooltip: 'Refresh Appointments',
+          ),
           Stack(
             alignment: Alignment.center,
             children: [
@@ -592,30 +624,28 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
             fontSize: 13,
           ),
           onTap: (index) {
-            final status = index == 0 ? null : _tabs[index].toLowerCase();
-            _loadAppointments(status: status);
+            setState(() {});
           },
           tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
         ),
       ),
       body: !_appState.isLoggedIn
           ? _buildLoggedOutView()
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              color: AppColors.primary,
-              child: _appState.isLoadingMyAppointments
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primary,
-                      ),
-                    )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: _tabs.map((tab) {
-                        return _buildAppointmentsList(tab);
-                      }).toList(),
-                    ),
-            ),
+          : _appState.isLoadingMyAppointments
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                  ),
+                )
+              : TabBarView(
+                  key: ValueKey(
+                    'tabview_${_tabController.index}_${_appState.myAppointments.length}',
+                  ),
+                  controller: _tabController,
+                  children: _tabs.map((tab) {
+                    return _buildAppointmentsList(tab);
+                  }).toList(),
+                ),
     );
   }
 
@@ -689,14 +719,43 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
   Widget _buildAppointmentsList(String filterTab) {
     final list = _appState.myAppointments.where((apt) {
       if (filterTab == 'All') return true;
-      return apt.status.toLowerCase() == filterTab.toLowerCase();
+      final s = apt.status
+          .toLowerCase()
+          .trim()
+          .replaceAll(' ', '_')
+          .replaceAll('-', '_');
+      if (filterTab == 'Confirmed') {
+        // Confirmed tab shows BOTH confirmed and in-progress appointments
+        return s.contains('confirm') ||
+            s.contains('progress') ||
+            s == 'approved' ||
+            s == 'scheduled' ||
+            s == 'active';
+      }
+      if (filterTab == 'Pending') {
+        return s.contains('pending');
+      }
+      if (filterTab == 'Completed') {
+        return s.contains('complete');
+      }
+      if (filterTab == 'Cancelled') {
+        return s.contains('cancel');
+      }
+      return s == filterTab.toLowerCase();
     }).toList();
 
     if (list.isEmpty) {
-      return Center(
+      return RefreshIndicator(
+        key: ValueKey('empty_${filterTab}_${_appState.myAppointments.length}'),
+        onRefresh: _refresh,
+        color: AppColors.primary,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
+          child: Container(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height * 0.6,
+            ),
+            alignment: Alignment.center,
             padding: const EdgeInsets.all(32.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -719,7 +778,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Your booked doctor consultations will appear here.',
+                  'Pull down to refresh or check back later.',
                   style: TextStyle(fontSize: 12, color: AppColors.textLight),
                   textAlign: TextAlign.center,
                 ),
@@ -730,20 +789,37 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
       );
     }
 
-    return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(16),
-      itemCount: list.length,
-      itemBuilder: (context, index) {
-        final apt = list[index];
-        return _buildAppointmentCard(apt);
-      },
+    return RefreshIndicator(
+      key: ValueKey('list_${filterTab}_${list.length}'),
+      onRefresh: _refresh,
+      color: AppColors.primary,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: list.length,
+        itemBuilder: (context, index) {
+          final apt = list[index];
+          return _buildAppointmentCard(apt);
+        },
+      ),
     );
   }
 
   Widget _buildAppointmentCard(UserAppointmentItem apt) {
     final statusColor = _getStatusColor(apt.status);
     final statusBg = _getStatusBgColor(apt.status);
+    final statusNorm = apt.status
+        .toLowerCase()
+        .trim()
+        .replaceAll(' ', '_')
+        .replaceAll('-', '_');
+    final isPending = statusNorm.contains('pending');
+    final canJoinCall = apt.isVideoConsultation &&
+        !isPending &&
+        (statusNorm.contains('confirm') ||
+            statusNorm.contains('progress') ||
+            statusNorm == 'approved' ||
+            statusNorm == 'active');
 
     return GestureDetector(
       onTap: () {
@@ -847,6 +923,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                             ? NetworkImage(apt.displayDoctorPhoto)
                                   as ImageProvider
                             : const AssetImage('assets/doctor_profile.png'),
+                        onBackgroundImageError: (_, __) {},
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -1013,35 +1090,69 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                       alignment: WrapAlignment.end,
                       children: [
                         if (apt.status.toLowerCase() != 'cancelled') ...[
-                          if (apt.isVideoConsultation)
-                            ElevatedButton.icon(
-                              onPressed: () => _joinPatientVideoCall(apt),
-                              icon: const Icon(
-                                Icons.videocam_rounded,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                              label: const Text(
-                                'Join Call',
-                                style: TextStyle(
+                          if (apt.isVideoConsultation) ...[
+                            if (canJoinCall)
+                              ElevatedButton.icon(
+                                onPressed: () => _joinPatientVideoCall(apt),
+                                icon: const Icon(
+                                  Icons.videocam_rounded,
+                                  size: 14,
                                   color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
+                                ),
+                                label: const Text(
+                                  'Join Call',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF16A34A),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              )
+                            else if (isPending)
+                              ElevatedButton.icon(
+                                onPressed: null, // Inactive / disabled for pending status
+                                icon: Icon(
+                                  Icons.videocam_off_outlined,
+                                  size: 14,
+                                  color: Colors.grey.shade400,
+                                ),
+                                label: Text(
+                                  'Join Call',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade400,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  disabledBackgroundColor: const Color(0xFFF1F5F9),
+                                  disabledForegroundColor: const Color(0xFF94A3B8),
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    side: BorderSide(color: Colors.grey.shade300),
+                                  ),
                                 ),
                               ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF16A34A),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
+                          ],
                           ElevatedButton.icon(
                             onPressed: () {
                               Navigator.push(

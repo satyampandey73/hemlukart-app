@@ -286,6 +286,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               ? NetworkImage(_selectedImage) as ImageProvider
                               : AssetImage(_selectedImage),
                           fit: BoxFit.contain,
+                          onError: (_, __) {},
                         ),
                       ),
                     ),
@@ -346,6 +347,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 ? NetworkImage(imagePath) as ImageProvider
                                 : AssetImage(imagePath),
                             fit: BoxFit.cover,
+                            onError: (_, __) {},
                           ),
                         ),
                       ),
@@ -429,24 +431,51 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           color: AppColors.primary,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '₹${prod.originalPrice.toInt()}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textLight,
-                          decoration: TextDecoration.lineThrough,
+                      if (prod.price < prod.originalPrice) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '₹${prod.originalPrice.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textLight,
+                            decoration: TextDecoration.lineThrough,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Save ${((prod.originalPrice - prod.price) / prod.originalPrice * 100).toInt()}%',
-                        style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                        const SizedBox(width: 8),
+                        if (_appState.isDoctorLoggedIn)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFF0D9488)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.verified_user_rounded, size: 12, color: Color(0xFF0D9488)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Doctor Special: ${prod.effectiveDiscountPercent}% OFF',
+                                  style: const TextStyle(
+                                    color: Color(0xFF0D9488),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Text(
+                            'Save ${prod.effectiveDiscountPercent}%',
+                            style: const TextStyle(
+                              color: Colors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -1507,6 +1536,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 : 'assets/img2.png',
                           ),
                     fit: BoxFit.contain,
+                    onError: (_, __) {},
                   ),
                 ),
               ),
@@ -2075,19 +2105,22 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     bool isExpanded,
     ValueChanged<bool> onToggle,
   ) {
-    return ListTile(
-      onTap: () => onToggle(!isExpanded),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 15,
-          color: AppColors.textDark,
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        onTap: () => onToggle(!isExpanded),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: AppColors.textDark,
+          ),
         ),
-      ),
-      trailing: Icon(
-        isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-        color: AppColors.primary,
+        trailing: Icon(
+          isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+          color: AppColors.primary,
+        ),
       ),
     );
   }

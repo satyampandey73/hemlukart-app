@@ -24,11 +24,13 @@ import '../models/blog_model.dart';
 import '../services/blog_service.dart';
 import 'blog_detail_screen.dart';
 import '../widgets/product_quantity_selector.dart';
-import '../models/doctor_model.dart';
 import '../services/doctor_service.dart';
 import 'my_prescriptions_screen.dart';
 import '../models/banner_model.dart';
 import '../services/banner_service.dart';
+import 'clinic_listing_screen.dart';
+import 'clinic_detail_screen.dart';
+import '../services/clinic_service.dart';
 
 // harsh.s@btplsoft.com
 class NewHomeScreen extends StatefulWidget {
@@ -72,8 +74,16 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   List<Doctor> _homeDoctors = [];
   bool _isLoadingHomeDoctors = false;
 
+  List<Clinic> _homeClinics = [];
+  bool _isLoadingHomeClinics = false;
+
   List<BannerModel> _heroBanners = [];
   bool _isLoadingBanners = false;
+  static final List<String> _defaultHeroBannerUrls = [
+    'https://res.cloudinary.com/dubhfgcd6/image/upload/v1789131896/banners/lznxws5kalkqoxutdvv2.jpg',
+    'https://res.cloudinary.com/dubhfgcd6/image/upload/v1789487586/banners/jxgmljnlhwlww5iorkxv.jpg',
+    'https://res.cloudinary.com/dubhfgcd6/image/upload/v1789487887/banners/vburyzlzvjk0dx3r1u83.jpg',
+  ];
 
   List<BannerModel> _hero1Banners = [];
   bool _isLoadingHero1Banners = false;
@@ -83,7 +93,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   final PageController _hero2BannerController = PageController();
   int _currentHero2BannerIndex = 0;
   Timer? _hero2BannerTimer;
-  bool _rebuildScheduled = false;
 
   @override
   void initState() {
@@ -97,8 +106,39 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     _fetchTestimonials();
     _fetchFaqs();
     _fetchBrands();
-    _fetchBlogs();
-    _fetchHomeDoctors();
+    if (!_appState.isDoctorLoggedIn) {
+      _fetchHomeDoctors();
+      _fetchHomeClinics();
+    }
+  }
+
+  Future<void> _fetchHomeClinics() async {
+    if (!mounted) return;
+    setState(() => _isLoadingHomeClinics = true);
+
+    try {
+      final response = await ClinicService.getClinics();
+      if (!mounted) return;
+
+      if (response.success && response.clinics.isNotEmpty) {
+        setState(() {
+          _homeClinics = response.clinics.map((c) => Clinic.fromApiClinic(c)).toList();
+          _isLoadingHomeClinics = false;
+        });
+      } else {
+        setState(() {
+          _homeClinics = [];
+          _isLoadingHomeClinics = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _homeClinics = [];
+          _isLoadingHomeClinics = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchHomeDoctors() async {
@@ -378,14 +418,20 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
   void _startBannerAutoSlide() {
     _bannerTimer?.cancel();
-    if (_heroBanners.length <= 1) return;
-    _bannerTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted || _heroBanners.isEmpty) return;
-      final nextIndex = (_currentBannerIndex + 1) % _heroBanners.length;
-      if (_bannerController.hasClients) {
+    _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      final count = _heroBanners.isNotEmpty
+          ? _heroBanners.length
+          : _defaultHeroBannerUrls.length;
+      if (count <= 1) return;
+      if (_bannerController.hasClients &&
+          _bannerController.position.hasContentDimensions) {
+        final currentPage =
+            (_bannerController.page ?? _currentBannerIndex.toDouble()).round();
+        final nextIndex = (currentPage + 1) % count;
         _bannerController.animateToPage(
           nextIndex,
-          duration: const Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 600),
           curve: Curves.easeInOut,
         );
       }
@@ -509,10 +555,30 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      _fetchBanners(),
+      _fetchHero1Banners(),
+      _fetchHero2Banners(),
+      _fetchCategories(),
+      _fetchTestimonials(),
+      _fetchFaqs(),
+      _fetchBrands(),
+      if (!_appState.isDoctorLoggedIn) ...[
+        _fetchHomeDoctors(),
+        _fetchHomeClinics(),
+      ],
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: _refreshAll,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Search Section
@@ -529,6 +595,29 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                   children: [
                     Row(
                       children: [
+                        if (AppState().isDoctorLoggedIn) ...[
+                          Builder(
+                            builder: (btnCtx) => InkWell(
+                              onTap: () {
+                                Scaffold.of(btnCtx).openDrawer();
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                margin: const EdgeInsets.only(right: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.menu_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         Container(
                           width: 40,
                           height: 40,
@@ -600,167 +689,217 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
           // const SizedBox(height: 16),
 
-          // Banner Carousel
-          _isLoadingBanners
-              ? const SizedBox(
-                  height: 180,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                      strokeWidth: 2,
+          // Banner Carousel (Auto-sliding images)
+          Builder(
+            builder: (context) {
+              final banners = _heroBanners.isNotEmpty
+                  ? _heroBanners.map((b) => b.imageUrl).toList()
+                  : _defaultHeroBannerUrls;
+
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 180,
+                    child: PageView.builder(
+                      controller: _bannerController,
+                      itemCount: banners.length,
+                      onPageChanged: (idx) =>
+                          setState(() => _currentBannerIndex = idx),
+                      itemBuilder: (context, idx) {
+                        return _buildApiBannerSlide(banners[idx]);
+                      },
                     ),
                   ),
-                )
-              : _heroBanners.isEmpty
-              ? const SizedBox.shrink()
-              : Column(
-                  children: [
-                    SizedBox(
-                      height: 180,
-                      child: PageView.builder(
-                        controller: _bannerController,
-                        itemCount: _heroBanners.length,
-                        onPageChanged: (idx) =>
-                            setState(() => _currentBannerIndex = idx),
-                        itemBuilder: (context, idx) {
-                          final banner = _heroBanners[idx];
-                          return _buildApiBannerSlide(banner.imageUrl);
-                        },
-                      ),
+                  if (banners.length > 1) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(banners.length, (idx) {
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          width: _currentBannerIndex == idx ? 16 : 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _currentBannerIndex == idx
+                                ? AppColors.primary
+                                : AppColors.border,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        );
+                      }),
                     ),
-                    if (_heroBanners.length > 1) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(_heroBanners.length, (idx) {
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: _currentBannerIndex == idx ? 16 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _currentBannerIndex == idx
-                                  ? AppColors.primary
-                                  : AppColors.border,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          );
-                        }),
-                      ),
-                    ],
                   ],
-                ),
+                ],
+              );
+            },
+          ),
 
           const SizedBox(height: 20),
 
           // Our Brands (from API)
           _buildBrandsSection(),
 
-          const SizedBox(height: 20),
-
-          // Quick Actions Grid (mobile-friendly layout instead of desktop side-bar)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.6,
-              children: [
-                _buildQuickActionCard(
-                  'Order Medicines',
-                  'Genuine products',
-                  Icons.medication_liquid,
-                  const Color.fromARGB(255, 255, 255, 255),
-                  () => widget.onTabChange(2),
-                ),
-                _buildQuickActionCard(
-                  'Book a Doctor',
-                  'Expert Consulting',
-                  Icons.local_hospital,
-                  const Color.fromARGB(255, 255, 255, 255),
-                  () => widget.onTabChange(1),
-                ),
-                _buildQuickActionCard(
-                  'Track Your Order',
-                  'Real-time tracking',
-                  Icons.local_shipping_outlined,
-                  const Color.fromARGB(255, 255, 255, 255),
-                  () {
-                    if (_appState.orders.isNotEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => OrderTrackingScreen(
-                            order: _appState.orders.first,
-                          ),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'No active orders to track. Place an order first!',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                ),
-
-                _buildQuickActionCard(
-                  'View Prescriptions',
-                  'Digital health vaults',
-                  Icons.receipt_long,
-                  const Color.fromARGB(255, 255, 255, 255),
-                  () async {
-                    if (await LoginScreen.checkAndNavigate(context)) {
-                      if (mounted) {
+          // Quick Actions Grid (mobile-friendly layout instead of desktop side-bar, shown only for patients)
+          if (!_appState.isDoctorLoggedIn) ...[
+            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.6,
+                children: [
+                  _buildQuickActionCard(
+                    'Order Medicines',
+                    'Genuine products',
+                    Icons.medication_liquid,
+                    const Color.fromARGB(255, 255, 255, 255),
+                    () => widget.onTabChange(2),
+                  ),
+                  _buildQuickActionCard(
+                    'Book a Doctor',
+                    'Expert Consulting',
+                    Icons.local_hospital,
+                    const Color.fromARGB(255, 255, 255, 255),
+                    () => widget.onTabChange(1),
+                  ),
+                  _buildQuickActionCard(
+                    'Track Your Order',
+                    'Real-time tracking',
+                    Icons.local_shipping_outlined,
+                    const Color.fromARGB(255, 255, 255, 255),
+                    () {
+                      if (_appState.orders.isNotEmpty) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const MyPrescriptionsScreen(),
+                            builder: (_) => OrderTrackingScreen(
+                              order: _appState.orders.first,
+                            ),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'No active orders to track. Place an order first!',
+                            ),
                           ),
                         );
                       }
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // Featured Doctors
-          _buildSectionHeader(
-            'Featured Doctors',
-            'Consult with our top-rated medical experts',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const DoctorListingScreen()),
-            ),
-          ),
-          SizedBox(
-            height: 220,
-            child: _isLoadingHomeDoctors
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  )
-                : ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _homeDoctors.isNotEmpty
-                        ? _homeDoctors.length
-                        : _appState.mockDoctors.length,
-                    itemBuilder: (context, idx) {
-                      final doc = _homeDoctors.isNotEmpty
-                          ? _homeDoctors[idx]
-                          : _appState.mockDoctors[idx];
-                      return _buildDoctorCard(doc);
                     },
                   ),
-          ),
+
+                  _buildQuickActionCard(
+                    'View Prescriptions',
+                    'Digital health vaults',
+                    Icons.receipt_long,
+                    const Color.fromARGB(255, 255, 255, 255),
+                    () async {
+                      if (await LoginScreen.checkAndNavigate(context)) {
+                        if (mounted) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyPrescriptionsScreen(),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Offline Clinics (shown only to patients/users, hidden for logged-in doctors)
+          if (!_appState.isDoctorLoggedIn) ...[
+            _buildSectionHeader(
+              'Offline Clinics',
+              'Visit verified Ayush clinics & consult in person',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClinicListingScreen()),
+              ),
+            ),
+            if (_isLoadingHomeClinics)
+              const SizedBox(
+                height: 120,
+                child: Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              )
+            else if (_homeClinics.isNotEmpty)
+              Builder(
+                builder: (context) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  // Card width calculated to fit exactly 2.5 cards on screen
+                  final clinicCardWidth =
+                      ((screenWidth - 36) / 2.5).clamp(130.0, 165.0);
+                  return SizedBox(
+                    height: 200,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _homeClinics.length,
+                      itemBuilder: (context, idx) {
+                        return _buildHomeClinicCard(
+                          _homeClinics[idx],
+                          width: clinicCardWidth,
+                        );
+                      },
+                    ),
+                  );
+                },
+              )
+            else
+              const SizedBox.shrink(),
+            const SizedBox(height: 12),
+          ],
+
+          // Featured Doctors (shown only to patients/users, hidden for logged-in doctors)
+          if (!_appState.isDoctorLoggedIn) ...[
+            _buildSectionHeader(
+              'Featured Doctors',
+              'Consult with our top-rated medical experts',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DoctorListingScreen()),
+              ),
+            ),
+            Builder(
+              builder: (context) {
+                final screenWidth = MediaQuery.of(context).size.width;
+                final docCardWidth =
+                    ((screenWidth - 36) / 2.5).clamp(130.0, 165.0);
+                return SizedBox(
+                  height: 220,
+                  child: _isLoadingHomeDoctors
+                      ? const Center(
+                          child: CircularProgressIndicator(color: AppColors.primary),
+                        )
+                      : ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: _homeDoctors.isNotEmpty
+                              ? _homeDoctors.length
+                              : _appState.mockDoctors.length,
+                          itemBuilder: (context, idx) {
+                            final doc = _homeDoctors.isNotEmpty
+                                ? _homeDoctors[idx]
+                                : _appState.mockDoctors[idx];
+                            return _buildDoctorCard(doc, width: docCardWidth);
+                          },
+                        ),
+                );
+              },
+            ),
+          ],
 
           // Hero1 Banner (below Featured Doctors)
           if (_isLoadingHero1Banners)
@@ -824,7 +963,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           _buildSectionHeader(
             'Our Categories',
             'Shop by health category interests',
-            () => widget.onTabChange(2),
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ProductCatalogScreen(),
+              ),
+            ),
           ),
           _buildCategorySection(),
 
@@ -905,8 +1049,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           _buildFaqSection(),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildApiBannerSlide(
     String imageUrl, {
@@ -1192,7 +1337,205 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildDoctorCard(Doctor doc) {
+  Widget _buildHomeClinicCard(Clinic clinic, {double? width}) {
+    final raw = clinic.rawApiClinic;
+    final city = raw?.city?.trim() ?? '';
+    final state = raw?.state?.trim() ?? '';
+    final locText = city.isNotEmpty
+        ? (state.isNotEmpty ? '$city, $state' : city)
+        : (clinic.location.isNotEmpty ? clinic.location : 'Ayush Clinic');
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ClinicDetailScreen(
+              clinicId: clinic.id,
+              initialClinic: clinic,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        width: width ?? 142,
+        margin: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border.withOpacity(0.5)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: (clinic.image.startsWith('http://') ||
+                                clinic.image.startsWith('https://'))
+                            ? NetworkImage(clinic.image) as ImageProvider
+                            : AssetImage(
+                                clinic.image.isNotEmpty
+                                    ? clinic.image
+                                    : 'assets/clinical_marketplace.jpg',
+                              ),
+                        fit: BoxFit.cover,
+                        onError: (_, __) {},
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFFF59E0B),
+                            size: 12,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            clinic.rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 6,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Offline Clinic',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              clinic.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(
+                  Icons.location_on_outlined,
+                  size: 11,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    locText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    clinic.specialty.isNotEmpty ? clinic.specialty : 'Ayush Care',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Book',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDoctorCard(Doctor doc, {double? width}) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -1201,8 +1544,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         );
       },
       child: Container(
-        width: 140,
-        margin: const EdgeInsets.only(right: 12),
+        width: width ?? 142,
+        margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1229,6 +1572,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                                     : 'assets/doctor_profile.png',
                               ),
                         fit: BoxFit.cover,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),
@@ -1623,6 +1967,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                                     : 'assets/img2.png',
                               ),
                         fit: BoxFit.contain,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),
@@ -1652,11 +1997,13 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red,
+                          color: _appState.isDoctorLoggedIn ? const Color(0xFF0D9488) : Colors.red,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          '${((prod.originalPrice - prod.price) / prod.originalPrice * 100).toInt()}% OFF',
+                          _appState.isDoctorLoggedIn
+                              ? (prod.roleDiscountLabel.isNotEmpty ? prod.roleDiscountLabel : 'Dr. ${prod.effectiveDiscountPercent}% OFF')
+                              : '${prod.effectiveDiscountPercent}% OFF',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 8,
@@ -1916,6 +2263,11 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                                       item.image.startsWith('http')
                                   ? NetworkImage(item.image)
                                   : null,
+                              onBackgroundImageError:
+                                  (item.image.isNotEmpty &&
+                                          item.image.startsWith('http'))
+                                      ? (_, __) {}
+                                      : null,
                               child:
                                   item.image.isEmpty ||
                                       !item.image.startsWith('http')
@@ -2074,46 +2426,51 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: AppColors.border.withOpacity(0.5),
+                      color: AppColors.border.withValues(alpha: 0.5),
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        onTap: () {
-                          setState(() {
-                            if (idx < _faqExpandedStates.length) {
-                              _faqExpandedStates[idx] =
-                                  !_faqExpandedStates[idx];
-                            }
-                          });
-                        },
-                        title: Text(
-                          item.question,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        trailing: Icon(
-                          isExp ? Icons.expand_less : Icons.expand_more,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      if (isExp)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Text(
-                            item.answer,
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        ListTile(
+                          onTap: () {
+                            setState(() {
+                              if (idx < _faqExpandedStates.length) {
+                                _faqExpandedStates[idx] =
+                                    !_faqExpandedStates[idx];
+                              }
+                            });
+                          },
+                          title: Text(
+                            item.question,
                             style: const TextStyle(
-                              color: AppColors.textLight,
-                              fontSize: 13,
-                              height: 1.4,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: AppColors.textDark,
                             ),
                           ),
+                          trailing: Icon(
+                            isExp ? Icons.expand_less : Icons.expand_more,
+                            color: AppColors.primary,
+                          ),
                         ),
-                    ],
+                        if (isExp)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                            child: Text(
+                              item.answer,
+                              style: const TextStyle(
+                                color: AppColors.textLight,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -2130,7 +2487,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         _buildSectionHeader(
           'Our Brands',
           'Pick from our favorite brands',
-          () => widget.onTabChange(2),
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ProductCatalogScreen(),
+            ),
+          ),
         ),
         if (_isLoadingBrands)
           Container(
@@ -2195,7 +2557,15 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 final brand = _apiBrands[idx];
                 return _buildApiBrandCard(
                   brand,
-                  onTap: () => widget.onTabChange(2),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProductCatalogScreen(
+                        initialBrand: brand.name,
+                        initialBrandId: brand.id,
+                      ),
+                    ),
+                  ),
                 );
               },
             ),

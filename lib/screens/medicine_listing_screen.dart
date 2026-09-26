@@ -411,6 +411,24 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
             children: [
               Row(
                 children: [
+                  if (Navigator.canPop(context)) ...[
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ],
                   Container(
                     width: 40,
                     height: 40,
@@ -1371,6 +1389,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                                     : 'assets/img2.png',
                               ),
                         fit: BoxFit.contain,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),
@@ -1423,11 +1442,13 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.green[700],
+                          color: _appState.isDoctorLoggedIn ? const Color(0xFF0D9488) : Colors.green[700],
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          '$discountPct% OFF',
+                          _appState.isDoctorLoggedIn
+                              ? (prod.roleDiscountLabel.isNotEmpty ? prod.roleDiscountLabel : 'Dr. $discountPct% OFF')
+                              : '$discountPct% OFF',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 7,
@@ -1783,6 +1804,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                                                     : 'assets/doctor_profile.png',
                                               ),
                                         fit: BoxFit.cover,
+                                        onError: (_, __) {},
                                       ),
                                     ),
                                   ),

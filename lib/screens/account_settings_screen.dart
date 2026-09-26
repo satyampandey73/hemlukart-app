@@ -499,32 +499,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
           const SizedBox(height: 8),
           Container(
             decoration: _cardDecoration(),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-                  activeThumbColor: AppColors.primary,
-                  secondary: _settingIcon(Icons.notifications_active_outlined, AppColors.primary),
-                  title: const Text('Push Notifications',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                  subtitle: const Text('Real-time updates for appointments & orders',
-                      style: TextStyle(fontSize: 11, color: AppColors.textLight)),
-                  value: _pushNotifications,
-                  onChanged: (val) => setState(() => _pushNotifications = val),
-                ),
-                const Divider(height: 1, indent: 56),
-                SwitchListTile(
-                  activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-                  activeThumbColor: AppColors.primary,
-                  secondary: _settingIcon(Icons.mark_email_unread_outlined, const Color(0xFF3B82F6)),
-                  title: const Text('Email & Health Tips',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                  subtitle: const Text('Seasonal care guides and promo codes',
-                      style: TextStyle(fontSize: 11, color: AppColors.textLight)),
-                  value: _emailUpdates,
-                  onChanged: (val) => setState(() => _emailUpdates = val),
-                ),
-              ],
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+                    activeThumbColor: AppColors.primary,
+                    secondary: _settingIcon(Icons.notifications_active_outlined, AppColors.primary),
+                    title: const Text('Push Notifications',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                    subtitle: const Text('Real-time updates for appointments & orders',
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                    value: _pushNotifications,
+                    onChanged: (val) => setState(() => _pushNotifications = val),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  SwitchListTile(
+                    activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+                    activeThumbColor: AppColors.primary,
+                    secondary: _settingIcon(Icons.mark_email_unread_outlined, const Color(0xFF3B82F6)),
+                    title: const Text('Email & Health Tips',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                    subtitle: const Text('Seasonal care guides and promo codes',
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                    value: _emailUpdates,
+                    onChanged: (val) => setState(() => _emailUpdates = val),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -534,32 +539,37 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
           const SizedBox(height: 8),
           Container(
             decoration: _cardDecoration(),
-            child: Column(
-              children: [
-                SwitchListTile(
-                  activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-                  activeThumbColor: AppColors.primary,
-                  secondary: _settingIcon(Icons.fingerprint_rounded, const Color(0xFF8B5CF6)),
-                  title: const Text('Biometric / Face ID',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                  subtitle: const Text('Use biometrics for fast and secure login',
-                      style: TextStyle(fontSize: 11, color: AppColors.textLight)),
-                  value: _biometrics,
-                  onChanged: (val) => setState(() => _biometrics = val),
-                ),
-                const Divider(height: 1, indent: 56),
-                SwitchListTile(
-                  activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-                  activeThumbColor: AppColors.primary,
-                  secondary: _settingIcon(Icons.security_rounded, const Color(0xFF10B981)),
-                  title: const Text('Two-Factor Authentication',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-                  subtitle: const Text('Require SMS verification code on login',
-                      style: TextStyle(fontSize: 11, color: AppColors.textLight)),
-                  value: _twoFactor,
-                  onChanged: (val) => setState(() => _twoFactor = val),
-                ),
-              ],
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+                    activeThumbColor: AppColors.primary,
+                    secondary: _settingIcon(Icons.fingerprint_rounded, const Color(0xFF8B5CF6)),
+                    title: const Text('Biometric / Face ID',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                    subtitle: const Text('Use biometrics for fast and secure login',
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                    value: _biometrics,
+                    onChanged: (val) => setState(() => _biometrics = val),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  SwitchListTile(
+                    activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+                    activeThumbColor: AppColors.primary,
+                    secondary: _settingIcon(Icons.security_rounded, const Color(0xFF10B981)),
+                    title: const Text('Two-Factor Authentication',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
+                    subtitle: const Text('Require SMS verification code on login',
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                    value: _twoFactor,
+                    onChanged: (val) => setState(() => _twoFactor = val),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -569,21 +579,26 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
           const SizedBox(height: 8),
           Container(
             decoration: _cardDecoration(),
-            child: Column(
-              children: [
-                _infoRow(
-                  icon: Icons.verified_outlined,
-                  iconColor: const Color(0xFF0284C7),
-                  label: 'App Version',
-                  value: '1.0.0',
-                ),
-                _infoRow(
-                  icon: Icons.person_pin_outlined,
-                  iconColor: const Color(0xFF64748B),
-                  label: 'Account Role',
-                  value: (user?.role ?? 'Patient').toUpperCase(),
-                ),
-              ],
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  _infoRow(
+                    icon: Icons.verified_outlined,
+                    iconColor: const Color(0xFF0284C7),
+                    label: 'App Version',
+                    value: '1.0.0',
+                  ),
+                  _infoRow(
+                    icon: Icons.person_pin_outlined,
+                    iconColor: const Color(0xFF64748B),
+                    label: 'Account Role',
+                    value: (user?.role ?? 'Patient').toUpperCase(),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -591,23 +606,42 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
           // ── Sign Out ──────────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
-              color: Colors.red.shade50.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: Colors.red.shade200.withValues(alpha: 0.5)),
             ),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
-                child: const Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
+            child: Material(
+              color: Colors.red.shade50.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(14),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: _handleSignOut,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: Colors.red.shade100, shape: BoxShape.circle),
+                        child: const Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Sign Out of Account',
+                                style: TextStyle(fontSize: 14, color: AppColors.error, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            const Text('Log out of your patient session',
+                                style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: AppColors.error),
+                    ],
+                  ),
+                ),
               ),
-              title: const Text('Sign Out of Account',
-                  style: TextStyle(fontSize: 14, color: AppColors.error, fontWeight: FontWeight.bold)),
-              subtitle: const Text('Log out of your patient session',
-                  style: TextStyle(fontSize: 11, color: AppColors.textLight)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.error),
-              onTap: _handleSignOut,
             ),
           ),
           const SizedBox(height: 32),
@@ -753,7 +787,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
 
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
-      color: Colors.white,
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: const Color(0xFFE2E8F0)),
       boxShadow: [
@@ -834,23 +867,55 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     required VoidCallback onTap,
   }) {
     return Container(
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: _cardDecoration(),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textLight,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.textLight),
+              ],
+            ),
           ),
-          child: Icon(icon, color: iconColor, size: 20),
         ),
-        title: Text(title,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textDark)),
-        subtitle: Text(subtitle,
-            style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
-        trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textLight),
-        onTap: onTap,
       ),
     );
   }

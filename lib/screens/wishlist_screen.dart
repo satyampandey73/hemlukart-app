@@ -223,6 +223,7 @@ class _WishlistScreenState extends State<WishlistScreen>
                                     : 'assets/img2.png',
                               ),
                         fit: BoxFit.contain,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),

@@ -76,7 +76,13 @@ class DoctorScheduleService {
         String msg = 'Failed to create schedules (Status: ${response.statusCode})';
         try {
           final Map<String, dynamic> body = jsonDecode(response.body);
-          if (body['message'] != null) msg = body['message'].toString();
+          if (body['message'] != null && body['message'].toString().trim().isNotEmpty) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null && body['error'].toString().trim().isNotEmpty) {
+            msg = body['error'].toString();
+          } else if (body['msg'] != null && body['msg'].toString().trim().isNotEmpty) {
+            msg = body['msg'].toString();
+          }
         } catch (_) {}
         return DoctorScheduleMutationResponse(
           success: false,
@@ -136,23 +142,140 @@ class DoctorScheduleService {
     }
   }
 
-  /// Helper that attempts update first (PUT) and if not found/empty falls back to create (POST),
-  /// or vice versa, ensuring seamless saving regardless of existing records.
+  /// Saves schedules by trying PUT if updating existing schedules, or POST if creating fresh.
+  /// Falls back to the alternative method if the first attempt fails.
   static Future<DoctorScheduleMutationResponse> saveSchedules({
     required String token,
     required List<DoctorScheduleItem> schedules,
     bool isUpdate = false,
   }) async {
     if (isUpdate) {
-      final res = await updateSchedules(token: token, schedules: schedules);
-      if (res.success) return res;
-      // If PUT failed (e.g. 404 / no existing schedule), try POST
-      return await createSchedules(token: token, schedules: schedules);
+      final putRes = await updateSchedules(token: token, schedules: schedules);
+      if (putRes.success) return putRes;
+
+      final postRes = await createSchedules(token: token, schedules: schedules);
+      if (postRes.success) return postRes;
+
+      return putRes;
     } else {
-      final res = await createSchedules(token: token, schedules: schedules);
-      if (res.success) return res;
-      // If POST failed (e.g. already exists / 409), try PUT
-      return await updateSchedules(token: token, schedules: schedules);
+      final postRes = await createSchedules(token: token, schedules: schedules);
+      if (postRes.success) return postRes;
+
+      final putRes = await updateSchedules(token: token, schedules: schedules);
+      if (putRes.success) return putRes;
+
+      return putRes;
+    }
+  }
+
+  /// API: PUT https://backend.chikitsakart.com/api/schedules/:id
+  static Future<DoctorScheduleMutationResponse> updateScheduleById({
+    required String token,
+    required String scheduleId,
+    required DoctorScheduleItem schedule,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/$scheduleId');
+    try {
+      final payload = {
+        'startTime': DoctorScheduleItem.formatToIstTime(schedule.startTime),
+        'endTime': DoctorScheduleItem.formatToIstTime(schedule.endTime),
+        'slotDuration': schedule.slotDuration,
+        'consultationType': schedule.consultationType,
+        'consultationFee': schedule.consultationFee.toString(),
+        'isAvailable': schedule.isAvailable,
+      };
+      if (schedule.clinicId != null && schedule.clinicId!.trim().isNotEmpty) {
+        payload['clinicId'] = schedule.clinicId!.trim();
+      }
+
+      final response = await http
+          .put(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final Map<String, dynamic> body = jsonDecode(response.body);
+        return DoctorScheduleMutationResponse.fromJson(body);
+      } else {
+        String msg = 'Failed to update schedule (Status: ${response.statusCode})';
+        try {
+          final Map<String, dynamic> body = jsonDecode(response.body);
+          if (body['message'] != null && body['message'].toString().trim().isNotEmpty) {
+            msg = body['message'].toString();
+          } else if (body['error'] != null && body['error'].toString().trim().isNotEmpty) {
+            msg = body['error'].toString();
+          } else if (body['msg'] != null && body['msg'].toString().trim().isNotEmpty) {
+            msg = body['msg'].toString();
+          }
+        } catch (_) {}
+        return DoctorScheduleMutationResponse(
+          success: false,
+          message: msg,
+        );
+      }
+    } catch (e) {
+      return DoctorScheduleMutationResponse(
+        success: false,
+        message: 'Network error updating schedule: $e',
+      );
+    }
+  }
+
+  /// API: DELETE https://backend.chikitsakart.com/api/schedules/:id
+  static Future<DoctorScheduleMutationResponse> deleteScheduleById({
+    required String token,
+    required String scheduleId,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/$scheduleId');
+    try {
+      final response = await http
+          .delete(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 204) {
+        String msg = 'Schedule deleted successfully';
+        try {
+          if (response.body.isNotEmpty) {
+            final Map<String, dynamic> body = jsonDecode(response.body);
+            if (body['message'] != null) msg = body['message'].toString();
+          }
+        } catch (_) {}
+        return DoctorScheduleMutationResponse(
+          success: true,
+          message: msg,
+        );
+      } else {
+        String msg = 'Failed to delete schedule (Status: ${response.statusCode})';
+        try {
+          final Map<String, dynamic> body = jsonDecode(response.body);
+          if (body['message'] != null) msg = body['message'].toString();
+        } catch (_) {}
+        return DoctorScheduleMutationResponse(
+          success: false,
+          message: msg,
+        );
+      }
+    } catch (e) {
+      return DoctorScheduleMutationResponse(
+        success: false,
+        message: 'Network error deleting schedule: $e',
+      );
     }
   }
 }

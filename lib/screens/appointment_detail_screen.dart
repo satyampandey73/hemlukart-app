@@ -37,6 +37,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   AppointmentDetailModel? _detail;
   bool _isCancelling = false;
   bool _isRescheduling = false;
+  bool _isConfirming = false;
+  bool _isCompleting = false;
+  bool _isStartingVideoCall = false;
+
+  bool get _isActionInProgress =>
+      _isConfirming || _isCompleting || _isCancelling || _isRescheduling || _isStartingVideoCall;
+
   Map<String, dynamic>? _issuedPrescription;
 
   @override
@@ -344,7 +351,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
                     // Reason dropdown
                     DropdownButtonFormField<String>(
-                      value: selectedReason,
+                      initialValue: selectedReason,
                       decoration: InputDecoration(
                         labelText: 'Reason for Rescheduling',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -694,6 +701,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     backgroundImage: detail.displayDoctorPhoto.isNotEmpty
                         ? NetworkImage(detail.displayDoctorPhoto) as ImageProvider
                         : const AssetImage('assets/doctor_profile.png'),
+                    onBackgroundImageError: (_, __) {},
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -861,134 +869,187 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
             if (detail.status.toLowerCase() != 'cancelled') ...[
               const SizedBox(height: 20),
-              if (detail.isVideoConsultation && detail.status.toLowerCase() != 'cancelled') ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      if (_isDoctorView) {
-                        String? token = _appState.doctorToken ?? _appState.activeChatToken;
-                        if (token == null || token.isEmpty) {
-                          final prefs = await SharedPreferences.getInstance();
-                          token = prefs.getString('doctor_token') ?? prefs.getString('auth_token');
-                        }
-                        if (token == null || token.isEmpty) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please log in as a doctor to start video call')),
-                          );
-                          return;
-                        }
-                        final res = await VideoCallService.startVideoCall(appointmentId: detail.id, token: token);
-                        if (!mounted) return;
-                        if (res.success || res.videoCall != null) {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => VideoCallScreen(
-                                appointmentId: detail.id,
-                                videoCallId: res.videoCall?.id,
-                                isDoctor: true,
-                                peerName: detail.patientName.isNotEmpty ? detail.patientName : 'Patient',
-                                peerSubtitle: '${detail.patientAge ?? 30} Yrs • ${detail.patientMobile ?? ""}',
-                                peerAvatar: 'assets/d2.jpg',
-                              ),
-                            ),
-                          );
-                          if (mounted) {
-                            _fetchDetail();
-                          }
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(res.message ?? 'Unable to start video call')),
-                          );
-                        }
-                      } else {
-                        String? token = _appState.authToken ?? _appState.activeChatToken;
-                        if (token == null || token.isEmpty) {
-                          final prefs = await SharedPreferences.getInstance();
-                          token = prefs.getString('auth_token') ?? prefs.getString('doctor_token');
-                        }
-                        if (token == null || token.isEmpty) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please log in to your patient account to join video call')),
-                          );
-                          return;
-                        }
-                        String? callId;
-                        try {
-                          final activeRes = await VideoCallService.getActiveVideoCall(appointmentId: detail.id, token: token);
-                          if (activeRes.videoCall != null) {
-                            callId = activeRes.videoCall?.id;
-                            if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
-                              await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
-                            }
-                          }
-                        } catch (_) {}
+              if (detail.isVideoConsultation) ...[
+                if (!detail.status.toLowerCase().contains('pending') &&
+                    (detail.status.toLowerCase().contains('confirm') ||
+                     detail.status.toLowerCase().contains('progress') ||
+                     detail.status.toLowerCase() == 'approved' ||
+                     detail.status.toLowerCase() == 'active')) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isActionInProgress
+                          ? null
+                          : () async {
+                              setState(() => _isStartingVideoCall = true);
+                              try {
+                                if (_isDoctorView) {
+                                  String? token = _appState.doctorToken ?? _appState.activeChatToken;
+                                  if (token == null || token.isEmpty) {
+                                    final prefs = await SharedPreferences.getInstance();
+                                    token = prefs.getString('doctor_token') ?? prefs.getString('auth_token');
+                                  }
+                                  if (token == null || token.isEmpty) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please log in as a doctor to start video call')),
+                                    );
+                                    return;
+                                  }
+                                  final res = await VideoCallService.startVideoCall(appointmentId: detail.id, token: token);
+                                  if (!mounted) return;
+                                  if (res.success || res.videoCall != null) {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => VideoCallScreen(
+                                          appointmentId: detail.id,
+                                          videoCallId: res.videoCall?.id,
+                                          isDoctor: true,
+                                          peerName: detail.patientName.isNotEmpty ? detail.patientName : 'Patient',
+                                          peerSubtitle: '${detail.patientAge ?? 30} Yrs • ${detail.patientMobile ?? ""}',
+                                          peerAvatar: 'assets/d2.jpg',
+                                        ),
+                                      ),
+                                    );
+                                    if (mounted) {
+                                      await _fetchDetail();
+                                    }
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(res.message ?? 'Unable to start video call')),
+                                    );
+                                  }
+                                } else {
+                                  String? token = _appState.authToken ?? _appState.activeChatToken;
+                                  if (token == null || token.isEmpty) {
+                                    final prefs = await SharedPreferences.getInstance();
+                                    token = prefs.getString('auth_token') ?? prefs.getString('doctor_token');
+                                  }
+                                  if (token == null || token.isEmpty) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please log in to your patient account to join video call')),
+                                    );
+                                    return;
+                                  }
+                                  String? callId;
+                                  try {
+                                    final activeRes = await VideoCallService.getActiveVideoCall(appointmentId: detail.id, token: token);
+                                    if (activeRes.videoCall != null) {
+                                      callId = activeRes.videoCall?.id;
+                                      if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
+                                        await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
+                                      }
+                                    }
+                                  } catch (_) {}
 
-                        if (!mounted) return;
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => VideoCallScreen(
-                              appointmentId: detail.id,
-                              videoCallId: callId,
-                              isDoctor: false,
-                              peerName: detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor Consultation',
-                              peerSubtitle: detail.doctorSpecialty ?? 'Ayush Specialist',
-                              peerAvatar: detail.displayDoctorPhoto,
-                            ),
-                          ),
-                        );
-                        if (mounted) {
-                          _fetchDetail();
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.videocam_rounded, color: Colors.white),
-                    label: Text(
-                      _isDoctorView ? 'Start Video Call' : 'Join Video Call',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF16A34A),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  if (!mounted) return;
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => VideoCallScreen(
+                                        appointmentId: detail.id,
+                                        videoCallId: callId,
+                                        isDoctor: false,
+                                        peerName: detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor Consultation',
+                                        peerSubtitle: detail.doctorSpecialty ?? 'Ayush Specialist',
+                                        peerAvatar: detail.displayDoctorPhoto,
+                                      ),
+                                    ),
+                                  );
+                                  if (mounted) {
+                                    await _fetchDetail();
+                                  }
+                                }
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to start video call: $e'), backgroundColor: Colors.red),
+                                );
+                              } finally {
+                                if (mounted) setState(() => _isStartingVideoCall = false);
+                              }
+                            },
+                      icon: _isStartingVideoCall
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.videocam_rounded, color: Colors.white),
+                      label: Text(
+                        _isStartingVideoCall
+                            ? (_isDoctorView ? 'Starting Video Call...' : 'Joining Video Call...')
+                            : (_isDoctorView ? 'Start Video Call' : 'Join Video Call'),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A),
+                        disabledBackgroundColor: const Color(0xFF16A34A).withValues(alpha: 0.6),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
+                ] else if (detail.status.toLowerCase().contains('pending')) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: null,
+                      icon: Icon(Icons.videocam_off_outlined, color: Colors.grey.shade400),
+                      label: Text(
+                        'Join Call (Pending Doctor Confirmation)',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        disabledBackgroundColor: const Color(0xFFF1F5F9),
+                        disabledForegroundColor: const Color(0xFF94A3B8),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ],
-              if (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'completed' || detail.status.toLowerCase() == 'approved') ...[
+              if (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved') ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      final bool isDoctor = _appState.isDoctorLoggedIn;
-                      final String recipientName = isDoctor
-                          ? (detail.patientName.isNotEmpty ? detail.patientName : 'Patient')
-                          : (detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor');
-                      final String recipientSubtitle = isDoctor
-                          ? 'Patient (${detail.patientAge ?? "N/A"} Yrs)'
-                          : (detail.doctorSpecialty ?? 'Ayush Specialist');
+                    onPressed: _isActionInProgress
+                        ? null
+                        : () {
+                            final bool isDoctor = _appState.isDoctorLoggedIn;
+                            final String recipientName = isDoctor
+                                ? (detail.patientName.isNotEmpty ? detail.patientName : 'Patient')
+                                : (detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor');
+                            final String recipientSubtitle = isDoctor
+                                ? 'Patient (${detail.patientAge ?? "N/A"} Yrs)'
+                                : (detail.doctorSpecialty ?? 'Ayush Specialist');
 
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatScreen(
-                            appointmentId: detail.id,
-                            recipientName: recipientName,
-                            recipientSubtitle: recipientSubtitle,
-                            recipientAvatar: detail.displayDoctorPhoto,
-                          ),
-                        ),
-                      );
-                    },
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  appointmentId: detail.id,
+                                  recipientName: recipientName,
+                                  recipientSubtitle: recipientSubtitle,
+                                  recipientAvatar: detail.displayDoctorPhoto,
+                                ),
+                              ),
+                            );
+                          },
                     icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
                     label: const Text('Chat Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
+                      disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -996,41 +1057,74 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
-              if (_appState.isDoctorLoggedIn) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showPrescriptionDialog(
-                      patientName: detail.patientName,
-                      appointmentId: detail.id,
-                      userId: detail.userId,
-                    ),
-                    icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
-                    label: const Text('Write Prescription', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F5B4C),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              if (_isDoctorView) ...[
+                if (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved' || detail.status.toLowerCase() == 'completed') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isActionInProgress
+                          ? null
+                          : () => _showPrescriptionDialog(
+                                patientName: detail.patientName,
+                                appointmentId: detail.id,
+                                userId: detail.userId,
+                              ),
+                      icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
+                      label: const Text('Write Prescription', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F5B4C),
+                        disabledBackgroundColor: const Color(0xFF0F5B4C).withValues(alpha: 0.6),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
+                ],
                 if (detail.status.toLowerCase() == 'pending') ...[
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final res = await _appState.confirmDoctorAppointment(detail.id);
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(res.message ?? 'Appointment confirmed'), backgroundColor: Colors.green),
-                        );
-                        _fetchDetail();
-                      },
-                      icon: const Icon(Icons.check_circle_outline, color: Colors.white),
-                      label: const Text('Confirm Appointment', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      onPressed: _isActionInProgress
+                          ? null
+                          : () async {
+                              setState(() => _isConfirming = true);
+                              try {
+                                final res = await _appState.confirmDoctorAppointment(detail.id);
+                                if (!mounted) return;
+                                if (res.success && res.appointment != null) {
+                                  setState(() => _detail = res.appointment);
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(res.message ?? 'Appointment confirmed successfully'),
+                                    backgroundColor: res.success ? Colors.green : Colors.red,
+                                  ),
+                                );
+                                await _fetchDetail();
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to confirm appointment: $e'), backgroundColor: Colors.red),
+                                );
+                              } finally {
+                                if (mounted) setState(() => _isConfirming = false);
+                              }
+                            },
+                      icon: _isConfirming
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_circle_outline, color: Colors.white),
+                      label: Text(
+                        _isConfirming ? 'Confirming Appointment...' : 'Confirm Appointment',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
+                        disabledBackgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.6),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
@@ -1038,21 +1132,72 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   ),
                   const SizedBox(height: 10),
                 ] else if (detail.status.toLowerCase() == 'confirmed') ...[
+                  if (detail.isMeetingTimeExpired && _isDoctorView)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 16),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Scheduled meeting time has expired. Doctor can mark this consultation as completed.',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final res = await _appState.completeDoctorAppointment(detail.id);
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(res.message ?? 'Appointment completed'), backgroundColor: Colors.green),
-                        );
-                        _fetchDetail();
-                      },
-                      icon: const Icon(Icons.task_alt, color: Colors.white),
-                      label: const Text('Mark as Completed', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                      onPressed: _isActionInProgress
+                          ? null
+                          : () async {
+                              setState(() => _isCompleting = true);
+                              try {
+                                final res = await _appState.completeDoctorAppointment(detail.id);
+                                if (!mounted) return;
+                                if (res.success && res.appointment != null) {
+                                  setState(() => _detail = res.appointment);
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(res.message ?? 'Appointment marked as completed'),
+                                    backgroundColor: res.success ? Colors.green : Colors.red,
+                                  ),
+                                );
+                                await _fetchDetail();
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to complete appointment: $e'), backgroundColor: Colors.red),
+                                );
+                              } finally {
+                                if (mounted) setState(() => _isCompleting = false);
+                              }
+                            },
+                      icon: _isCompleting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.task_alt, color: Colors.white),
+                      label: Text(
+                        _isCompleting ? 'Marking as Completed...' : 'Mark as Completed',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF059669),
+                        disabledBackgroundColor: const Color(0xFF059669).withValues(alpha: 0.6),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
@@ -1061,12 +1206,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   const SizedBox(height: 10),
                 ],
               ],
-              // Reschedule button — visible to doctors only for non-completed/non-cancelled appointments
-              if (_appState.isDoctorLoggedIn) ...[
+              // Reschedule button — visible to doctors only for pending/confirmed appointments
+              if (_isDoctorView && (detail.status.toLowerCase() == 'pending' || detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved')) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _isRescheduling ? null : _showRescheduleDialog,
+                    onPressed: _isActionInProgress ? null : _showRescheduleDialog,
                     icon: _isRescheduling
                         ? const SizedBox(
                             width: 18,
@@ -1080,6 +1225,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2563EB),
+                      disabledBackgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.6),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1087,34 +1233,37 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isCancelling ? null : _showCancelDialog,
-                  icon: _isCancelling
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.cancel_outlined, color: Colors.white),
-                  label: Text(
-                    _isCancelling ? 'Cancelling...' : 'Cancel Appointment',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
+              if (detail.status.toLowerCase() == 'pending' || detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved') ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isActionInProgress ? null : _showCancelDialog,
+                    icon: _isCancelling
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.cancel_outlined, color: Colors.white),
+                    label: Text(
+                      _isCancelling ? 'Cancelling...' : 'Cancel Appointment',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      disabledBackgroundColor: Colors.red.withValues(alpha: 0.6),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
 
             const SizedBox(height: 24),

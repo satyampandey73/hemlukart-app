@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import '../models/product_faq_model.dart';
@@ -33,7 +34,7 @@ class Product {
   final String name;
   final String brand;
   final String image;
-  final double price;
+  final double? _basePrice;
   final double originalPrice;
   final double rating;
   final int reviewsCount;
@@ -44,13 +45,17 @@ class Product {
   final String potency;
   final String packSize;
   final String flavour;
+  final double? _doctorDiscount;
+  final bool? _doctorActive;
+  final double? _consumerDiscount;
+  final bool? _consumerActive;
 
   const Product({
     required this.id,
     required this.name,
     required this.brand,
     required this.image,
-    required this.price,
+    required double price,
     required this.originalPrice,
     required this.rating,
     required this.reviewsCount,
@@ -61,7 +66,75 @@ class Product {
     this.potency = '500mg',
     this.packSize = '60 Tabs',
     this.flavour = 'Orange',
-  });
+    double? doctorDiscount,
+    bool? doctorActive,
+    double? consumerDiscount,
+    bool? consumerActive,
+  })  : _basePrice = price,
+        _doctorDiscount = doctorDiscount,
+        _doctorActive = doctorActive,
+        _consumerDiscount = consumerDiscount,
+        _consumerActive = consumerActive;
+
+  double get basePrice => _basePrice ?? 0.0;
+  double get doctorDiscount => _doctorDiscount ?? 0.0;
+  bool get doctorActive => _doctorActive ?? true;
+  double get consumerDiscount => _consumerDiscount ?? 0.0;
+  bool get consumerActive => _consumerActive ?? true;
+
+  /// Effective price evaluated dynamically based on active role (Doctor vs Patient)
+  double get price {
+    final bp = basePrice;
+    if (AppState().isDoctorLoggedIn) {
+      if (doctorActive && doctorDiscount > 0) {
+        final docP = (originalPrice - doctorDiscount).clamp(0.0, originalPrice);
+        return docP > 0 ? docP : bp;
+      }
+      // If doctor is logged in and doctor discount not explicitly specified,
+      // apply 15% professional doctor role discount.
+      final docP = (originalPrice * 0.85).roundToDouble();
+      return (docP < bp) ? docP : bp;
+    }
+    // Patient role
+    if (consumerActive && consumerDiscount > 0) {
+      final consumerP = (originalPrice - consumerDiscount).clamp(0.0, originalPrice);
+      return consumerP > 0 ? consumerP : bp;
+    }
+    return bp;
+  }
+
+  /// Returns effective discount amount for current user role
+  double get effectiveDiscount {
+    if (AppState().isDoctorLoggedIn) {
+      if (doctorActive && doctorDiscount > 0) {
+        return doctorDiscount;
+      }
+      final calculated = (originalPrice - price).clamp(0.0, originalPrice);
+      return calculated > 0 ? calculated : (originalPrice * 0.15).roundToDouble();
+    }
+    if (consumerActive && consumerDiscount > 0) {
+      return consumerDiscount;
+    }
+    return (originalPrice - price).clamp(0.0, originalPrice);
+  }
+
+  /// Returns discount percentage for current user role
+  int get effectiveDiscountPercent {
+    if (originalPrice <= 0) return 0;
+    final disc = (originalPrice - price).clamp(0.0, originalPrice);
+    return ((disc / originalPrice) * 100).round();
+  }
+
+  /// Role discount label to display on badges
+  String get roleDiscountLabel {
+    if (AppState().isDoctorLoggedIn) {
+      final pct = effectiveDiscountPercent;
+      return pct > 0 ? 'Dr. $pct% OFF' : 'Doctor Special';
+    } else {
+      final pct = effectiveDiscountPercent;
+      return pct > 0 ? '$pct% OFF' : '';
+    }
+  }
 }
 
 class Doctor {
@@ -133,24 +206,15 @@ class Doctor {
     return consultationFee;
   }
 
+  List<DoctorSchedule> get schedules => rawApiDoctor?.schedules ?? [];
+
   bool get hasInPerson {
-    final fees = consultationFees;
+    if (rawApiDoctor == null) return true;
     final scheds = rawApiDoctor?.schedules ?? [];
+    if (scheds.isEmpty) return false;
 
-    bool hasAnyTypeConfigured = fees.isNotEmpty || scheds.isNotEmpty;
-    if (!hasAnyTypeConfigured) return true;
-
-    final inFees = fees.any((f) {
-      final t = f.consultationType.toLowerCase().trim();
-      return t == 'in_person' ||
-          t == 'in-person' ||
-          t == 'inperson' ||
-          t.contains('person') ||
-          t.contains('clinic') ||
-          t.contains('offline');
-    });
-
-    final inScheds = scheds.any((s) {
+    return scheds.any((s) {
+      if (!s.isAvailable) return false;
       final t = s.consultationType.toLowerCase().trim();
       return t == 'in_person' ||
           t == 'in-person' ||
@@ -159,28 +223,15 @@ class Doctor {
           t.contains('clinic') ||
           t.contains('offline');
     });
-
-    return inFees || inScheds;
   }
 
   bool get hasOnline {
-    final fees = consultationFees;
+    if (rawApiDoctor == null) return true;
     final scheds = rawApiDoctor?.schedules ?? [];
+    if (scheds.isEmpty) return false;
 
-    final inFees = fees.any((f) {
-      final t = f.consultationType.toLowerCase().trim();
-      return t == 'video' ||
-          t == 'online' ||
-          t == 'audio' ||
-          t == 'chat' ||
-          t.contains('video') ||
-          t.contains('online') ||
-          t.contains('audio') ||
-          t.contains('chat') ||
-          t.contains('tele');
-    });
-
-    final inScheds = scheds.any((s) {
+    return scheds.any((s) {
+      if (!s.isAvailable) return false;
       final t = s.consultationType.toLowerCase().trim();
       return t == 'video' ||
           t == 'online' ||
@@ -192,8 +243,6 @@ class Doctor {
           t.contains('chat') ||
           t.contains('tele');
     });
-
-    return inFees || inScheds;
   }
 
   factory Doctor.fromApiDoctor(
@@ -478,16 +527,59 @@ class AppState extends ChangeNotifier {
   static final AppState _instance = AppState._internal();
   factory AppState() => _instance;
 
+  bool _isNotificationScheduled = false;
+
+  @override
+  void notifyListeners() {
+    try {
+      final binding = WidgetsBinding.instance;
+      if (binding.schedulerPhase != SchedulerPhase.idle &&
+          binding.schedulerPhase != SchedulerPhase.postFrameCallbacks) {
+        if (!_isNotificationScheduled) {
+          _isNotificationScheduled = true;
+          binding.addPostFrameCallback((_) {
+            _isNotificationScheduled = false;
+            super.notifyListeners();
+          });
+        }
+        return;
+      }
+    } catch (_) {}
+    super.notifyListeners();
+  }
+
   bool _isLoggedIn = false;
   String? _authToken;
   String? _doctorToken;
   UserModel? _currentUser;
   ApiDoctor? _currentDoctorProfile;
 
-  bool get isLoggedIn => _isLoggedIn;
+  bool get isLoggedIn => _isLoggedIn || isDoctorLoggedIn;
   String? get authToken => _authToken;
   String? get doctorToken => _doctorToken;
-  UserModel? get currentUser => _currentUser;
+  String? get activeToken => (_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken;
+  UserModel? get currentUser {
+    if (_currentUser != null) return _currentUser;
+    if (_currentDoctorProfile != null) {
+      final docName = _currentDoctorProfile!.fullName.trim();
+      final phone = _currentDoctorProfile!.mobile ?? '';
+      return UserModel(
+        id: _currentDoctorProfile!.id,
+        fullName: docName.startsWith('Dr.') ? docName : 'Dr. $docName',
+        mobile: phone,
+        whatsappNumber: phone,
+        email: _currentDoctorProfile!.email ?? '',
+        role: 'doctor',
+        address: _currentDoctorProfile!.address,
+        city: _currentDoctorProfile!.city,
+        state: _currentDoctorProfile!.state,
+        pincode: _currentDoctorProfile!.pinCode,
+        isMobileVerified: _currentDoctorProfile!.isMobileVerified ?? true,
+        isActive: _currentDoctorProfile!.isActive ?? true,
+      );
+    }
+    return null;
+  }
   ApiDoctor? get currentDoctorProfile => _currentDoctorProfile;
   bool get isDoctorLoggedIn => _doctorToken != null && _doctorToken!.isNotEmpty;
 
@@ -502,6 +594,9 @@ class AppState extends ChangeNotifier {
       fetchDoctorAppointments();
       fetchUnreadChatCount();
       startChatPolling();
+      fetchCartFromApi();
+      fetchShippingAddresses();
+      fetchMyOrders();
     }
 
     if (_authToken != null && userStr != null) {
@@ -530,6 +625,9 @@ class AppState extends ChangeNotifier {
     fetchDoctorAppointments();
     fetchUnreadChatCount();
     startChatPolling();
+    fetchCartFromApi();
+    fetchShippingAddresses();
+    fetchMyOrders();
     notifyListeners();
   }
 
@@ -538,6 +636,10 @@ class AppState extends ChangeNotifier {
     _currentDoctorProfile = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('doctor_token');
+    _cart.clear();
+    _orders.clear();
+    _myOrders.clear();
+    _shippingAddresses.clear();
     notifyListeners();
   }
 
@@ -814,6 +916,33 @@ class AppState extends ChangeNotifier {
       fetchUnreadChatCount();
     }
   }
+
+  Future<Map<String, dynamic>> uploadConsultationDocument({
+    required String appointmentId,
+    required String description,
+    required String filePath,
+  }) async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) {
+      return {'success': false, 'message': 'You are not logged in'};
+    }
+    return await ChatService.uploadDocument(
+      appointmentId: appointmentId,
+      description: description,
+      filePath: filePath,
+      token: token,
+    );
+  }
+
+  Future<List<ConsultationDocumentModel>> fetchConsultationDocuments(String appointmentId) async {
+    final token = activeChatToken;
+    if (token == null || token.isEmpty) return [];
+    return await ChatService.getDocuments(
+      appointmentId: appointmentId,
+      token: token,
+    );
+  }
+
   List<UserWishlistProductItem> get userWishlistItems => _userWishlistItems;
   bool get isLoadingWishlist => _isLoadingWishlist;
   List<UserWishlistDoctorItem> get userWishlistDoctorItems =>
@@ -1028,7 +1157,8 @@ class AppState extends ChangeNotifier {
 
   // Cart Operations
   Future<GetCartApiResponse> fetchCartFromApi() async {
-    if (_authToken == null || _authToken!.isEmpty) {
+    final token = activeToken;
+    if (token == null || token.isEmpty) {
       return GetCartApiResponse(
         success: false,
         message: 'User not authenticated',
@@ -1038,7 +1168,7 @@ class AppState extends ChangeNotifier {
     _isLoadingCart = true;
     notifyListeners();
 
-    final response = await CartService.getCart(token: _authToken);
+    final response = await CartService.getCart(token: token);
     _isLoadingCart = false;
 
     if (response.success && response.data != null) {
@@ -1105,11 +1235,12 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
 
-    if (_authToken != null && _authToken!.isNotEmpty) {
+    final token = activeToken;
+    if (token != null && token.isNotEmpty) {
       final response = await CartService.addToCart(
         productId: product.id,
         quantity: qty,
-        token: _authToken,
+        token: token,
       );
 
       if (response.success && response.data != null) {
@@ -1142,17 +1273,18 @@ class AppState extends ChangeNotifier {
     if (idx == -1) return null;
 
     final String? itemId = _cart[idx].itemId;
+    final token = activeToken;
 
     if (newQty <= 0) {
       _cart.removeAt(idx);
       notifyListeners();
       if (itemId != null &&
           itemId.isNotEmpty &&
-          _authToken != null &&
-          _authToken!.isNotEmpty) {
+          token != null &&
+          token.isNotEmpty) {
         return await CartService.removeCartItem(
           itemId: itemId,
-          token: _authToken,
+          token: token,
         );
       }
       return null;
@@ -1161,12 +1293,12 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       if (itemId != null &&
           itemId.isNotEmpty &&
-          _authToken != null &&
-          _authToken!.isNotEmpty) {
+          token != null &&
+          token.isNotEmpty) {
         return await CartService.updateCartItemQuantity(
           itemId: itemId,
           quantity: newQty,
-          token: _authToken,
+          token: token,
         );
       }
       return null;
@@ -1189,13 +1321,14 @@ class AppState extends ChangeNotifier {
       _cart.removeAt(idx);
       notifyListeners();
     }
+    final token = activeToken;
     if (itemId != null &&
         itemId.isNotEmpty &&
-        _authToken != null &&
-        _authToken!.isNotEmpty) {
+        token != null &&
+        token.isNotEmpty) {
       return await CartService.removeCartItem(
         itemId: itemId,
-        token: _authToken,
+        token: token,
       );
     }
     return null;
@@ -1204,8 +1337,9 @@ class AppState extends ChangeNotifier {
   Future<CartActionApiResponse?> clearCart() async {
     _cart.clear();
     notifyListeners();
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      return await CartService.clearCart(token: _authToken);
+    final token = activeToken;
+    if (token != null && token.isNotEmpty) {
+      return await CartService.clearCart(token: token);
     }
     return null;
   }
@@ -1414,7 +1548,8 @@ class AppState extends ChangeNotifier {
 
   // Order Operations
   Future<MyOrdersApiResponse> fetchMyOrders() async {
-    if (_authToken == null || _authToken!.isEmpty) {
+    final token = activeToken;
+    if (token == null || token.isEmpty) {
       return MyOrdersApiResponse(
         success: false,
         message: 'User not authenticated',
@@ -1424,7 +1559,7 @@ class AppState extends ChangeNotifier {
     _isLoadingMyOrders = true;
     notifyListeners();
 
-    final response = await OrderService.getUsersOrders(token: _authToken);
+    final response = await OrderService.getUsersOrders(token: token);
     _isLoadingMyOrders = false;
 
     if (response.success) {
@@ -1439,7 +1574,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<SingleOrderDetailApiResponse> fetchOrderDetail(String orderId) async {
-    return await OrderService.getOrderById(orderId: orderId, token: _authToken);
+    return await OrderService.getOrderById(orderId: orderId, token: activeToken);
   }
 
   // Coupon Operations
@@ -1447,7 +1582,7 @@ class AppState extends ChangeNotifier {
     _isLoadingCoupons = true;
     notifyListeners();
 
-    final response = await CouponService.getCoupons(token: _authToken);
+    final response = await CouponService.getCoupons(token: activeToken);
     _isLoadingCoupons = false;
 
     if (response.success) {
@@ -1518,7 +1653,7 @@ class AppState extends ChangeNotifier {
       paymentStatus: paymentStatus,
       prescription: effectivePrescription,
       couponCode: effectiveCouponCode,
-      token: _authToken,
+      token: activeToken,
     );
 
     if (response.success && response.data != null) {
@@ -1614,7 +1749,8 @@ class AppState extends ChangeNotifier {
 
   // Shipping Address Operations
   Future<ShippingAddressesApiResponse> fetchShippingAddresses() async {
-    if (_authToken == null || _authToken!.isEmpty) {
+    final token = activeToken;
+    if (token == null || token.isEmpty) {
       return ShippingAddressesApiResponse(
         success: false,
         data: [],
@@ -1625,7 +1761,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     final response = await ShippingAddressService.getShippingAddresses(
-      token: _authToken,
+      token: token,
     );
     _isLoadingAddresses = false;
 
@@ -1674,7 +1810,7 @@ class AppState extends ChangeNotifier {
       pincode: pincode,
       landmark: landmark,
       isDefault: isDefault,
-      token: _authToken,
+      token: activeToken,
     );
 
     if (response.success && response.data != null) {
@@ -1708,7 +1844,7 @@ class AppState extends ChangeNotifier {
       pincode: pincode,
       landmark: landmark,
       isDefault: isDefault,
-      token: _authToken,
+      token: activeToken,
     );
 
     if (response.success) {
@@ -1721,7 +1857,7 @@ class AppState extends ChangeNotifier {
   Future<ShippingAddressActionResponse> deleteShippingAddress(String id) async {
     final response = await ShippingAddressService.deleteShippingAddress(
       id: id,
-      token: _authToken,
+      token: activeToken,
     );
 
     if (response.success) {

@@ -14,11 +14,15 @@ import '../services/banner_service.dart';
 class ProductCatalogScreen extends StatefulWidget {
   final String? initialCategory;
   final String? initialCategoryId;
+  final String? initialBrand;
+  final String? initialBrandId;
   final String? initialSearchQuery;
   const ProductCatalogScreen({
     super.key,
     this.initialCategory,
     this.initialCategoryId,
+    this.initialBrand,
+    this.initialBrandId,
     this.initialSearchQuery,
   });
 
@@ -88,6 +92,15 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
     super.initState();
     if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
       _selectedCategories.add(widget.initialCategory!);
+      if (!_allCategories.any((c) => c.toLowerCase() == widget.initialCategory!.toLowerCase())) {
+        _allCategories.insert(0, widget.initialCategory!);
+      }
+    }
+    if (widget.initialBrand != null && widget.initialBrand!.isNotEmpty) {
+      _selectedBrands.add(widget.initialBrand!);
+      if (!_allBrands.any((b) => b.toLowerCase() == widget.initialBrand!.toLowerCase())) {
+        _allBrands.insert(0, widget.initialBrand!);
+      }
     }
     if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
       _searchQuery = widget.initialSearchQuery!;
@@ -191,7 +204,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
       // Categories
       if (_selectedCategories.isNotEmpty) {
-        if (!_selectedCategories.contains(prod.category)) return false;
+        final matchesCat = _selectedCategories.any((cat) =>
+            cat.trim().toLowerCase() == prod.category.trim().toLowerCase());
+        if (!matchesCat) return false;
       }
 
       // Price Range
@@ -199,7 +214,9 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
       // Brands
       if (_selectedBrands.isNotEmpty) {
-        if (!_selectedBrands.contains(prod.brand)) return false;
+        final matchesBrand = _selectedBrands.any((b) =>
+            b.trim().toLowerCase() == prod.brand.trim().toLowerCase());
+        if (!matchesBrand) return false;
       }
 
       // Discount %
@@ -288,37 +305,66 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/banner.png',
-                        width: 32,
-                        height: 32,
-                        fit: BoxFit.cover,
+              Expanded(
+                child: Row(
+                  children: [
+                    if (Navigator.canPop(context)) ...[
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(7),
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_ios_new,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/banner.png',
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Chikitsakart',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        widget.initialCategory != null && widget.initialCategory!.isNotEmpty
+                            ? widget.initialCategory!
+                            : (widget.initialBrand != null && widget.initialBrand!.isNotEmpty
+                                ? widget.initialBrand!
+                                : 'Chikitsakart'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Row(
                 children: [
                   GestureDetector(
@@ -356,7 +402,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                     ),
                   ),
                  
-                  const SizedBox(width: 22),
+                  const SizedBox(width: 14),
                   GestureDetector(
                     onTap: () async {
                       final loggedIn = await LoginScreen.checkAndNavigate(
@@ -586,9 +632,20 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Breadcrumbs
-          const Text(
-            'Home > Medicines',
-            style: TextStyle(color: AppColors.textLight, fontSize: 11),
+          GestureDetector(
+            onTap: () {
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+            },
+            child: Text(
+              widget.initialCategory != null && widget.initialCategory!.isNotEmpty
+                  ? 'Home > Medicines > ${widget.initialCategory}'
+                  : (widget.initialBrand != null && widget.initialBrand!.isNotEmpty
+                      ? 'Home > Medicines > ${widget.initialBrand}'
+                      : 'Home > Medicines'),
+              style: const TextStyle(color: AppColors.textLight, fontSize: 11),
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -919,6 +976,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                                     : 'assets/img2.png',
                               ),
                         fit: BoxFit.contain,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),
@@ -1127,6 +1185,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                           prod.image.isNotEmpty ? prod.image : 'assets/img2.png',
                         ),
                   fit: BoxFit.contain,
+                  onError: (_, __) {},
                 ),
               ),
             ),

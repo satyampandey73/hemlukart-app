@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/doctor_model.dart';
+import '../models/my_appointments_model.dart';
 import '../models/rating_model.dart';
+import '../services/appointment_service.dart';
 import '../services/doctor_service.dart';
 import '../services/rating_service.dart';
 import 'book_appointment_screen.dart';
@@ -26,17 +28,211 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   RatingStats? _ratingStats;
   bool _isLoadingRatings = false;
 
+  DateTime _selectedSlotDate = DateTime.now();
+  DoctorSchedule? _selectedSchedule;
+  List<UserAppointmentItem> _doctorBookedAppointments = [];
+
+  List<DoctorSchedule> get _doctorSchedules {
+    return _apiDoctorDetails?.schedules ??
+        _docState.rawApiDoctor?.schedules ??
+        widget.doctor.rawApiDoctor?.schedules ??
+        [];
+  }
+
+  String _dayNameFromDate(DateTime date) {
+    const days = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday'
+    ];
+    return days[date.weekday - 1];
+  }
+
+  String _formatTime12h(String timeStr) {
+    if (timeStr.isEmpty) return '';
+    final parts = timeStr.split(':');
+    if (parts.length >= 2) {
+      int hour = int.tryParse(parts[0]) ?? 0;
+      int minute = int.tryParse(parts[1]) ?? 0;
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final h = hour % 12 == 0 ? 12 : hour % 12;
+      final hStr = h.toString().padLeft(2, '0');
+      final mStr = minute.toString().padLeft(2, '0');
+      return '$hStr:$mStr $period';
+    }
+    return timeStr;
+  }
+
+  String _getShiftCategory(DoctorSchedule sch) {
+    final session = sch.sessionName.toLowerCase().trim();
+    if (session.contains('morning')) return 'Morning';
+    if (session.contains('afternoon')) return 'Afternoon';
+    if (session.contains('evening')) return 'Evening';
+    if (session.contains('night')) return 'Night';
+
+    int hour = 9;
+    if (sch.startTime.isNotEmpty) {
+      final parts = sch.startTime.split(':');
+      hour = int.tryParse(parts[0]) ?? 9;
+    }
+    if (hour < 12) return 'Morning';
+    if (hour < 17) return 'Afternoon';
+    if (hour < 21) return 'Evening';
+    return 'Night';
+  }
+
+  bool _isSlotTimePassed(DoctorSchedule sch, DateTime date) {
+    final now = DateTime.now();
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+    if (!isToday) return false;
+    try {
+      final parts = sch.startTime.split(':');
+      if (parts.isNotEmpty) {
+        final h = int.tryParse(parts[0]) ?? 0;
+        final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        final slotDateTime = DateTime(date.year, date.month, date.day, h, m);
+        return slotDateTime.isBefore(now);
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  bool _isSlotBooked(DoctorSchedule sch, DateTime date) {
+    if (!sch.isAvailable) return true;
+    if (_doctorBookedAppointments.isEmpty) return false;
+
+    for (final apt in _doctorBookedAppointments) {
+      final status = apt.status.toLowerCase().trim();
+      if (status == 'cancelled' || status == 'rejected') continue;
+      if (apt.appointmentDate.isEmpty) continue;
+
+      try {
+        final aptUtc = DateTime.parse(apt.appointmentDate).toUtc();
+        final aptIst = aptUtc.add(const Duration(hours: 5, minutes: 30));
+
+        if (aptIst.year != date.year ||
+            aptIst.month != date.month ||
+            aptIst.day != date.day) {
+          continue;
+        }
+
+        final schStartParts = sch.startTime.split(':');
+        if (schStartParts.isEmpty) continue;
+        final schStartHour = int.tryParse(schStartParts[0]) ?? 0;
+        final schStartMin =
+            schStartParts.length > 1 ? (int.tryParse(schStartParts[1]) ?? 0) : 0;
+        final schStartInMins = schStartHour * 60 + schStartMin;
+
+        int schEndInMins;
+        if (sch.endTime.isNotEmpty) {
+          final schEndParts = sch.endTime.split(':');
+          final schEndHour = int.tryParse(schEndParts[0]) ?? 0;
+          final schEndMin =
+              schEndParts.length > 1 ? (int.tryParse(schEndParts[1]) ?? 0) : 0;
+          schEndInMins = schEndHour * 60 + schEndMin;
+        } else {
+          final dur = sch.slotDuration > 0 ? sch.slotDuration : 30;
+          schEndInMins = schStartInMins + dur;
+        }
+
+        final aptStartInMins = aptIst.hour * 60 + aptIst.minute;
+        final aptDur = apt.durationMinutes > 0 ? apt.durationMinutes : 30;
+        final aptEndInMins = aptStartInMins + aptDur;
+
+        final overlapStart =
+            schStartInMins > aptStartInMins ? schStartInMins : aptStartInMins;
+        final overlapEnd =
+            schEndInMins < aptEndInMins ? schEndInMins : aptEndInMins;
+
+        if (overlapStart < overlapEnd) {
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  bool get _hasAvailableSlotInWeek {
+    final scheds = _doctorSchedules;
+    if (scheds.isEmpty) return false;
+
+    final now = DateTime.now();
+    for (int i = 0; i < 15; i++) {
+      final date = now.add(Duration(days: i));
+      final dayName = _dayNameFromDate(date);
+      final daySchedules = scheds
+          .where((s) => s.dayOfWeek.toLowerCase().trim() == dayName && s.isAvailable)
+          .toList();
+      for (final s in daySchedules) {
+        if (!_isSlotTimePassed(s, date) && !_isSlotBooked(s, date)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
     _docState = widget.doctor;
-    _fetchDoctorRatings();
+    if (widget.doctor.rawApiDoctor != null) {
+      _apiDoctorDetails = widget.doctor.rawApiDoctor;
+    }
     _fetchDoctorDetails();
+    _fetchDoctorRatings();
+    _initInitialSchedule();
+  }
+
+  void _initInitialSchedule() {
+    final dayName = _dayNameFromDate(_selectedSlotDate);
+    final daySchedules = _doctorSchedules
+        .where((s) => s.dayOfWeek.toLowerCase().trim() == dayName && s.isAvailable)
+        .toList();
+    if (daySchedules.isNotEmpty) {
+      try {
+        _selectedSchedule = daySchedules.firstWhere(
+          (s) =>
+              !_isSlotBooked(s, _selectedSlotDate) &&
+              !_isSlotTimePassed(s, _selectedSlotDate),
+        );
+        return;
+      } catch (_) {
+        _selectedSchedule = null;
+      }
+    }
+
+    // Auto-select first upcoming date within 15 days that has an available unpassed slot
+    final now = DateTime.now();
+    for (int i = 0; i < 15; i++) {
+      final candidateDate = now.add(Duration(days: i));
+      final cDayName = _dayNameFromDate(candidateDate);
+      final cSchedules = _doctorSchedules
+          .where((s) => s.dayOfWeek.toLowerCase().trim() == cDayName && s.isAvailable)
+          .toList();
+      for (final s in cSchedules) {
+        if (!_isSlotTimePassed(s, candidateDate) && !_isSlotBooked(s, candidateDate)) {
+          _selectedSlotDate = candidateDate;
+          _selectedSchedule = s;
+          return;
+        }
+      }
+    }
   }
 
   Future<void> _fetchDoctorDetails() async {
+    final docId = _docState.id.trim().isNotEmpty
+        ? _docState.id.trim()
+        : widget.doctor.id.trim();
+    if (docId.isEmpty) return;
     if (!mounted) return;
-    final res = await DoctorService.getDoctorById(widget.doctor.id);
+
+    final res = await DoctorService.getDoctorById(docId);
     if (!mounted) return;
     if (res.success && res.doctor != null) {
       setState(() {
@@ -48,6 +244,21 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         );
       });
     }
+
+    final aptRes = await AppointmentService.getDoctorAppointmentsByDoctorId(
+      doctorId: docId,
+      token: _appState.authToken,
+    );
+    if (!mounted) return;
+    if (aptRes.success) {
+      setState(() {
+        _doctorBookedAppointments = aptRes.appointments;
+      });
+    }
+
+    setState(() {
+      _initInitialSchedule();
+    });
   }
 
   ImageProvider _getDoctorImageProvider(String imagePath) {
@@ -96,17 +307,16 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           _doctorRatings = res.ratings;
           _ratingStats = res.stats;
 
-          if (res.doctorDetails != null) {
+          if (res.doctorDetails != null &&
+              res.doctorDetails!.schedules != null &&
+              res.doctorDetails!.schedules!.isNotEmpty) {
             _apiDoctorDetails = res.doctorDetails;
-            _docState = Doctor.fromApiDoctor(
-              res.doctorDetails!,
-              rating: res.stats?.averageScore,
-              reviewsCount: res.stats?.totalRatings,
-            );
-          } else if (res.stats != null) {
+          }
+          if (res.stats != null) {
             _docState = Doctor.fromApiDoctor(
               _apiDoctorDetails ??
                   widget.doctor.rawApiDoctor ??
+                  res.doctorDetails ??
                   ApiDoctor(
                     id: widget.doctor.id,
                     fullName: widget.doctor.name,
@@ -184,6 +394,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           image: DecorationImage(
                             image: _getDoctorImageProvider(doc.image),
                             fit: BoxFit.cover,
+                            onError: (_, __) {},
                           ),
                         ),
                       ),
@@ -294,7 +505,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                             ),
                           ),
                           Text(
-                            '₹${doc.consultationFee.toInt()} / session',
+                            _selectedSchedule != null
+                                ? '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')} / session'
+                                : (_doctorSchedules.isNotEmpty
+                                    ? '₹${_doctorSchedules.first.consultationFee.replaceAll('.00', '')} / session'
+                                    : '₹${doc.consultationFee.toInt()} / session'),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -303,42 +518,55 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           ),
                         ],
                       ),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final currentContext = context;
-                          if (await LoginScreen.checkAndNavigate(
-                            currentContext,
-                          )) {
-                            if (!mounted) return;
-                            if (currentContext.mounted) {
-                              Navigator.push(
-                                currentContext,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      BookAppointmentScreen(doctor: doc),
-                                ),
-                              );
-                            }
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 14,
+                      if (!_appState.isDoctorLoggedIn)
+                        ElevatedButton(
+                          onPressed: !_hasAvailableSlotInWeek
+                              ? null
+                              : () async {
+                                  final currentContext = context;
+                                  if (await LoginScreen.checkAndNavigate(
+                                    currentContext,
+                                  )) {
+                                    if (!mounted) return;
+                                    if (currentContext.mounted) {
+                                      Navigator.push(
+                                        currentContext,
+                                        MaterialPageRoute(
+                                          builder: (_) => BookAppointmentScreen(
+                                            doctor: doc,
+                                            initialDate: _selectedSlotDate,
+                                            initialSlotTime: _selectedSchedule?.startTime,
+                                            initialSchedule: _selectedSchedule,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            disabledForegroundColor: Colors.grey.shade600,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                          child: Text(
+                            !_hasAvailableSlotInWeek
+                                ? 'No Slots Available'
+                                : 'Book Appointment',
+                            style: TextStyle(
+                              color: !_hasAvailableSlotInWeek
+                                  ? Colors.grey.shade600
+                                  : Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        child: const Text(
-                          'Book Appointment',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ],
@@ -419,39 +647,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // Consultation availability cards
+            // Consultation availability and appointment slots
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                children: [
-                  if (_apiDoctorDetails?.schedules != null &&
-                      _apiDoctorDetails!.schedules!.isNotEmpty)
-                    _buildApiSchedulesCard(_apiDoctorDetails!.schedules!)
-                  else ...[
-                    _buildConsultationScheduleCard(
-                      title: 'Online Consultation',
-                      subtitle: 'Consult from the comfort of your home',
-                      badgeLabel: 'Online',
-                      badgeColor: AppColors.primary,
-                      badgeBackground: AppColors.primary.withValues(
-                        alpha: 0.12,
-                      ),
-                      icon: Icons.video_call_outlined,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildConsultationScheduleCard(
-                      title: 'Offline Consultation',
-                      subtitle: 'Visit the clinic for a face-to-face session',
-                      badgeLabel: 'Offline',
-                      badgeColor: AppColors.secondary,
-                      badgeBackground: AppColors.secondary.withValues(
-                        alpha: 0.12,
-                      ),
-                      icon: Icons.location_on_outlined,
-                    ),
-                  ],
-                ],
-              ),
+              child: _buildShiftSlotsCard(),
             ),
 
             const SizedBox(height: 16),
@@ -969,23 +1168,24 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     );
   }
 
-  String _formatTimeStr(String timeStr) {
-    try {
-      final parts = timeStr.split(':');
-      if (parts.length >= 2) {
-        int hour = int.parse(parts[0]);
-        final minute = parts[1];
-        final ampm = hour >= 12 ? 'PM' : 'AM';
-        if (hour > 12) hour -= 12;
-        if (hour == 0) hour = 12;
-        final hourStr = hour.toString().padLeft(2, '0');
-        return '$hourStr:$minute $ampm';
-      }
-    } catch (_) {}
-    return timeStr;
-  }
 
-  Widget _buildApiSchedulesCard(List<DoctorSchedule> schedules) {
+
+  Widget _buildShiftSlotsCard() {
+    final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final allSchedules = _doctorSchedules;
+    final selectedDayName = _dayNameFromDate(_selectedSlotDate);
+    final daySchedules = allSchedules
+        .where((s) => s.dayOfWeek.toLowerCase().trim() == selectedDayName)
+        .toList();
+
+    final morningSlots = daySchedules.where((s) => _getShiftCategory(s) == 'Morning').toList();
+    final afternoonSlots = daySchedules.where((s) => _getShiftCategory(s) == 'Afternoon').toList();
+    final eveningSlots = daySchedules.where((s) => _getShiftCategory(s) == 'Evening').toList();
+    final nightSlots = daySchedules.where((s) => _getShiftCategory(s) == 'Night').toList();
+
+    final availableDaysSet = allSchedules.map((s) => s.dayOfWeek.toLowerCase().trim()).toSet();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -993,6 +1193,13 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1006,7 +1213,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
-                  Icons.calendar_month,
+                  Icons.access_time_rounded,
                   color: AppColors.primary,
                   size: 22,
                 ),
@@ -1017,16 +1224,16 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Available Doctor Schedules',
+                      'Available Appointment Slots',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                         color: AppColors.textDark,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
-                      '${schedules.length} active schedule session${schedules.length > 1 ? 's' : ''}',
+                      '${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year} (${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)})',
                       style: const TextStyle(
                         color: AppColors.textLight,
                         fontSize: 12,
@@ -1035,352 +1242,452 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Verified',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
+              if (_selectedSchedule != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Column(
-            children: schedules.map((sch) {
-              final dayCapitalized = sch.dayOfWeek.isNotEmpty
-                  ? '${sch.dayOfWeek[0].toUpperCase()}${sch.dayOfWeek.substring(1)}'
-                  : 'Day';
-              final sessionCap = sch.sessionName.isNotEmpty
-                  ? '${sch.sessionName[0].toUpperCase()}${sch.sessionName.substring(1)}'
-                  : 'Session';
-              final formattedStart = _formatTimeStr(sch.startTime);
-              final formattedEnd = _formatTimeStr(sch.endTime);
-              final feeDouble = double.tryParse(sch.consultationFee) ?? 500.0;
-              final typeLabel = sch.consultationType == 'in_person'
-                  ? 'In Person'
-                  : (sch.consultationType == 'online'
-                        ? 'Online'
-                        : sch.consultationType);
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundLight.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AppColors.border.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        dayCapitalized
-                            .substring(
-                              0,
-                              dayCapitalized.length >= 3
-                                  ? 3
-                                  : dayCapitalized.length,
-                            )
-                            .toUpperCase(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '$dayCapitalized • $sessionCap',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: AppColors.textDark,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  typeLabel,
-                                  style: const TextStyle(
-                                    fontSize: 10,
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$formattedStart - $formattedEnd (${sch.slotDuration} mins slots)',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textLight,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '₹${feeDouble.toInt()}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConsultationScheduleCard({
-    required String title,
-    required String subtitle,
-    required String badgeLabel,
-    required Color badgeColor,
-    required Color badgeBackground,
-    required IconData icon,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: badgeBackground,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: badgeColor, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: AppColors.textLight,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: badgeBackground,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: badgeColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildScheduleDay('MON', [
-                '09:00 AM',
-                '10:30 AM',
-                '02:00 PM',
-              ], true),
-              _buildScheduleDay('TUE', [
-                '09:00 AM',
-                '11:00 AM',
-                '01:30 PM',
-              ], false),
-              _buildScheduleDay('WED', [
-                '08:30 AM',
-                '10:00 AM',
-                '11:30 AM',
-              ], true),
             ],
           ),
           const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildScheduleDay('THU', [], false, isDisabled: true),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'This Week',
+
+          // 15-day horizontal date selector with day indicators
+          SizedBox(
+            height: 72,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 15,
+              itemBuilder: (context, idx) {
+                final date = DateTime.now().add(Duration(days: idx));
+                final isSel = date.year == _selectedSlotDate.year &&
+                    date.month == _selectedSlotDate.month &&
+                    date.day == _selectedSlotDate.day;
+                final dayName = idx == 0 ? 'Today' : weekdays[date.weekday - 1];
+                final dName = _dayNameFromDate(date);
+                final dayScheds = allSchedules
+                    .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
+                    .toList();
+                final hasAvailableSlots = dayScheds.any(
+                  (s) => !_isSlotTimePassed(s, date) && !_isSlotBooked(s, date),
+                );
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedSlotDate = date;
+                      final newDaySchedules = allSchedules
+                          .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
+                          .toList();
+                      if (newDaySchedules.isNotEmpty) {
+                        try {
+                          _selectedSchedule = newDaySchedules.firstWhere(
+                            (s) =>
+                                !_isSlotBooked(s, date) &&
+                                !_isSlotTimePassed(s, date),
+                          );
+                        } catch (_) {
+                          _selectedSchedule = newDaySchedules.first;
+                        }
+                      } else {
+                        _selectedSchedule = null;
+                      }
+                    });
+                  },
+                  child: Container(
+                    width: 60,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: isSel ? AppColors.primary : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSel
+                            ? AppColors.primary
+                            : AppColors.border.withValues(alpha: 0.6),
+                        width: isSel ? 1.5 : 1,
+                      ),
+                      boxShadow: isSel
+                          ? [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          dayName,
+                          style: TextStyle(
+                            color: isSel ? Colors.white70 : AppColors.textLight,
+                            fontSize: 11,
+                            fontWeight: isSel ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            color: isSel ? Colors.white : AppColors.textDark,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          width: 5,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: hasAvailableSlots
+                                ? (isSel ? Colors.white : Colors.green)
+                                : Colors.transparent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          const Divider(height: 1),
+          const SizedBox(height: 14),
+
+          if (daySchedules.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundLight.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.event_busy, color: AppColors.textLight, size: 28),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No slots available on ${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (availableDaysSet.isNotEmpty) ...[
+                      const Text(
+                        'Doctor is available on:',
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.center,
+                        children: availableDaysSet.map((d) {
+                          return ActionChip(
+                            label: Text(
+                              '${d[0].toUpperCase()}${d.substring(1)}',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary),
+                            ),
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            onPressed: () {
+                              for (int i = 0; i < 15; i++) {
+                                final candidate = DateTime.now().add(Duration(days: i));
+                                if (_dayNameFromDate(candidate) == d) {
+                                  final newDaySchedules = allSchedules
+                                      .where((s) => s.dayOfWeek.toLowerCase().trim() == d && s.isAvailable)
+                                      .toList();
+                                  final hasOpenSlots = newDaySchedules.any(
+                                    (s) => !_isSlotTimePassed(s, candidate) && !_isSlotBooked(s, candidate),
+                                  );
+                                  if (hasOpenSlots || i > 0) {
+                                    setState(() {
+                                      _selectedSlotDate = candidate;
+                                      try {
+                                        _selectedSchedule = newDaySchedules.firstWhere(
+                                          (s) => !_isSlotBooked(s, candidate) && !_isSlotTimePassed(s, candidate),
+                                        );
+                                      } catch (_) {
+                                        _selectedSchedule = newDaySchedules.isNotEmpty ? newDaySchedules.first : null;
+                                      }
+                                    });
+                                    break;
+                                  }
+                                }
+                              }
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ] else
+                      const Text(
+                        'No schedules published for this doctor yet.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11, color: AppColors.textLight),
+                      ),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            if (morningSlots.isNotEmpty) ...[
+              _buildDoctorShiftSection('Morning', Icons.wb_sunny_outlined, Colors.orange, morningSlots),
+              const SizedBox(height: 12),
+            ],
+            if (afternoonSlots.isNotEmpty) ...[
+              _buildDoctorShiftSection('Afternoon', Icons.wb_twilight, Colors.indigo, afternoonSlots),
+              const SizedBox(height: 12),
+            ],
+            if (eveningSlots.isNotEmpty) ...[
+              _buildDoctorShiftSection('Evening', Icons.nights_stay_outlined, Colors.deepPurple, eveningSlots),
+              const SizedBox(height: 12),
+            ],
+            if (nightSlots.isNotEmpty) ...[
+              _buildDoctorShiftSection('Night', Icons.bedtime_outlined, Colors.blueGrey, nightSlots),
+              const SizedBox(height: 12),
+            ],
+          ],
+
+          if (!_appState.isDoctorLoggedIn) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: !_hasAvailableSlotInWeek
+                    ? null
+                    : () async {
+                        final currentContext = context;
+                        if (await LoginScreen.checkAndNavigate(currentContext)) {
+                          if (!mounted) return;
+                          if (currentContext.mounted) {
+                            Navigator.push(
+                              currentContext,
+                              MaterialPageRoute(
+                                builder: (_) => BookAppointmentScreen(
+                                  doctor: _docState,
+                                  initialDate: _selectedSlotDate,
+                                  initialSlotTime: _selectedSchedule?.startTime,
+                                  initialSchedule: _selectedSchedule,
+                                ),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                icon: Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: !_hasAvailableSlotInWeek
+                      ? Colors.grey.shade500
+                      : Colors.white,
+                ),
+                label: Text(
+                  !_hasAvailableSlotInWeek
+                      ? 'No Slots Available This Week'
+                      : (_selectedSchedule != null
+                          ? 'Book Slot (${_formatTime12h(_selectedSchedule!.startTime)} • ₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')})'
+                          : 'Book Appointment with this Doctor'),
                   style: TextStyle(
-                    color: AppColors.textLight,
-                    fontSize: 11,
+                    color: !_hasAvailableSlotInWeek
+                        ? Colors.grey.shade600
+                        : Colors.white,
                     fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  disabledForegroundColor: Colors.grey.shade600,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildScheduleDay(
-    String day,
-    List<String> slots,
-    bool isActive, {
-    bool isDisabled = false,
-  }) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            decoration: BoxDecoration(
-              color: isDisabled
-                  ? AppColors.border.withValues(alpha: 0.15)
-                  : (isActive
-                        ? AppColors.primary.withValues(alpha: 0.1)
-                        : AppColors.backgroundLight),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDisabled
-                    ? AppColors.border.withValues(alpha: 0.3)
-                    : (isActive
-                          ? AppColors.primary
-                          : AppColors.border.withValues(alpha: 0.5)),
-              ),
-            ),
-            child: Text(
-              day,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isDisabled
-                    ? AppColors.textLight
-                    : (isActive ? AppColors.primary : AppColors.textDark),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (isDisabled)
+  Widget _buildDoctorShiftSection(
+    String title,
+    IconData icon,
+    Color iconColor,
+    List<DoctorSchedule> schedules,
+  ) {
+    final int availableCount = schedules
+        .where((s) =>
+            !_isSlotBooked(s, _selectedSlotDate) &&
+            !_isSlotTimePassed(s, _selectedSlotDate))
+        .length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: iconColor, size: 15),
+            const SizedBox(width: 6),
             Text(
-              'No slots available',
-              style: TextStyle(color: AppColors.textLight, fontSize: 11),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: slots.map((slot) {
-                final isSlotAvailable = day != 'TUE';
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 6,
-                      horizontal: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSlotAvailable
-                          ? Colors.white
-                          : AppColors.border.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.border.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Text(
-                      slot,
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '($availableCount available)',
+              style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: schedules.map((sch) {
+            final isBooked = _isSlotBooked(sch, _selectedSlotDate);
+            final isPassed = _isSlotTimePassed(sch, _selectedSlotDate);
+            final canSelect = !isBooked && !isPassed;
+
+            final isSel = _selectedSchedule?.id == sch.id ||
+                (_selectedSchedule?.startTime == sch.startTime &&
+                    _selectedSchedule?.dayOfWeek == sch.dayOfWeek);
+            final timeDisplay = _formatTime12h(sch.startTime);
+            final feeDisplay = '₹${sch.consultationFee.replaceAll('.00', '')}';
+
+            return GestureDetector(
+              onTap: canSelect
+                  ? () {
+                      setState(() {
+                        _selectedSchedule = sch;
+                      });
+                    }
+                  : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isPassed
+                      ? Colors.grey.shade100
+                      : (isBooked
+                          ? Colors.red.shade50
+                          : (isSel ? AppColors.primary : Colors.white)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isPassed
+                        ? Colors.grey.shade200
+                        : (isBooked
+                            ? Colors.red.shade300
+                            : (isSel
+                                ? AppColors.primary
+                                : AppColors.border.withValues(alpha: 0.6))),
+                    width: isSel ? 1.5 : 1,
+                  ),
+                  boxShadow: isSel
+                      ? [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.25),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      timeDisplay,
                       style: TextStyle(
                         fontSize: 11,
-                        color: isSlotAvailable
-                            ? AppColors.textDark
-                            : AppColors.textLight,
+                        fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
+                        color: isPassed
+                            ? Colors.grey.shade500
+                            : (isBooked
+                                ? Colors.red.shade700
+                                : (isSel ? Colors.white : AppColors.textDark)),
+                        decoration: canSelect ? null : TextDecoration.lineThrough,
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
+                    const SizedBox(width: 6),
+                    if (isPassed) ...[
+                      Text(
+                        'Passed',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ] else if (isBooked) ...[
+                      Text(
+                        'Booked',
+                        style: TextStyle(
+                          color: Colors.red.shade600,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: isSel
+                              ? Colors.white.withValues(alpha: 0.25)
+                              : AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          feeDisplay,
+                          style: TextStyle(
+                            color: isSel ? Colors.white : AppColors.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
+
+
+
 
   Widget _buildTimelineRow(String title, String subtitle, String desc) {
     return Padding(
@@ -1658,6 +1965,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                   errorMessage = null;
                                 });
 
+                                final nav = Navigator.of(context);
+                                final messenger = ScaffoldMessenger.of(context);
+
                                 final res = await _appState.submitRating(
                                   targetId: widget.doctor.id,
                                   targetType: 'doctor',
@@ -1666,12 +1976,8 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                 );
 
                                 if (res.success) {
-                                  if (!mounted) return;
-                                  final currentContext = context;
-                                  Navigator.pop(currentContext);
-                                  ScaffoldMessenger.of(
-                                    currentContext,
-                                  ).showSnackBar(
+                                  nav.pop();
+                                  messenger.showSnackBar(
                                     SnackBar(
                                       content: Text(
                                         res.message.isNotEmpty

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
-import '../models/doctor_model.dart';
 import '../services/doctor_service.dart';
 import 'doctor_profile_screen.dart';
 
@@ -387,6 +386,7 @@ class _DoctorListingScreenState extends State<DoctorListingScreen> {
                   image: DecorationImage(
                     image: _getDoctorImageProvider(doc.image),
                     fit: BoxFit.cover,
+                    onError: (_, __) {},
                   ),
                 ),
               ),

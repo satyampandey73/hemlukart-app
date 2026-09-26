@@ -320,6 +320,13 @@ class ApiProductModel {
         ? (double.tryParse(primarySku.consumerDiscount) ?? 0.0)
         : 0.0;
 
+    final double doctorDiscountVal = primarySku != null
+        ? (double.tryParse(primarySku.doctorDiscount) ?? 0.0)
+        : 0.0;
+
+    final bool doctorActiveVal = primarySku?.doctorActive ?? true;
+    final bool consumerActiveVal = primarySku?.consumerActive ?? true;
+
     // Calculated price after discount
     final double calculatedPrice = (mrpVal - discountVal).clamp(0.0, mrpVal);
     final double finalPrice = calculatedPrice > 0 ? calculatedPrice : mrpVal;
@@ -360,6 +367,10 @@ class ApiProductModel {
       potency: potency,
       packSize: pack,
       flavour: 'Natural',
+      doctorDiscount: doctorDiscountVal,
+      doctorActive: doctorActiveVal,
+      consumerDiscount: discountVal,
+      consumerActive: consumerActiveVal,
     );
   }
 }

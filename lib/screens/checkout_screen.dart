@@ -466,6 +466,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         const SizedBox(height: 16),
 
                         _buildSummaryRow('Item Total', '₹${widget.subtotal.toStringAsFixed(2)}'),
+                        if (_appState.isDoctorLoggedIn) ...[
+                          const SizedBox(height: 6),
+                          _buildSummaryRow('Role Pricing', 'Doctor Discount Applied', isGreen: true),
+                        ],
                         const SizedBox(height: 6),
                         _buildSummaryRow('Platform Discount', '-₹${effectiveDiscount.toStringAsFixed(2)}', isGreen: true),
                         const SizedBox(height: 6),

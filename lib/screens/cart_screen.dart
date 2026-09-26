@@ -545,9 +545,38 @@ class _CartScreenState extends State<CartScreen> {
               ),
 
               // Price (Top-Right of Item Card)
-              Text(
-                '₹${(prod.price * item.quantity).toStringAsFixed(2)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '₹${(prod.price * item.quantity).toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary),
+                  ),
+                  if (prod.price < prod.originalPrice) ...[
+                    Text(
+                      '₹${(prod.originalPrice * item.quantity).toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textLight,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    if (_appState.isDoctorLoggedIn)
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D9488).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.4), width: 0.5),
+                        ),
+                        child: const Text(
+                          'Doctor Price',
+                          style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF0D9488)),
+                        ),
+                      ),
+                  ],
+                ],
               ),
             ],
           ),

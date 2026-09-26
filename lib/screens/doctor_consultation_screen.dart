@@ -153,7 +153,6 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.canPop(context);
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
@@ -166,7 +165,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
             Container(
               padding: EdgeInsets.fromLTRB(
                 16,
-                canPop ? (topPadding + 10) : 20,
+                topPadding + 16,
                 16,
                 24,
               ),
@@ -174,24 +173,6 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (canPop) ...[
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ],
                   const Text(
                     'Consult Top Doctors',
                     style: TextStyle(
@@ -366,6 +347,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                             children: [
                               CircleAvatar(
                                 radius: 28,
+                                onBackgroundImageError: (_, __) {},
                                 backgroundImage: (topDoc.image.startsWith('http://') ||
                                         topDoc.image.startsWith('https://'))
                                     ? NetworkImage(topDoc.image) as ImageProvider
@@ -1081,6 +1063,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                                     : 'assets/doctor_profile.png',
                               ),
                         fit: BoxFit.cover,
+                        onError: (_, __) {},
                       ),
                     ),
                   ),

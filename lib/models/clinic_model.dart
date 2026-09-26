@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ApiClinic {
   final String id;
   final String clinicName;
@@ -39,6 +41,17 @@ class ApiClinic {
     List<String>? parsedImages;
     if (json['images'] is List) {
       parsedImages = (json['images'] as List).map((e) => e.toString()).toList();
+    } else if (json['images'] is String && (json['images'] as String).trim().isNotEmpty) {
+      final str = (json['images'] as String).trim();
+      if (str.startsWith('[')) {
+        try {
+          parsedImages = (jsonDecode(str) as List).map((e) => e.toString()).toList();
+        } catch (_) {
+          parsedImages = str.split(' ').where((s) => s.trim().isNotEmpty).toList();
+        }
+      } else {
+        parsedImages = str.split(' ').where((s) => s.trim().isNotEmpty).toList();
+      }
     } else if (json['image'] != null && json['image'].toString().isNotEmpty) {
       parsedImages = [json['image'].toString()];
     }
@@ -115,14 +128,65 @@ class ClinicsApiResponse {
   }
 }
 
+class ClinicDoctor {
+  final String doctorId;
+  final String fullName;
+  final String? mobile;
+  final String? email;
+  final String? ayushSystem;
+  final String? profilePhoto;
+  final String? qualifications;
+  final int? experience;
+  final String? role;
+  final bool? isActive;
+  final String? joinedAt;
+  final List<dynamic>? schedules;
+
+  ClinicDoctor({
+    required this.doctorId,
+    required this.fullName,
+    this.mobile,
+    this.email,
+    this.ayushSystem,
+    this.profilePhoto,
+    this.qualifications,
+    this.experience,
+    this.role,
+    this.isActive,
+    this.joinedAt,
+    this.schedules,
+  });
+
+  factory ClinicDoctor.fromJson(Map<String, dynamic> json) {
+    return ClinicDoctor(
+      doctorId: (json['doctorId'] ?? json['id'] ?? json['_id'])?.toString() ?? '',
+      fullName: (json['fullName'] ?? json['name'])?.toString() ?? 'Practitioner',
+      mobile: json['mobile']?.toString(),
+      email: json['email']?.toString(),
+      ayushSystem: json['ayushSystem']?.toString(),
+      profilePhoto: json['profilePhoto']?.toString(),
+      qualifications: json['qualifications']?.toString(),
+      experience: json['experience'] is int
+          ? json['experience'] as int
+          : int.tryParse(json['experience']?.toString() ?? '0'),
+      role: json['role']?.toString(),
+      isActive: json['isActive'] is bool ? json['isActive'] as bool : true,
+      joinedAt: json['joinedAt']?.toString(),
+      schedules: json['schedules'] is List ? json['schedules'] as List : null,
+    );
+  }
+}
+
 class SingleClinicApiResponse {
   final bool success;
   final ApiClinic? clinic;
+  final List<ClinicDoctor> doctors;
   final String message;
 
   SingleClinicApiResponse({
     required this.success,
     this.clinic,
+    this.doctors = const [],
     this.message = '',
   });
 
@@ -141,9 +205,18 @@ class SingleClinicApiResponse {
       isSuccess = true;
     }
 
+    List<ClinicDoctor> parsedDoctors = [];
+    if (json['doctors'] != null && json['doctors'] is List) {
+      parsedDoctors = (json['doctors'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map((d) => ClinicDoctor.fromJson(d))
+          .toList();
+    }
+
     return SingleClinicApiResponse(
       success: isSuccess,
       clinic: clinicObj,
+      doctors: parsedDoctors,
       message: json['message']?.toString() ?? '',
     );
   }

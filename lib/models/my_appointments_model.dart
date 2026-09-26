@@ -84,12 +84,14 @@ class UserAppointmentItem {
   final String? doctorName;
   final String? doctorSpecialty;
   final DoctorPhotos? doctorPhoto;
+  final String? appointmentTime;
   final String? clinicName;
 
   UserAppointmentItem({
     required this.id,
     this.clinicId,
     required this.appointmentDate,
+    this.appointmentTime,
     required this.durationMinutes,
     required this.consultationType,
     required this.status,
@@ -115,6 +117,7 @@ class UserAppointmentItem {
       id: json['id'] as String? ?? '',
       clinicId: json['clinicId'] as String?,
       appointmentDate: json['appointmentDate'] as String? ?? '',
+      appointmentTime: (json['appointmentTime'] ?? json['time'] ?? json['slotTime'] ?? json['startTime'])?.toString(),
       durationMinutes: json['durationMinutes'] is int
           ? json['durationMinutes'] as int
           : int.tryParse(json['durationMinutes']?.toString() ?? '') ?? 30,
@@ -147,6 +150,7 @@ class UserAppointmentItem {
       'id': id,
       'clinicId': clinicId,
       'appointmentDate': appointmentDate,
+      'appointmentTime': appointmentTime,
       'durationMinutes': durationMinutes,
       'consultationType': consultationType,
       'status': status,
@@ -168,25 +172,145 @@ class UserAppointmentItem {
     };
   }
 
-  /// Helper to format date & time for UI display
-  String get formattedDateTime {
-    if (appointmentDate.isEmpty) return '';
-    try {
-      final dateTime = DateTime.parse(appointmentDate).toUtc();
-      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      final hour = dateTime.hour;
-      final minute = dateTime.minute.toString().padLeft(2, '0');
-      final period = hour >= 12 ? 'PM' : 'AM';
-      final formattedHour = (hour % 12 == 0) ? 12 : (hour % 12);
-
-      if (hour == 0 && minute == '00' && !appointmentDate.contains('T')) {
-        return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}';
-      }
-
-      return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year} at ${formattedHour.toString().padLeft(2, '0')}:$minute $period';
-    } catch (_) {
-      return appointmentDate;
+  /// Universal IST date & time formatter
+  static String formatDateTimeInIst({required String? dateStr, String? timeStr}) {
+    if ((dateStr == null || dateStr.trim().isEmpty) && (timeStr == null || timeStr.trim().isEmpty)) {
+      return '';
     }
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // 1. Resolve Time if provided directly
+    String? formattedTime;
+    if (timeStr != null && timeStr.trim().isNotEmpty) {
+      final t = timeStr.trim();
+      final isPm = t.toUpperCase().contains('PM');
+      final isAm = t.toUpperCase().contains('AM');
+      final digitsAndColon = t.replaceAll(RegExp(r'[^\d:]'), '');
+      final parts = digitsAndColon.split(':');
+      if (parts.isNotEmpty) {
+        int h = int.tryParse(parts[0]) ?? 0;
+        int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        if (isPm && h < 12) h += 12;
+        if (isAm && h == 12) h = 0;
+        final period = h >= 12 ? 'PM' : 'AM';
+        final displayH = (h % 12 == 0) ? 12 : (h % 12);
+        formattedTime = '${displayH.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $period';
+      }
+    }
+
+    // 2. Resolve Date & fallback time from dateStr if timeStr is not provided
+    if (dateStr == null || dateStr.trim().isEmpty) {
+      return formattedTime ?? '';
+    }
+
+    final d = dateStr.trim();
+
+    // Check if d is ISO timestamp with T
+    if (d.contains('T')) {
+      try {
+        final parsed = DateTime.parse(d);
+        // If UTC, convert to IST
+        final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+        final day = ist.day;
+        final month = months[ist.month - 1];
+        final year = ist.year;
+
+        if (formattedTime == null) {
+          final h = ist.hour;
+          final m = ist.minute.toString().padLeft(2, '0');
+          final period = h >= 12 ? 'PM' : 'AM';
+          final displayH = (h % 12 == 0) ? 12 : (h % 12);
+          if (h == 0 && m == '00') {
+            return '$day $month $year';
+          }
+          formattedTime = '${displayH.toString().padLeft(2, '0')}:$m $period';
+        }
+
+        return '$day $month $year at $formattedTime';
+      } catch (_) {}
+    }
+
+    // Check if d is YYYY-MM-DD
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(d)) {
+      final parts = d.split('-');
+      final year = parts[0];
+      final monthIndex = (int.tryParse(parts[1]) ?? 1) - 1;
+      final month = (monthIndex >= 0 && monthIndex < 12) ? months[monthIndex] : parts[1];
+      final day = int.tryParse(parts[2])?.toString() ?? parts[2];
+
+      if (formattedTime != null) {
+        return '$day $month $year at $formattedTime';
+      }
+      return '$day $month $year';
+    }
+
+    // Check if d is DD-MM-YYYY or DD/MM/YYYY
+    if (RegExp(r'^\d{2}[-/]\d{2}[-/]\d{4}$').hasMatch(d)) {
+      final sep = d.contains('/') ? '/' : '-';
+      final parts = d.split(sep);
+      final day = int.tryParse(parts[0])?.toString() ?? parts[0];
+      final monthIndex = (int.tryParse(parts[1]) ?? 1) - 1;
+      final month = (monthIndex >= 0 && monthIndex < 12) ? months[monthIndex] : parts[1];
+      final year = parts[2];
+
+      if (formattedTime != null) {
+        return '$day $month $year at $formattedTime';
+      }
+      return '$day $month $year';
+    }
+
+    // Fallback: try DateTime.parse
+    try {
+      final parsed = DateTime.parse(d);
+      final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+      final day = ist.day;
+      final month = months[ist.month - 1];
+      final year = ist.year;
+      if (formattedTime != null) {
+        return '$day $month $year at $formattedTime';
+      }
+      return '$day $month $year';
+    } catch (_) {
+      return formattedTime != null ? '$d at $formattedTime' : d;
+    }
+  }
+
+  /// Helper to format date & time for UI display in IST
+  String get formattedDateTime {
+    return formatDateTimeInIst(dateStr: appointmentDate, timeStr: appointmentTime);
+  }
+
+  /// Returns only the formatted time (e.g. "02:05 PM")
+  String get formattedTimeOnly {
+    if (appointmentTime != null && appointmentTime!.trim().isNotEmpty) {
+      final t = appointmentTime!.trim();
+      final isPm = t.toUpperCase().contains('PM');
+      final isAm = t.toUpperCase().contains('AM');
+      final digitsAndColon = t.replaceAll(RegExp(r'[^\d:]'), '');
+      final parts = digitsAndColon.split(':');
+      if (parts.isNotEmpty) {
+        int h = int.tryParse(parts[0]) ?? 0;
+        int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        if (isPm && h < 12) h += 12;
+        if (isAm && h == 12) h = 0;
+        final period = h >= 12 ? 'PM' : 'AM';
+        final displayH = (h % 12 == 0) ? 12 : (h % 12);
+        return '${displayH.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $period';
+      }
+    }
+    if (appointmentDate.contains('T')) {
+      try {
+        final parsed = DateTime.parse(appointmentDate);
+        final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+        final h = ist.hour;
+        final m = ist.minute.toString().padLeft(2, '0');
+        final period = h >= 12 ? 'PM' : 'AM';
+        final displayH = (h % 12 == 0) ? 12 : (h % 12);
+        return '${displayH.toString().padLeft(2, '0')}:$m $period';
+      } catch (_) {}
+    }
+    return '';
   }
 
   /// Helper to format bookedAt timestamp to IST (UTC+5:30)
@@ -236,6 +360,76 @@ class UserAppointmentItem {
         t.contains('online') ||
         t.contains('tele');
   }
+
+  /// Helper to check whether scheduled consultation time + duration has passed in IST
+  static bool checkMeetingTimeExpired({
+    required String appointmentDate,
+    String? appointmentTime,
+    int durationMinutes = 30,
+  }) {
+    try {
+      int year = 0, month = 1, day = 1;
+      final d = appointmentDate.trim();
+      final dateMatch = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(d);
+      if (dateMatch != null) {
+        year = int.parse(dateMatch.group(1)!);
+        month = int.parse(dateMatch.group(2)!);
+        day = int.parse(dateMatch.group(3)!);
+      } else {
+        final parsed = DateTime.tryParse(d);
+        if (parsed != null) {
+          final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+          year = ist.year;
+          month = ist.month;
+          day = ist.day;
+        }
+      }
+
+      if (year == 0) return false;
+
+      int hour = 0, minute = 0;
+      if (appointmentTime != null && appointmentTime.trim().isNotEmpty) {
+        final t = appointmentTime.trim();
+        final isPm = t.toUpperCase().contains('PM');
+        final isAm = t.toUpperCase().contains('AM');
+        final digitsAndColon = t.replaceAll(RegExp(r'[^\d:]'), '');
+        final parts = digitsAndColon.split(':');
+        if (parts.isNotEmpty) {
+          hour = int.tryParse(parts[0]) ?? 0;
+          minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+          if (isPm && hour < 12) hour += 12;
+          if (isAm && hour == 12) hour = 0;
+        }
+      } else if (d.contains('T')) {
+        final parsed = DateTime.tryParse(d);
+        if (parsed != null) {
+          final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+          hour = ist.hour;
+          minute = ist.minute;
+        }
+      }
+
+      final startDt = DateTime(year, month, day, hour, minute);
+      final duration = durationMinutes > 0 ? durationMinutes : 30;
+      final endDt = startDt.add(Duration(minutes: duration));
+
+      final nowUtc = DateTime.now().toUtc();
+      final nowIst = nowUtc.add(const Duration(hours: 5, minutes: 30));
+
+      return nowIst.isAfter(endDt);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Whether the scheduled consultation time has expired
+  bool get isMeetingTimeExpired {
+    return checkMeetingTimeExpired(
+      appointmentDate: appointmentDate,
+      appointmentTime: appointmentTime,
+      durationMinutes: durationMinutes,
+    );
+  }
 }
 
 class AppointmentDetailModel {
@@ -264,6 +458,7 @@ class AppointmentDetailModel {
   final String? doctorEmail;
   final String? doctorSpecialty;
   final DoctorPhotos? doctorDocuments;
+  final String? appointmentTime;
   final String? clinicName;
   final String? userId;
   final String? userName;
@@ -273,6 +468,7 @@ class AppointmentDetailModel {
     required this.id,
     this.clinicId,
     required this.appointmentDate,
+    this.appointmentTime,
     required this.durationMinutes,
     required this.consultationType,
     required this.status,
@@ -313,6 +509,7 @@ class AppointmentDetailModel {
       id: json['id'] as String? ?? '',
       clinicId: json['clinicId'] as String?,
       appointmentDate: json['appointmentDate'] as String? ?? '',
+      appointmentTime: (json['appointmentTime'] ?? json['time'] ?? json['slotTime'] ?? json['startTime'])?.toString(),
       durationMinutes: json['durationMinutes'] is int
           ? json['durationMinutes'] as int
           : int.tryParse(json['durationMinutes']?.toString() ?? '') ?? 30,
@@ -351,6 +548,7 @@ class AppointmentDetailModel {
       'id': id,
       'clinicId': clinicId,
       'appointmentDate': appointmentDate,
+      'appointmentTime': appointmentTime,
       'durationMinutes': durationMinutes,
       'consultationType': consultationType,
       'status': status,
@@ -380,24 +578,41 @@ class AppointmentDetailModel {
     };
   }
 
+  /// Helper to format date & time for UI display in IST
   String get formattedDateTime {
-    if (appointmentDate.isEmpty) return '';
-    try {
-      final dateTime = DateTime.parse(appointmentDate).toUtc();
-      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      final hour = dateTime.hour;
-      final minute = dateTime.minute.toString().padLeft(2, '0');
-      final period = hour >= 12 ? 'PM' : 'AM';
-      final formattedHour = (hour % 12 == 0) ? 12 : (hour % 12);
+    return UserAppointmentItem.formatDateTimeInIst(dateStr: appointmentDate, timeStr: appointmentTime);
+  }
 
-      if (hour == 0 && minute == '00' && !appointmentDate.contains('T')) {
-        return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}';
+  /// Returns only the formatted time (e.g. "02:05 PM")
+  String get formattedTimeOnly {
+    if (appointmentTime != null && appointmentTime!.trim().isNotEmpty) {
+      final t = appointmentTime!.trim();
+      final isPm = t.toUpperCase().contains('PM');
+      final isAm = t.toUpperCase().contains('AM');
+      final digitsAndColon = t.replaceAll(RegExp(r'[^\d:]'), '');
+      final parts = digitsAndColon.split(':');
+      if (parts.isNotEmpty) {
+        int h = int.tryParse(parts[0]) ?? 0;
+        int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        if (isPm && h < 12) h += 12;
+        if (isAm && h == 12) h = 0;
+        final period = h >= 12 ? 'PM' : 'AM';
+        final displayH = (h % 12 == 0) ? 12 : (h % 12);
+        return '${displayH.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $period';
       }
-
-      return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year} at ${formattedHour.toString().padLeft(2, '0')}:$minute $period';
-    } catch (_) {
-      return appointmentDate;
     }
+    if (appointmentDate.contains('T')) {
+      try {
+        final parsed = DateTime.parse(appointmentDate);
+        final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed;
+        final h = ist.hour;
+        final m = ist.minute.toString().padLeft(2, '0');
+        final period = h >= 12 ? 'PM' : 'AM';
+        final displayH = (h % 12 == 0) ? 12 : (h % 12);
+        return '${displayH.toString().padLeft(2, '0')}:$m $period';
+      } catch (_) {}
+    }
+    return '';
   }
 
   /// Helper to format bookedAt timestamp to IST (UTC+5:30)
@@ -445,6 +660,15 @@ class AppointmentDetailModel {
         t.contains('video') ||
         t.contains('online') ||
         t.contains('tele');
+  }
+
+  /// Whether the scheduled consultation time has expired
+  bool get isMeetingTimeExpired {
+    return UserAppointmentItem.checkMeetingTimeExpired(
+      appointmentDate: appointmentDate,
+      appointmentTime: appointmentTime,
+      durationMinutes: durationMinutes,
+    );
   }
 }
 
