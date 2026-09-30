@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,6 +30,32 @@ import '../services/doctor_auth_service.dart';
 import '../models/chat_model.dart';
 import '../services/chat_service.dart';
 
+class ProductVariant {
+  final String id;
+  final String packSize;
+  final double price;
+  final double originalPrice;
+  final String? skuCode;
+  final bool isOutOfStock;
+  final double? doctorDiscount;
+  final bool? doctorActive;
+  final double? consumerDiscount;
+  final bool? consumerActive;
+
+  const ProductVariant({
+    required this.id,
+    required this.packSize,
+    required this.price,
+    required this.originalPrice,
+    this.skuCode,
+    this.isOutOfStock = false,
+    this.doctorDiscount,
+    this.doctorActive,
+    this.consumerDiscount,
+    this.consumerActive,
+  });
+}
+
 class Product {
   final String id;
   final String name;
@@ -49,6 +76,9 @@ class Product {
   final bool? _doctorActive;
   final double? _consumerDiscount;
   final bool? _consumerActive;
+  final List<ProductVariant> variants;
+  // Selected variant's SKU ID — sent to backend when adding to cart
+  final String? skuId;
 
   const Product({
     required this.id,
@@ -70,6 +100,8 @@ class Product {
     bool? doctorActive,
     double? consumerDiscount,
     bool? consumerActive,
+    this.variants = const [],
+    this.skuId,
   })  : _basePrice = price,
         _doctorDiscount = doctorDiscount,
         _doctorActive = doctorActive,
@@ -134,6 +166,58 @@ class Product {
       final pct = effectiveDiscountPercent;
       return pct > 0 ? '$pct% OFF' : '';
     }
+  }
+
+  /// Returns available bottle/pack variants for this product from the backend.
+  List<ProductVariant> get availableVariants {
+    if (variants.isNotEmpty) return variants;
+
+    return [
+      ProductVariant(
+        id: id,
+        packSize: packSize.trim().isNotEmpty ? packSize : '1 Unit',
+        price: price,
+        originalPrice: originalPrice,
+        isOutOfStock: isOutOfStock,
+        doctorDiscount: _doctorDiscount,
+        doctorActive: _doctorActive,
+        consumerDiscount: _consumerDiscount,
+        consumerActive: _consumerActive,
+      ),
+    ];
+  }
+
+  /// Creates a copy of this product with the selected variant's attributes.
+  /// Stores variant.id as skuId ONLY if it differs from productId.
+  /// When the dummy fallback variant (id==productId) is used, skuId stays null
+  /// so CartService doesn't send a redundant/wrong skuId to the backend.
+  Product copyWithVariant(ProductVariant variant) {
+    return Product(
+      id: id,
+      name: name,
+      brand: brand,
+      image: image,
+      price: variant.price,
+      originalPrice: variant.originalPrice,
+      rating: rating,
+      reviewsCount: reviewsCount,
+      isPrescriptionRequired: isPrescriptionRequired,
+      isOutOfStock: variant.isOutOfStock,
+      category: category,
+      description: description,
+      potency: potency,
+      packSize: variant.packSize,
+      flavour: flavour,
+      doctorDiscount: variant.doctorDiscount ?? _doctorDiscount,
+      doctorActive: variant.doctorActive ?? _doctorActive,
+      consumerDiscount: variant.consumerDiscount ?? _consumerDiscount,
+      consumerActive: variant.consumerActive ?? _consumerActive,
+      variants: variants,
+      // Only store skuId if variant has a real/distinct ID (not the dummy fallback)
+      skuId: variant.id.isNotEmpty && variant.id != id
+          ? variant.id
+          : (skuId != null && skuId!.isNotEmpty && skuId != id ? skuId : null),
+    );
   }
 }
 
@@ -415,6 +499,7 @@ class Order {
   final List<CartItem> items;
   final double totalAmount;
   final double discount;
+  final double shippingCharge;
   final String status; // Placed, Confirmed, Dispatched, Delivered
   final String orderDate;
   final String? orderNo;
@@ -427,6 +512,7 @@ class Order {
     required this.items,
     required this.totalAmount,
     required this.discount,
+    this.shippingCharge = 0.0,
     this.status = 'Placed',
     required this.orderDate,
     this.orderNo,
@@ -581,6 +667,10 @@ class AppState extends ChangeNotifier {
     return null;
   }
   ApiDoctor? get currentDoctorProfile => _currentDoctorProfile;
+  void setCurrentDoctorProfile(ApiDoctor doc) {
+    _currentDoctorProfile = doc;
+    notifyListeners();
+  }
   bool get isDoctorLoggedIn => _doctorToken != null && _doctorToken!.isNotEmpty;
 
   Future<void> initSession() async {
@@ -769,8 +859,10 @@ class AppState extends ChangeNotifier {
 
   List<CartItem> get cart => _cart;
 
-  int getProductQuantity(String productId) {
-    final idx = _cart.indexWhere((item) => item.product.id == productId);
+  int getProductQuantity(String productId, {String? packSize}) {
+    final idx = _cart.indexWhere((item) =>
+        item.product.id == productId &&
+        (packSize == null || item.product.packSize == packSize));
     return idx != -1 ? _cart[idx].quantity : 0;
   }
 
@@ -958,6 +1050,17 @@ class AppState extends ChangeNotifier {
   ShippingAddressModel? get selectedShippingAddress => _selectedShippingAddress;
   bool get isLoadingAddresses => _isLoadingAddresses;
 
+  int _productsCurrentPage = 1;
+  int _productsTotalPages = 1;
+  int _productsTotalCount = 0;
+  bool _isLoadingMoreProducts = false;
+
+  int get productsCurrentPage => _productsCurrentPage;
+  int get productsTotalPages => _productsTotalPages;
+  int get productsTotalCount => _productsTotalCount;
+  bool get isLoadingMoreProducts => _isLoadingMoreProducts;
+  bool get hasMoreProducts => _productsCurrentPage < _productsTotalPages;
+
   List<Product> get products => _apiProducts;
   List<Product> get apiProducts => _apiProducts;
   bool get isLoadingProducts => _isLoadingProducts;
@@ -966,16 +1069,26 @@ class AppState extends ChangeNotifier {
   Future<void> fetchProductsFromApi({
     String? categoryId,
     String? search,
+    int page = 1,
+    int? limit,
   }) async {
-    _isLoadingProducts = true;
-    _productsError = null;
-    notifyListeners();
+    if (page == 1) {
+      _isLoadingProducts = true;
+      _productsError = null;
+      notifyListeners();
+    } else {
+      _isLoadingMoreProducts = true;
+      notifyListeners();
+    }
 
     final response = await ProductService.getProducts(
       categoryId: categoryId,
       search: search,
+      page: page,
+      limit: limit,
     );
     _isLoadingProducts = false;
+    _isLoadingMoreProducts = false;
 
     if (response.success) {
       final activeApiProds = response.products
@@ -983,11 +1096,54 @@ class AppState extends ChangeNotifier {
           .map((p) => p.toProduct())
           .toList();
 
-      _apiProducts = activeApiProds;
+      if (response.pagination != null) {
+        _productsCurrentPage = response.pagination!['page'] is int
+            ? response.pagination!['page']
+            : int.tryParse(response.pagination!['page']?.toString() ?? '1') ?? 1;
+        _productsTotalPages = response.pagination!['pages'] is int
+            ? response.pagination!['pages']
+            : int.tryParse(response.pagination!['pages']?.toString() ?? '1') ?? 1;
+        _productsTotalCount = response.pagination!['total'] is int
+            ? response.pagination!['total']
+            : int.tryParse(response.pagination!['total']?.toString() ?? '0') ?? 0;
+      } else {
+        _productsCurrentPage = page;
+      }
+
+      if (page == 1) {
+        _apiProducts = activeApiProds;
+      } else {
+        final existingIds = _apiProducts.map((p) => p.id).toSet();
+        for (final p in activeApiProds) {
+          if (!existingIds.contains(p.id)) {
+            _apiProducts.add(p);
+          }
+        }
+      }
     } else {
-      _productsError = response.message ?? 'Failed to load products from API';
+      if (page == 1) {
+        _productsError = response.message ?? 'Failed to load products from API';
+      }
     }
     notifyListeners();
+  }
+
+  Future<bool> loadMoreProductsFromApi({
+    String? categoryId,
+    String? search,
+    int? limit,
+  }) async {
+    if (_isLoadingMoreProducts || _isLoadingProducts) return false;
+    if (_productsCurrentPage >= _productsTotalPages) return false;
+
+    final nextPage = _productsCurrentPage + 1;
+    await fetchProductsFromApi(
+      categoryId: categoryId,
+      search: search,
+      page: nextPage,
+      limit: limit,
+    );
+    return true;
   }
 
   Future<Product?> fetchProductDetails(String productId) async {
@@ -1155,10 +1311,16 @@ class AppState extends ChangeNotifier {
     ),
   ];
 
-  // Cart Operations
+  // ─── Cart Operations ────────────────────────────────────────────────────────
+
   Future<GetCartApiResponse> fetchCartFromApi() async {
     final token = activeToken;
+    debugPrint('┌─────────────────────────────────────────────');
+    debugPrint('│ [CART] FETCH CART FROM API');
+    debugPrint('│ Token    : ${token != null && token.isNotEmpty ? token : "null / empty"}');
+    debugPrint('│ TokenType: ${_authToken != null && _authToken!.isNotEmpty ? "USER" : (_doctorToken != null && _doctorToken!.isNotEmpty ? "DOCTOR" : "NONE")}');
     if (token == null || token.isEmpty) {
+      debugPrint('└ SKIP — user not authenticated');
       return GetCartApiResponse(
         success: false,
         message: 'User not authenticated',
@@ -1171,11 +1333,26 @@ class AppState extends ChangeNotifier {
     final response = await CartService.getCart(token: token);
     _isLoadingCart = false;
 
+    debugPrint('│ Response success: ${response.success}');
+    if (response.message != null) debugPrint('│ Message: ${response.message}');
+
     if (response.success && response.data != null) {
+      final serverItems = response.data!.items;
+      debugPrint('│ Server cart items: ${serverItems.length}');
+      for (final item in serverItems) {
+        debugPrint('│   • itemId=${item.id} | productId=${item.productId} | skuId=${item.skuId ?? "null"} | qty=${item.quantity} | price=₹${item.priceAtAdd}');
+      }
+
       final localUnsynced = _cart.where((item) => item.itemId == null).toList();
+      if (localUnsynced.isNotEmpty) {
+        debugPrint('│ Local unsynced items: ${localUnsynced.length}');
+        for (final u in localUnsynced) {
+          debugPrint('│   • product=${u.product.name} | qty=${u.quantity}');
+        }
+      }
 
       List<CartItem> updatedCart = [];
-      for (final itemData in response.data!.items) {
+      for (final itemData in serverItems) {
         final existingProd = _apiProducts.firstWhere(
           (p) => p.id == itemData.productId,
           orElse: () => Product(
@@ -1201,9 +1378,60 @@ class AppState extends ChangeNotifier {
             ? _cart[localIdx].prescriptionFile
             : null;
 
+        Product resolvedProd = existingProd;
+        if (itemData.skuId != null && itemData.skuId!.isNotEmpty) {
+          // Level 1: match by skuId (most precise)
+          ProductVariant? matchedVariant = existingProd.variants.where(
+            (v) => v.id == itemData.skuId,
+          ).firstOrNull;
+
+          if (matchedVariant != null) {
+            resolvedProd = existingProd.copyWithVariant(matchedVariant);
+            debugPrint('│   ✓ Variant matched by skuId=${itemData.skuId} → packSize=${matchedVariant.packSize}');
+          } else {
+            // Level 2: match by skuCode
+            if (itemData.skuCode != null && itemData.skuCode!.isNotEmpty) {
+              matchedVariant = existingProd.variants.where(
+                (v) => v.skuCode != null && v.skuCode == itemData.skuCode,
+              ).firstOrNull;
+              if (matchedVariant != null) {
+                resolvedProd = existingProd.copyWithVariant(matchedVariant);
+                debugPrint('│   ✓ Variant matched by skuCode=${itemData.skuCode} → packSize=${matchedVariant.packSize}');
+              }
+            }
+
+            // Level 3: match by priceAtAdd
+            if (matchedVariant == null && itemData.priceAtAdd > 0) {
+              matchedVariant = existingProd.variants.where(
+                (v) => v.price == itemData.priceAtAdd,
+              ).firstOrNull;
+              if (matchedVariant != null) {
+                resolvedProd = existingProd.copyWithVariant(matchedVariant);
+                debugPrint('│   ✓ Variant matched by priceAtAdd=₹${itemData.priceAtAdd} → packSize=${matchedVariant.packSize}');
+              }
+            }
+
+            // Level 4: match by skuName == packSize
+            if (matchedVariant == null && itemData.skuName != null && itemData.skuName!.isNotEmpty) {
+              matchedVariant = existingProd.variants.where(
+                (v) => v.packSize.trim().toLowerCase() == itemData.skuName!.trim().toLowerCase(),
+              ).firstOrNull;
+              if (matchedVariant != null) {
+                resolvedProd = existingProd.copyWithVariant(matchedVariant);
+                debugPrint('│   ✓ Variant matched by skuName=${itemData.skuName} → packSize=${matchedVariant.packSize}');
+              }
+            }
+
+            if (matchedVariant == null) {
+              debugPrint('│   ⚠ Variant NOT matched for skuId=${itemData.skuId} in product=${existingProd.name} (all 4 levels tried)');
+              debugPrint('│     Available variants: ${existingProd.variants.map((v) => "id=${v.id} pack=${v.packSize} price=₹${v.price}").join(" | ")}');
+            }
+          }
+        }
+
         updatedCart.add(
           CartItem(
-            product: existingProd,
+            product: resolvedProd,
             quantity: itemData.quantity,
             itemId: itemData.id,
             prescriptionFile: localPrescription,
@@ -1219,43 +1447,81 @@ class AppState extends ChangeNotifier {
 
       _cart.clear();
       _cart.addAll(updatedCart);
+      debugPrint('│ Final local cart: ${_cart.length} items');
+      for (final c in _cart) {
+        debugPrint('│   • ${c.product.name} | packSize=${c.product.packSize} | qty=${c.quantity} | itemId=${c.itemId ?? "null"}');
+      }
+    } else {
+      debugPrint('│ ✗ Fetch failed — cart not updated');
     }
+    debugPrint('└─────────────────────────────────────────────');
     notifyListeners();
     return response;
   }
 
   Future<AddToCartApiResponse> addToCart(Product product, {int qty = 1}) async {
+    debugPrint('┌─────────────────────────────────────────────');
+    debugPrint('│ [CART] ADD TO CART');
+    debugPrint('│ Product : ${product.name}');
+    debugPrint('│ ProductId: ${product.id}');
+    debugPrint('│ SkuId   : ${product.skuId ?? "null (no variant selected)"}');
+    debugPrint('│ PackSize: ${product.packSize}');
+    debugPrint('│ Price   : ₹${product.price}');
+    debugPrint('│ Qty     : $qty');
+
     final existingIdx = _cart.indexWhere(
-      (item) => item.product.id == product.id,
+      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
     );
     if (existingIdx != -1) {
       _cart[existingIdx].quantity += qty;
+      debugPrint('│ Action: Updated existing local item → new qty=${_cart[existingIdx].quantity}');
     } else {
       _cart.add(CartItem(product: product, quantity: qty));
+      debugPrint('│ Action: Added new item to local cart');
     }
     notifyListeners();
 
     final token = activeToken;
-    if (token != null && token.isNotEmpty) {
-      final response = await CartService.addToCart(
-        productId: product.id,
-        quantity: qty,
-        token: token,
-      );
-
-      if (response.success && response.data != null) {
-        final idx = _cart.indexWhere((item) => item.product.id == product.id);
-        if (idx != -1) {
-          _cart[idx].itemId = response.data!.id;
-        }
-      }
-      return response;
+    final tokenType = _authToken != null && _authToken!.isNotEmpty
+        ? 'USER'
+        : (_doctorToken != null && _doctorToken!.isNotEmpty ? 'DOCTOR' : 'NONE');
+    if (token == null || token.isEmpty) {
+      debugPrint('│ TokenType: $tokenType');
+      debugPrint('│ Token    : null / empty');
+      debugPrint('│ ⚠ No token — added locally only');
+      debugPrint('└─────────────────────────────────────────────');
+      return AddToCartApiResponse(success: true, message: 'Added to cart locally');
     }
+    debugPrint('│ TokenType: $tokenType');
+    debugPrint('│ Token    : $token');
 
-    return AddToCartApiResponse(
-      success: true,
-      message: 'Added to cart locally',
+    debugPrint('│ → Calling API: POST /api/cart');
+    debugPrint('│   Body: { productId: ${product.id}, skuId: ${product.skuId ?? ""}, quantity: $qty }');
+
+    final response = await CartService.addToCart(
+      productId: product.id,
+      skuId: product.skuId,
+      quantity: qty,
+      token: token,
     );
+
+    debugPrint('│ Response success: ${response.success}');
+    debugPrint('│ Response message: ${response.message}');
+
+    if (response.success && response.data != null) {
+      final newItemId = response.data!.id;
+      debugPrint('│ ✓ Server itemId assigned: $newItemId');
+      final idx = _cart.indexWhere((item) =>
+          item.product.id == product.id && item.product.packSize == product.packSize);
+      if (idx != -1) {
+        _cart[idx].itemId = newItemId;
+        debugPrint('│ ✓ Local cart itemId updated');
+      }
+    } else {
+      debugPrint('│ ✗ API failed — item may not be synced to backend!');
+    }
+    debugPrint('└─────────────────────────────────────────────');
+    return response;
   }
 
   Future<AddToCartApiResponse> addToCartApi(
@@ -1269,44 +1535,112 @@ class AppState extends ChangeNotifier {
     Product product,
     int newQty,
   ) async {
-    final idx = _cart.indexWhere((item) => item.product.id == product.id);
-    if (idx == -1) return null;
+    debugPrint('┌─────────────────────────────────────────────');
+    debugPrint('│ [CART] UPDATE QUANTITY');
+    debugPrint('│ Product : ${product.name}');
+    debugPrint('│ PackSize: ${product.packSize}');
+    debugPrint('│ New Qty : $newQty');
+
+    int idx = _cart.indexWhere(
+      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
+    );
+    if (idx == -1) {
+      idx = _cart.indexWhere((item) => item.product.id == product.id);
+      if (idx != -1) debugPrint('│ ⚠ Matched by productId only (packSize mismatch)');
+    }
+
+    if (idx == -1) {
+      debugPrint('│ ✗ Product not found in local cart!');
+      debugPrint('└─────────────────────────────────────────────');
+      return null;
+    }
 
     final String? itemId = _cart[idx].itemId;
     final token = activeToken;
+    final tokenType = _authToken != null && _authToken!.isNotEmpty
+        ? 'USER'
+        : (_doctorToken != null && _doctorToken!.isNotEmpty ? 'DOCTOR' : 'NONE');
+    debugPrint('│ Local itemId: ${itemId ?? "null ⚠"}');
+    debugPrint('│ TokenType   : $tokenType');
+    debugPrint('│ Token       : ${token ?? "null / empty"}');
 
     if (newQty <= 0) {
+      debugPrint('│ Action: REMOVE (qty <= 0)');
       _cart.removeAt(idx);
       notifyListeners();
-      if (itemId != null &&
-          itemId.isNotEmpty &&
-          token != null &&
-          token.isNotEmpty) {
-        return await CartService.removeCartItem(
-          itemId: itemId,
-          token: token,
-        );
+      debugPrint('│ ✓ Removed from local cart');
+
+      if (token == null || token.isEmpty) {
+        debugPrint('└ SKIP API — no token');
+        return null;
       }
-      return null;
+
+      if (itemId != null && itemId.isNotEmpty) {
+        debugPrint('│ → Calling API: DELETE /api/cart/items/$itemId');
+        final res = await CartService.removeCartItem(itemId: itemId, token: token);
+        debugPrint('│ Response success: ${res.success}');
+        debugPrint('│ Response message: ${res.message}');
+        if (!res.success) {
+          debugPrint('│ ✗ Remove API failed! Re-syncing from server...');
+          fetchCartFromApi();
+        } else {
+          debugPrint('│ ✓ Item successfully removed from backend');
+        }
+        debugPrint('└─────────────────────────────────────────────');
+        return res;
+      } else {
+        debugPrint('│ ⚠ itemId is null — cannot call delete API!');
+        debugPrint('│ → Re-syncing cart from server to get correct itemIds...');
+        await fetchCartFromApi();
+        debugPrint('└─────────────────────────────────────────────');
+        return null;
+      }
     } else {
+      debugPrint('│ Action: UPDATE qty → $newQty');
       _cart[idx].quantity = newQty;
       notifyListeners();
-      if (itemId != null &&
-          itemId.isNotEmpty &&
-          token != null &&
-          token.isNotEmpty) {
-        return await CartService.updateCartItemQuantity(
+      debugPrint('│ ✓ Updated local cart');
+
+      if (token == null || token.isEmpty) {
+        debugPrint('└ SKIP API — no token');
+        return null;
+      }
+
+      if (itemId != null && itemId.isNotEmpty) {
+        debugPrint('│ → Calling API: PUT /api/cart/items/$itemId');
+        debugPrint('│   Body: { quantity: $newQty }');
+        final res = await CartService.updateCartItemQuantity(
           itemId: itemId,
           quantity: newQty,
           token: token,
         );
+        debugPrint('│ Response success: ${res.success}');
+        debugPrint('│ Response message: ${res.message}');
+        if (!res.success) {
+          debugPrint('│ ✗ Update API failed! Re-syncing from server...');
+          fetchCartFromApi();
+        } else {
+          debugPrint('│ ✓ Quantity updated on backend');
+        }
+        debugPrint('└─────────────────────────────────────────────');
+        return res;
+      } else {
+        debugPrint('│ ⚠ itemId is null — cannot call update API!');
+        debugPrint('│ → Re-syncing cart from server...');
+        await fetchCartFromApi();
+        debugPrint('└─────────────────────────────────────────────');
+        return null;
       }
-      return null;
     }
   }
 
   void attachPrescription(Product product, String path) {
-    final idx = _cart.indexWhere((item) => item.product.id == product.id);
+    int idx = _cart.indexWhere(
+      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
+    );
+    if (idx == -1) {
+      idx = _cart.indexWhere((item) => item.product.id == product.id);
+    }
     if (idx != -1) {
       _cart[idx].prescriptionFile = path;
       notifyListeners();
@@ -1314,34 +1648,99 @@ class AppState extends ChangeNotifier {
   }
 
   Future<CartActionApiResponse?> removeFromCart(Product product) async {
-    final idx = _cart.indexWhere((item) => item.product.id == product.id);
+    debugPrint('┌─────────────────────────────────────────────');
+    debugPrint('│ [CART] REMOVE FROM CART (Direct Remove Button)');
+    debugPrint('│ Product : ${product.name}');
+    debugPrint('│ PackSize: ${product.packSize}');
+    debugPrint('│ ProductId: ${product.id}');
+
+    int idx = _cart.indexWhere(
+      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
+    );
+    if (idx == -1) {
+      idx = _cart.indexWhere((item) => item.product.id == product.id);
+      if (idx != -1) debugPrint('│ ⚠ Matched by productId only (packSize mismatch)');
+    }
+
     String? itemId;
     if (idx != -1) {
       itemId = _cart[idx].itemId;
+      debugPrint('│ Local itemId: ${itemId ?? "null ⚠"}');
       _cart.removeAt(idx);
       notifyListeners();
+      debugPrint('│ ✓ Removed from local cart');
+    } else {
+      debugPrint('│ ⚠ Product not found in local cart');
     }
+
     final token = activeToken;
-    if (itemId != null &&
-        itemId.isNotEmpty &&
-        token != null &&
-        token.isNotEmpty) {
-      return await CartService.removeCartItem(
-        itemId: itemId,
-        token: token,
-      );
+    final tokenType = _authToken != null && _authToken!.isNotEmpty
+        ? 'USER'
+        : (_doctorToken != null && _doctorToken!.isNotEmpty ? 'DOCTOR' : 'NONE');
+    debugPrint('│ TokenType: $tokenType');
+    debugPrint('│ Token    : ${token ?? "null / empty"}');
+
+    if (token == null || token.isEmpty) {
+      debugPrint('└ SKIP API — no token');
+      return null;
     }
-    return null;
+
+    if (itemId != null && itemId.isNotEmpty) {
+      debugPrint('│ → Calling API: DELETE /api/cart/items/$itemId');
+      final res = await CartService.removeCartItem(itemId: itemId, token: token);
+      debugPrint('│ Response success: ${res.success}');
+      debugPrint('│ Response message: ${res.message}');
+      if (!res.success) {
+        debugPrint('│ ✗ Remove API failed! Re-syncing from server...');
+        fetchCartFromApi();
+      } else {
+        debugPrint('│ ✓ Item successfully removed from backend');
+      }
+      debugPrint('└─────────────────────────────────────────────');
+      return res;
+    } else {
+      debugPrint('│ ⚠ itemId is null — cannot call delete API!');
+      debugPrint('│ → Re-syncing cart from server...');
+      await fetchCartFromApi();
+      debugPrint('└─────────────────────────────────────────────');
+      return null;
+    }
   }
 
   Future<CartActionApiResponse?> clearCart() async {
+    debugPrint('┌─────────────────────────────────────────────');
+    debugPrint('│ [CART] CLEAR ALL CART');
+    debugPrint('│ Items before clear: ${_cart.length}');
+    for (final c in _cart) {
+      debugPrint('│   • ${c.product.name} | itemId=${c.itemId ?? "null"}');
+    }
     _cart.clear();
     notifyListeners();
+    debugPrint('│ ✓ Local cart cleared');
+
     final token = activeToken;
-    if (token != null && token.isNotEmpty) {
-      return await CartService.clearCart(token: token);
+    final tokenType = _authToken != null && _authToken!.isNotEmpty
+        ? 'USER'
+        : (_doctorToken != null && _doctorToken!.isNotEmpty ? 'DOCTOR' : 'NONE');
+    debugPrint('│ TokenType: $tokenType');
+    debugPrint('│ Token    : ${token ?? "null / empty"}');
+
+    if (token == null || token.isEmpty) {
+      debugPrint('└ SKIP API — no token');
+      return null;
     }
-    return null;
+
+    debugPrint('│ → Calling API: DELETE /api/cart/clear');
+    final res = await CartService.clearCart(token: token);
+    debugPrint('│ Response success: ${res.success}');
+    debugPrint('│ Response message: ${res.message}');
+    if (res.success) {
+      debugPrint('│ ✓ Backend cart cleared successfully');
+    } else {
+      debugPrint('│ ✗ Clear API failed!');
+    }
+    debugPrint('└─────────────────────────────────────────────');
+    return res;
   }
 
   // Wishlist Operations
@@ -1672,6 +2071,7 @@ class AppState extends ChangeNotifier {
                       (sum, i) => sum + (i.product.price * i.quantity),
                     ),
               discount: newOrderFromApi.discount,
+              shippingCharge: newOrderFromApi.shippingCharge,
               status: newOrderFromApi.status,
               orderDate: newOrderFromApi.orderDate,
               orderNo: newOrderFromApi.orderNo,
@@ -1695,6 +2095,9 @@ class AppState extends ChangeNotifier {
             items: orderWithItems.items,
             totalAmount: _orders[lastIndex].totalAmount,
             discount: _orders[lastIndex].discount,
+            shippingCharge: _orders[lastIndex].shippingCharge > 0
+                ? _orders[lastIndex].shippingCharge
+                : orderWithItems.shippingCharge,
             status: _orders[lastIndex].status,
             orderDate: _orders[lastIndex].orderDate,
             orderNo: _orders[lastIndex].orderNo,

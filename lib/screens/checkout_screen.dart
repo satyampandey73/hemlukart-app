@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../services/delivery_charge_service.dart';
 import 'order_placed_screen.dart';
 import 'shipping_addresses_screen.dart';
 import '../models/shipping_address_model.dart';
@@ -25,6 +26,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final AppState _appState = AppState();
   String _selectedPaymentMethod = 'COD'; // COD, UPI, Card, NetBanking
   bool _isPlacingOrder = false;
+  late double _deliveryFee;
 
   final TextEditingController _cardNumberController = TextEditingController();
   final TextEditingController _expiryController = TextEditingController();
@@ -34,12 +36,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void initState() {
     super.initState();
+    _deliveryFee = widget.deliveryFee;
     _appState.addListener(_onStateChanged);
     if (_appState.isLoggedIn) {
       _appState.fetchShippingAddresses();
     }
     if (_appState.appliedCoupon != null) {
       _couponController.text = _appState.appliedCoupon!.code;
+    }
+    _verifyDeliveryCharge();
+  }
+
+  Future<void> _verifyDeliveryCharge() async {
+    final res = await DeliveryChargeService.calculateDeliveryCharge(widget.subtotal);
+    if (mounted) {
+      setState(() {
+        _deliveryFee = res.shippingCharge;
+      });
     }
   }
 
@@ -66,7 +79,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_appState.appliedCoupon != null) {
       effectiveDiscount = _appState.appliedCoupon!.calculateDiscount(widget.subtotal);
     }
-    double total = widget.subtotal + widget.deliveryFee - effectiveDiscount;
+    double total = widget.subtotal + _deliveryFee - effectiveDiscount;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -479,9 +492,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             const Text('Delivery Fee', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
                             Row(
                               children: [
-                                if (widget.deliveryFee == 0) ...[
+                                if (_deliveryFee <= 0) ...[
                                   Text(
-                                    '₹40.00',
+                                    '₹50.00',
                                     style: TextStyle(
                                       color: AppColors.textLight.withOpacity(0.6),
                                       fontSize: 11,
@@ -494,7 +507,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     style: TextStyle(color: AppColors.success, fontWeight: FontWeight.bold, fontSize: 12),
                                   ),
                                 ] else ...[
-                                  Text('₹${widget.deliveryFee.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  Text('₹${_deliveryFee.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                 ],
                               ],
                             ),
@@ -623,6 +636,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             discount: (response.data?.order.discountAmount != null && response.data!.order.discountAmount > 0)
                                 ? response.data!.order.discountAmount
                                 : widget.discount,
+                            shippingCharge: (response.data?.order.shippingCharge != null && response.data!.order.shippingCharge > 0)
+                                ? response.data!.order.shippingCharge
+                                : _deliveryFee,
                             status: response.data?.order.orderStatus ?? 'placed',
                             orderDate: (response.data?.order.createdAt != null && response.data!.order.createdAt.isNotEmpty)
                                 ? response.data!.order.createdAt

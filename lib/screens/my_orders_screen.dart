@@ -614,6 +614,21 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
                             ),
                           ),
                         ],
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(Icons.local_shipping_outlined, size: 13, color: AppColors.textLight),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Delivery: ${order.shippingCharge <= 0 ? "FREE" : "₹${order.shippingCharge.toStringAsFixed(2)}"}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: order.shippingCharge <= 0 ? Colors.green : AppColors.textLight,
+                                fontWeight: order.shippingCharge <= 0 ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                     Column(

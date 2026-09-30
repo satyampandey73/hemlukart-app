@@ -161,7 +161,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const BottomNavigationBarItem(
             icon: Icon(Icons.shopping_bag_outlined),
             activeIcon: Icon(Icons.shopping_bag_rounded),
-            label: 'Products',
+            //label: 'Products',
+            label: 'Categories',
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.medical_services_outlined),

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as p;
 import '../models/chat_model.dart';
+import 'api_helper.dart';
 
 class ChatService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/chat';
@@ -31,7 +32,7 @@ class ChatService {
     try {
       final response = await http
           .post(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -48,7 +49,10 @@ class ChatService {
     } catch (e) {
       return SendMessageApiResponse(
         success: false,
-        message: 'Error sending message: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error sending message',
+        ),
       );
     }
   }
@@ -70,7 +74,7 @@ class ChatService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -89,7 +93,10 @@ class ChatService {
       return ChatMessagesApiResponse(
         success: false,
         messages: [],
-        message: 'Error fetching chat messages: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching chat messages',
+        ),
       );
     }
   }
@@ -110,7 +117,7 @@ class ChatService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -129,7 +136,10 @@ class ChatService {
       return ChatThreadsApiResponse(
         success: false,
         threads: [],
-        message: 'Error fetching chat threads: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching chat threads',
+        ),
       );
     }
   }
@@ -150,7 +160,7 @@ class ChatService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -167,7 +177,10 @@ class ChatService {
       return UnreadCountApiResponse(
         success: false,
         unreadCount: 0,
-        message: 'Error fetching unread count: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching unread count',
+        ),
       );
     }
   }
@@ -189,7 +202,7 @@ class ChatService {
     try {
       final response = await http
           .patch(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return true;
@@ -336,7 +349,7 @@ class ChatService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final dynamic body = jsonDecode(response.body);
 

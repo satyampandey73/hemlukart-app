@@ -31,6 +31,8 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   DateTime _selectedSlotDate = DateTime.now();
   DoctorSchedule? _selectedSchedule;
   List<UserAppointmentItem> _doctorBookedAppointments = [];
+  int _slotWeekOffset = 0;
+  late final PageController _slotPageController;
 
   List<DoctorSchedule> get _doctorSchedules {
     return _apiDoctorDetails?.schedules ??
@@ -187,6 +189,25 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     _fetchDoctorDetails();
     _fetchDoctorRatings();
     _initInitialSchedule();
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final diffDays = DateTime(_selectedSlotDate.year, _selectedSlotDate.month, _selectedSlotDate.day)
+        .difference(today)
+        .inDays;
+    if (diffDays >= 0 && diffDays <= 15) {
+      _slotWeekOffset = (diffDays / 7).floor().clamp(0, 2);
+    } else {
+      _selectedSlotDate = today;
+      _slotWeekOffset = 0;
+    }
+    _slotPageController = PageController(initialPage: _slotWeekOffset);
+  }
+
+  @override
+  void dispose() {
+    _slotPageController.dispose();
+    super.dispose();
   }
 
   void _initInitialSchedule() {
@@ -494,30 +515,37 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Consultation Fee',
-                            style: TextStyle(
-                              color: AppColors.textLight,
-                              fontSize: 11,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Consultation Fee',
+                              style: TextStyle(
+                                color: AppColors.textLight,
+                                fontSize: 11,
+                              ),
                             ),
-                          ),
-                          Text(
-                            _selectedSchedule != null
-                                ? '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')} / session'
-                                : (_doctorSchedules.isNotEmpty
-                                    ? '₹${_doctorSchedules.first.consultationFee.replaceAll('.00', '')} / session'
-                                    : '₹${doc.consultationFee.toInt()} / session'),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: AppColors.primary,
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _selectedSchedule != null
+                                    ? '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')} / session'
+                                    : (_doctorSchedules.isNotEmpty
+                                        ? '₹${_doctorSchedules.first.consultationFee.replaceAll('.00', '')} / session'
+                                        : '₹${doc.consultationFee.toInt()} / session'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                  color: AppColors.primary,
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 10),
                       if (!_appState.isDoctorLoggedIn)
                         ElevatedButton(
                           onPressed: !_hasAvailableSlotInWeek
@@ -548,22 +576,25 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                             disabledBackgroundColor: Colors.grey.shade300,
                             disabledForegroundColor: Colors.grey.shade600,
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 14,
+                              horizontal: 14,
+                              vertical: 12,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: Text(
-                            !_hasAvailableSlotInWeek
-                                ? 'No Slots Available'
-                                : 'Book Appointment',
-                            style: TextStyle(
-                              color: !_hasAvailableSlotInWeek
-                                  ? Colors.grey.shade600
-                                  : Colors.white,
-                              fontWeight: FontWeight.bold,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              !_hasAvailableSlotInWeek
+                                  ? 'No Slots Available'
+                                  : 'Book Appointment',
+                              style: TextStyle(
+                                color: !_hasAvailableSlotInWeek
+                                    ? Colors.grey.shade600
+                                    : Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -927,14 +958,18 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Patient Reviews',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: AppColors.textDark,
+                const Expanded(
+                  child: Text(
+                    'Patient Reviews',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: _showWriteDoctorReviewBottomSheet,
                   icon: const Icon(
@@ -1170,6 +1205,24 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
 
 
+  void _updateSelectedScheduleForDate(DateTime date, List<DoctorSchedule> allSchedules) {
+    final dName = _dayNameFromDate(date);
+    final newDaySchedules = allSchedules
+        .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
+        .toList();
+    if (newDaySchedules.isNotEmpty) {
+      try {
+        _selectedSchedule = newDaySchedules.firstWhere(
+          (s) => !_isSlotBooked(s, date) && !_isSlotTimePassed(s, date),
+        );
+      } catch (_) {
+        _selectedSchedule = newDaySchedules.first;
+      }
+    } else {
+      _selectedSchedule = null;
+    }
+  }
+
   Widget _buildShiftSlotsCard() {
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1185,6 +1238,11 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     final nightSlots = daySchedules.where((s) => _getShiftCategory(s) == 'Night').toList();
 
     final availableDaysSet = allSchedules.map((s) => s.dayOfWeek.toLowerCase().trim()).toSet();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStartDate = today.add(Duration(days: _slotWeekOffset * 7));
+    final weekEndDate = today.add(Duration(days: _slotWeekOffset * 7 + 6));
+    final totalDaySlots = daySchedules.where((s) => !_isSlotTimePassed(s, _selectedSlotDate) && !_isSlotBooked(s, _selectedSlotDate)).length;
 
     return Container(
       width: double.infinity,
@@ -1192,33 +1250,38 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Row
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
+                  gradient: LinearGradient(
+                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
-                  Icons.access_time_rounded,
-                  color: AppColors.primary,
-                  size: 22,
+                  Icons.calendar_month_rounded,
+                  color: Colors.white,
+                  size: 20,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1227,16 +1290,17 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                       'Available Appointment Slots',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 15,
                         color: AppColors.textDark,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year} (${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)})',
-                      style: const TextStyle(
-                        color: AppColors.textLight,
-                        fontSize: 12,
+                      'All 7 days visible • Select your time',
+                      style: TextStyle(
+                        color: AppColors.textLight.withValues(alpha: 0.9),
+                        fontSize: 11,
                       ),
                     ),
                   ],
@@ -1246,144 +1310,323 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
                   ),
-                  child: Text(
-                    '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified, size: 12, color: Color(0xFF10B981)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF047857),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 14),
 
-          // 15-day horizontal date selector with day indicators
-          SizedBox(
-            height: 72,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: 15,
-              itemBuilder: (context, idx) {
-                final date = DateTime.now().add(Duration(days: idx));
-                final isSel = date.year == _selectedSlotDate.year &&
-                    date.month == _selectedSlotDate.month &&
-                    date.day == _selectedSlotDate.day;
-                final dayName = idx == 0 ? 'Today' : weekdays[date.weekday - 1];
-                final dName = _dayNameFromDate(date);
-                final dayScheds = allSchedules
-                    .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
-                    .toList();
-                final hasAvailableSlots = dayScheds.any(
-                  (s) => !_isSlotTimePassed(s, date) && !_isSlotBooked(s, date),
-                );
-
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedSlotDate = date;
-                      final newDaySchedules = allSchedules
-                          .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
-                          .toList();
-                      if (newDaySchedules.isNotEmpty) {
-                        try {
-                          _selectedSchedule = newDaySchedules.firstWhere(
-                            (s) =>
-                                !_isSlotBooked(s, date) &&
-                                !_isSlotTimePassed(s, date),
-                          );
-                        } catch (_) {
-                          _selectedSchedule = newDaySchedules.first;
-                        }
-                      } else {
-                        _selectedSchedule = null;
-                      }
-                    });
-                  },
-                  child: Container(
-                    width: 60,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: isSel ? AppColors.primary : Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSel
-                            ? AppColors.primary
-                            : AppColors.border.withValues(alpha: 0.6),
-                        width: isSel ? 1.5 : 1,
+          // Week Navigation Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.date_range_rounded, size: 14, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${weekStartDate.day} ${months[weekStartDate.month - 1]} - ${weekEndDate.day} ${months[weekEndDate.month - 1]} ${weekEndDate.year}',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
                       ),
-                      boxShadow: isSel
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.25),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          dayName,
-                          style: TextStyle(
-                            color: isSel ? Colors.white70 : AppColors.textLight,
-                            fontSize: 11,
-                            fontWeight: isSel ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${date.day}',
-                          style: TextStyle(
-                            color: isSel ? Colors.white : AppColors.textDark,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Container(
-                          width: 5,
-                          height: 5,
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (_slotWeekOffset > 0) ...[
+                      GestureDetector(
+                        onTap: () {
+                          _slotPageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: hasAvailableSlots
-                                ? (isSel ? Colors.white : Colors.green)
-                                : Colors.transparent,
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Icon(Icons.chevron_left, size: 16, color: AppColors.primary),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (_slotWeekOffset < 2)
+                      GestureDetector(
+                        onTap: () {
+                          _slotPageController.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Icon(Icons.chevron_right, size: 16, color: AppColors.primary),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // 7-day row: SLIDER WITH ALL 7 DAYS VISIBLE AT ONCE IN ONE SCREEN
+          SizedBox(
+            height: 68,
+            child: PageView.builder(
+              controller: _slotPageController,
+              itemCount: 3,
+              physics: const BouncingScrollPhysics(),
+              onPageChanged: (pageIndex) {
+                setState(() {
+                  _slotWeekOffset = pageIndex;
+                  final weekStart = today.add(Duration(days: pageIndex * 7));
+                  final weekEnd = today.add(Duration(days: pageIndex * 7 + 6));
+                  final curDate = DateTime(_selectedSlotDate.year, _selectedSlotDate.month, _selectedSlotDate.day);
+                  if (curDate.isBefore(weekStart) || curDate.isAfter(weekEnd)) {
+                    for (int i = 0; i < 7; i++) {
+                      final d = today.add(Duration(days: pageIndex * 7 + i));
+                      final diff = DateTime(d.year, d.month, d.day).difference(today).inDays;
+                      if (diff >= 0 && diff <= 15) {
+                        _selectedSlotDate = d;
+                        _updateSelectedScheduleForDate(d, allSchedules);
+                        break;
+                      }
+                    }
+                  }
+                });
+              },
+              itemBuilder: (context, pageIndex) {
+                return Row(
+                  children: List.generate(7, (idx) {
+                    final date = today.add(Duration(days: pageIndex * 7 + idx));
+                    final normalizedDate = DateTime(date.year, date.month, date.day);
+                    final dayDiff = normalizedDate.difference(today).inDays;
+                    final isWithin15Days = dayDiff >= 0 && dayDiff <= 15;
+                    final isSel = isWithin15Days &&
+                        date.year == _selectedSlotDate.year &&
+                        date.month == _selectedSlotDate.month &&
+                        date.day == _selectedSlotDate.day;
+                    final isToday = dayDiff == 0;
+                    final dName = _dayNameFromDate(date);
+                    final dayScheds = allSchedules
+                        .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
+                        .toList();
+                    final hasAvailableSlots = isWithin15Days && dayScheds.any(
+                      (s) => !_isSlotTimePassed(s, date) && !_isSlotBooked(s, date),
+                    );
+                    final dayLabel = isToday ? 'Today' : weekdays[date.weekday - 1];
+
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: isWithin15Days
+                            ? () {
+                                setState(() {
+                                  _selectedSlotDate = date;
+                                  _updateSelectedScheduleForDate(date, allSchedules);
+                                });
+                              }
+                            : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.symmetric(horizontal: 2.0),
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            gradient: isSel
+                                ? LinearGradient(
+                                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.85)],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  )
+                                : null,
+                            color: isSel
+                                ? null
+                                : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC)),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSel
+                                  ? AppColors.primary
+                                  : (isWithin15Days
+                                      ? (hasAvailableSlots
+                                          ? AppColors.primary.withValues(alpha: 0.35)
+                                          : const Color(0xFFE2E8F0))
+                                      : const Color(0xFFF1F5F9)),
+                              width: isSel ? 1.5 : 1,
+                            ),
+                            boxShadow: isSel
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.primary.withValues(alpha: 0.28),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                dayLabel,
+                                style: TextStyle(
+                                  color: !isWithin15Days
+                                      ? Colors.grey.shade400
+                                      : (isSel
+                                          ? Colors.white70
+                                          : (hasAvailableSlots ? AppColors.textDark : AppColors.textLight)),
+                                  fontSize: 9.5,
+                                  fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${date.day}',
+                                style: TextStyle(
+                                  color: !isWithin15Days
+                                      ? Colors.grey.shade300
+                                      : (isSel
+                                          ? Colors.white
+                                          : (hasAvailableSlots ? AppColors.textDark : Colors.grey.shade400)),
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: (isWithin15Days && hasAvailableSlots)
+                                      ? (isSel ? Colors.white : const Color(0xFF10B981))
+                                      : Colors.transparent,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  }),
                 );
               },
             ),
           ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(3, (pIdx) {
+              final isActive = _slotWeekOffset == pIdx;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                width: isActive ? 16 : 5,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? AppColors.primary
+                      : AppColors.primary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 12),
 
-          const SizedBox(height: 16),
-          const Divider(height: 1),
+          // Selected date summary banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.event_available, size: 16, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}, ${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textDark),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: totalDaySlots > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    totalDaySlots > 0 ? '$totalDaySlots Slots Open' : 'No Slots',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: totalDaySlots > 0 ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
 
-          if (daySchedules.isEmpty)
+          // Slots or Empty state
+          if (daySchedules.isEmpty) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              padding: const EdgeInsets.symmetric(vertical: 10.0),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.backgroundLight.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Column(
                   children: [
                     const Icon(Icons.event_busy, color: AppColors.textLight, size: 28),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       'No slots available on ${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}',
                       textAlign: TextAlign.center,
@@ -1396,7 +1639,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                     const SizedBox(height: 4),
                     if (availableDaysSet.isNotEmpty) ...[
                       const Text(
-                        'Doctor is available on:',
+                        'Tap an available day to view slots:',
                         style: TextStyle(fontSize: 11, color: AppColors.textLight),
                       ),
                       const SizedBox(height: 8),
@@ -1410,69 +1653,57 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                               '${d[0].toUpperCase()}${d.substring(1)}',
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary),
                             ),
-                            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.25)),
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             onPressed: () {
-                              for (int i = 0; i < 15; i++) {
+                              for (int i = 0; i < 16; i++) {
                                 final candidate = DateTime.now().add(Duration(days: i));
                                 if (_dayNameFromDate(candidate) == d) {
-                                  final newDaySchedules = allSchedules
-                                      .where((s) => s.dayOfWeek.toLowerCase().trim() == d && s.isAvailable)
-                                      .toList();
-                                  final hasOpenSlots = newDaySchedules.any(
-                                    (s) => !_isSlotTimePassed(s, candidate) && !_isSlotBooked(s, candidate),
+                                  final targetPage = (i ~/ 7).clamp(0, 2);
+                                  setState(() {
+                                    _slotWeekOffset = targetPage;
+                                    _selectedSlotDate = candidate;
+                                    _updateSelectedScheduleForDate(candidate, allSchedules);
+                                  });
+                                  _slotPageController.animateToPage(
+                                    targetPage,
+                                    duration: const Duration(milliseconds: 300),
+                                    curve: Curves.easeInOut,
                                   );
-                                  if (hasOpenSlots || i > 0) {
-                                    setState(() {
-                                      _selectedSlotDate = candidate;
-                                      try {
-                                        _selectedSchedule = newDaySchedules.firstWhere(
-                                          (s) => !_isSlotBooked(s, candidate) && !_isSlotTimePassed(s, candidate),
-                                        );
-                                      } catch (_) {
-                                        _selectedSchedule = newDaySchedules.isNotEmpty ? newDaySchedules.first : null;
-                                      }
-                                    });
-                                    break;
-                                  }
+                                  break;
                                 }
                               }
                             },
                           );
                         }).toList(),
                       ),
-                    ] else
-                      const Text(
-                        'No schedules published for this doctor yet.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: AppColors.textLight),
-                      ),
+                    ],
                   ],
                 ),
               ),
-            )
-          else ...[
+            ),
+          ] else ...[
             if (morningSlots.isNotEmpty) ...[
-              _buildDoctorShiftSection('Morning', Icons.wb_sunny_outlined, Colors.orange, morningSlots),
-              const SizedBox(height: 12),
+              _buildDoctorShiftSection('Morning', Icons.wb_sunny_rounded, Colors.orange, morningSlots),
+              const SizedBox(height: 10),
             ],
             if (afternoonSlots.isNotEmpty) ...[
-              _buildDoctorShiftSection('Afternoon', Icons.wb_twilight, Colors.indigo, afternoonSlots),
-              const SizedBox(height: 12),
+              _buildDoctorShiftSection('Afternoon', Icons.wb_twilight_rounded, Colors.indigo, afternoonSlots),
+              const SizedBox(height: 10),
             ],
             if (eveningSlots.isNotEmpty) ...[
-              _buildDoctorShiftSection('Evening', Icons.nights_stay_outlined, Colors.deepPurple, eveningSlots),
-              const SizedBox(height: 12),
+              _buildDoctorShiftSection('Evening', Icons.nights_stay_rounded, Colors.deepPurple, eveningSlots),
+              const SizedBox(height: 10),
             ],
             if (nightSlots.isNotEmpty) ...[
-              _buildDoctorShiftSection('Night', Icons.bedtime_outlined, Colors.blueGrey, nightSlots),
-              const SizedBox(height: 12),
+              _buildDoctorShiftSection('Night', Icons.bedtime_rounded, Colors.blueGrey, nightSlots),
+              const SizedBox(height: 10),
             ],
           ],
 
           if (!_appState.isDoctorLoggedIn) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -1498,7 +1729,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                         }
                       },
                 icon: Icon(
-                  Icons.calendar_today,
+                  Icons.calendar_today_rounded,
                   size: 16,
                   color: !_hasAvailableSlotInWeek
                       ? Colors.grey.shade500
@@ -1522,9 +1753,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   backgroundColor: AppColors.primary,
                   disabledBackgroundColor: Colors.grey.shade300,
                   disabledForegroundColor: Colors.grey.shade600,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  elevation: 2,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
@@ -1552,20 +1784,38 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       children: [
         Row(
           children: [
-            Icon(icon, color: iconColor, size: 15),
-            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(icon, color: iconColor, size: 14),
+            ),
+            const SizedBox(width: 8),
             Text(
-              title,
+              '$title Slots',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 12,
+                fontSize: 12.5,
                 color: AppColors.textDark,
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              '($availableCount available)',
-              style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: availableCount > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$availableCount available',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: availableCount > 0 ? const Color(0xFF16A34A) : AppColors.textLight,
+                ),
+              ),
             ),
           ],
         ),
@@ -1596,26 +1846,33 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: isPassed
-                      ? Colors.grey.shade100
-                      : (isBooked
-                          ? Colors.red.shade50
-                          : (isSel ? AppColors.primary : Colors.white)),
-                  borderRadius: BorderRadius.circular(8),
+                  gradient: isSel
+                      ? LinearGradient(
+                          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.85)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  color: isSel
+                      ? null
+                      : (isPassed
+                          ? const Color(0xFFF8FAFC)
+                          : (isBooked ? const Color(0xFFFEF2F2) : Colors.white)),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: isPassed
-                        ? Colors.grey.shade200
+                        ? const Color(0xFFE2E8F0)
                         : (isBooked
-                            ? Colors.red.shade300
+                            ? const Color(0xFFFCA5A5)
                             : (isSel
                                 ? AppColors.primary
-                                : AppColors.border.withValues(alpha: 0.6))),
+                                : AppColors.border.withValues(alpha: 0.7))),
                     width: isSel ? 1.5 : 1,
                   ),
                   boxShadow: isSel
                       ? [
                           BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.25),
+                            color: AppColors.primary.withValues(alpha: 0.28),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -1625,10 +1882,20 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 13,
+                      color: isPassed
+                          ? Colors.grey.shade400
+                          : (isBooked
+                              ? Colors.red.shade400
+                              : (isSel ? Colors.white70 : AppColors.primary)),
+                    ),
+                    const SizedBox(width: 5),
                     Text(
                       timeDisplay,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 11.5,
                         fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
                         color: isPassed
                             ? Colors.grey.shade500
@@ -1640,29 +1907,43 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                     ),
                     const SizedBox(width: 6),
                     if (isPassed) ...[
-                      Text(
-                        'Passed',
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Passed',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ] else if (isBooked) ...[
-                      Text(
-                        'Booked',
-                        style: TextStyle(
-                          color: Colors.red.shade600,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Booked',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ] else ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: isSel
-                              ? Colors.white.withValues(alpha: 0.25)
+                              ? Colors.white.withValues(alpha: 0.22)
                               : AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -1754,14 +2035,18 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                author,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  author,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
               Row(
                 children: List.generate(
                   rating,

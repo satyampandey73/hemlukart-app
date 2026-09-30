@@ -23,7 +23,7 @@ class ProductQuantitySelector extends StatelessWidget {
     return ListenableBuilder(
       listenable: appState,
       builder: (context, _) {
-        final qty = appState.getProductQuantity(product.id);
+        final qty = appState.getProductQuantity(product.id, packSize: product.packSize);
 
         if (qty == 0) {
           return GestureDetector(

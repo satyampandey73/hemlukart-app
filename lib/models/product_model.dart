@@ -346,10 +346,62 @@ class ApiProductModel {
 
     String pack = '1 Unit';
     if (primarySku != null) {
-      pack = '${primarySku.packSize} ${primarySku.typeOfPacking} (${primarySku.unitOfMeasure})';
+      final String pPacking = primarySku.typeOfPacking.trim();
+      final String pUom = primarySku.unitOfMeasure.trim();
+      if (pPacking.isNotEmpty && pUom.isNotEmpty) {
+        pack = '${primarySku.packSize} ($pUom) $pPacking';
+      } else if (pPacking.isNotEmpty) {
+        pack = '${primarySku.packSize} $pPacking';
+      } else if (pUom.isNotEmpty) {
+        pack = '${primarySku.packSize} $pUom';
+      } else {
+        pack = '${primarySku.packSize} Unit';
+      }
+      pack = _normalizePackDisplay(pack);
     }
 
     final bool isStockOut = primarySku != null && primarySku.stockQuantity <= 0;
+
+    final List<ProductVariant> variantList = [];
+    if (skus.isNotEmpty) {
+      for (final sku in skus) {
+        final double skuMrp = double.tryParse(sku.mrp) ?? mrpVal;
+        final double skuDisc = double.tryParse(sku.consumerDiscount) ?? 0.0;
+        final double skuDocDisc = double.tryParse(sku.doctorDiscount) ?? 0.0;
+        final double skuPrice = (skuMrp - skuDisc).clamp(0.0, skuMrp);
+
+        String packText = '';
+        final String packing = sku.typeOfPacking.trim();
+        final String uom = sku.unitOfMeasure.trim();
+        if (packing.isNotEmpty && uom.isNotEmpty) {
+          packText = '${sku.packSize} ($uom) $packing';
+        } else if (packing.isNotEmpty) {
+          packText = '${sku.packSize} $packing';
+        } else if (uom.isNotEmpty) {
+          packText = '${sku.packSize} $uom';
+        } else if (sku.skuName.trim().isNotEmpty) {
+          packText = _normalizePackDisplay(sku.skuName.trim());
+        } else {
+          packText = '${sku.packSize} Unit';
+        }
+        packText = _normalizePackDisplay(packText);
+
+        variantList.add(
+          ProductVariant(
+            id: sku.id.isNotEmpty ? sku.id : id,
+            packSize: packText.trim().isNotEmpty ? packText : _normalizePackDisplay(sku.skuName),
+            price: skuPrice > 0 ? skuPrice : skuMrp,
+            originalPrice: skuMrp,
+            skuCode: sku.skuCode,
+            isOutOfStock: sku.stockQuantity <= 0,
+            doctorDiscount: skuDocDisc,
+            doctorActive: sku.doctorActive,
+            consumerDiscount: skuDisc,
+            consumerActive: sku.consumerActive,
+          ),
+        );
+      }
+    }
 
     return Product(
       id: id,
@@ -371,6 +423,8 @@ class ApiProductModel {
       doctorActive: doctorActiveVal,
       consumerDiscount: discountVal,
       consumerActive: consumerActiveVal,
+      variants: variantList,
+      skuId: (primarySku != null && primarySku.id.isNotEmpty) ? primarySku.id : null,
     );
   }
 }
@@ -463,3 +517,16 @@ class SingleProductApiResponse {
     };
   }
 }
+
+/// Transforms pack strings formatted as "30 Bottle (ml)" or "30 Bottle (gm)"
+/// into the standard "30 (ml) Bottle" or "30 (gm) Bottle".
+String _normalizePackDisplay(String raw) {
+  final trimmed = raw.trim();
+  final regex = RegExp(r'^(\d+)\s+([A-Za-z]+)\s*\(([A-Za-z0-9]+)\)$');
+  final match = regex.firstMatch(trimmed);
+  if (match != null) {
+    return '${match.group(1)} (${match.group(3)}) ${match.group(2)}';
+  }
+  return trimmed;
+}
+

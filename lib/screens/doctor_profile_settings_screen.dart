@@ -1,11 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/doctor_model.dart';
 import '../services/doctor_auth_service.dart';
+import '../services/doctor_profile_service.dart';
 import 'login_screen.dart';
 import 'doctor_manage_schedules_screen.dart';
 import 'doctor_my_clinics_screen.dart';
+import 'doctor_edit_profile_screen.dart';
 
 class DoctorProfileSettingsScreen extends StatefulWidget {
   /// When [embeddedMode] is true the screen is rendered inside the doctor
@@ -22,6 +26,9 @@ class _DoctorProfileSettingsScreenState
     extends State<DoctorProfileSettingsScreen>
     with SingleTickerProviderStateMixin {
   bool _isLoading = true;
+  bool _isUploadingPhoto = false;
+  File? _localSelectedPhoto;
+  String? _uploadingDocKey;
   String? _error;
   ApiDoctor? _doctor;
   final Map<String, bool> _expandedSections = {};
@@ -48,17 +55,21 @@ class _DoctorProfileSettingsScreenState
     super.dispose();
   }
 
-  Future<void> _fetchProfile() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    final token = AppState().doctorToken;
-    if (token == null || token.isEmpty) {
+  Future<void> _fetchProfile({bool showLoading = true}) async {
+    if (showLoading) {
       setState(() {
-        _isLoading = false;
-        _error = 'Doctor session not found. Please login again.';
+        _isLoading = true;
+        _error = null;
       });
+    }
+    final token = AppState().doctorToken ?? AppState().activeToken;
+    if (token == null || token.isEmpty) {
+      if (showLoading) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Doctor session not found. Please login again.';
+        });
+      }
       return;
     }
     try {
@@ -67,9 +78,10 @@ class _DoctorProfileSettingsScreenState
       if (res.success && res.doctor != null) {
         setState(() {
           _doctor = res.doctor;
-          _isLoading = false;
+          if (showLoading) _isLoading = false;
         });
-      } else {
+        AppState().setCurrentDoctorProfile(res.doctor!);
+      } else if (showLoading) {
         setState(() {
           _isLoading = false;
           _error = res.message.isNotEmpty
@@ -79,10 +91,275 @@ class _DoctorProfileSettingsScreenState
       }
     } catch (e) {
       if (!mounted) return;
+      if (showLoading) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Network error: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _openEditProfile() async {
+    if (_doctor == null) return;
+    final updated = await Navigator.push<ApiDoctor>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DoctorEditProfileScreen(doctor: _doctor!),
+      ),
+    );
+    if (updated != null && mounted) {
       setState(() {
-        _isLoading = false;
-        _error = 'Network error: $e';
+        _doctor = updated;
       });
+      AppState().setCurrentDoctorProfile(updated);
+    }
+  }
+
+  Future<void> _pickAndUploadProfilePhoto() async {
+    final token = AppState().doctorToken ?? AppState().activeToken;
+    if (token == null || token.isEmpty) {
+      debugPrint('[DoctorProfileSettings] ERROR: Doctor token is null or empty!');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Doctor session not found. Please log in again.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Change Profile Photo',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: AppColors.primary),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: AppColors.primary),
+              title: const Text('Take a Photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 70,
+    );
+    if (picked == null) return;
+
+    final pickedFile = File(picked.path);
+    debugPrint('[DoctorProfileSettings] Uploading Profile Photo from: ${picked.path}');
+    setState(() {
+      _isUploadingPhoto = true;
+      _localSelectedPhoto = pickedFile;
+    });
+
+    try {
+      final res = await DoctorProfileService.uploadDocuments(
+        token: token,
+        filePaths: {'profilePhoto': picked.path},
+      );
+
+      if (!mounted) return;
+
+      debugPrint('[DoctorProfileSettings] Photo upload result: success=${res.success}, message=${res.message}');
+
+      if (res.success &&
+          res.documents != null &&
+          res.documents!.profilePhoto != null &&
+          res.documents!.profilePhoto!.isNotEmpty) {
+        final newUrl = res.documents!.profilePhoto!;
+        final updatedDocs = (_doctor!.documents ?? DoctorDocumentsData())
+            .copyWith(profilePhoto: newUrl);
+        final updatedDoc = _doctor!.copyWith(documents: updatedDocs);
+        setState(() {
+          _doctor = updatedDoc;
+          _isUploadingPhoto = false;
+          _localSelectedPhoto = null;
+        });
+        AppState().setCurrentDoctorProfile(updatedDoc);
+        // Silent sync in background without reloading entire screen
+        _fetchProfile(showLoading: false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated successfully!'),
+            backgroundColor: Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        setState(() {
+          _isUploadingPhoto = false;
+          _localSelectedPhoto = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message.isNotEmpty
+                ? res.message
+                : 'Failed to upload photo.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isUploadingPhoto = false;
+        _localSelectedPhoto = null;
+      });
+      debugPrint('[DoctorProfileSettings] Exception in _pickAndUploadProfilePhoto: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error uploading photo: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _uploadDocument(String docKey, String docTitle) async {
+    final token = AppState().doctorToken ?? AppState().activeToken;
+    if (token == null || token.isEmpty) {
+      debugPrint('[DoctorProfileSettings] ERROR: Doctor token is null or empty when uploading $docKey!');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Doctor session not found. Please log in again.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 70,
+    );
+    if (picked == null) return;
+
+    debugPrint('[DoctorProfileSettings] Uploading Document "$docKey" from: ${picked.path}');
+    setState(() => _uploadingDocKey = docKey);
+
+    try {
+      final res = await DoctorProfileService.uploadDocuments(
+        token: token,
+        filePaths: {docKey: picked.path},
+      );
+
+      if (!mounted) return;
+      setState(() => _uploadingDocKey = null);
+
+      debugPrint('[DoctorProfileSettings] Document "$docKey" upload result: success=${res.success}, message=${res.message}');
+
+      if (res.success && res.documents != null) {
+        final currentDocs = _doctor!.documents ?? DoctorDocumentsData();
+        DoctorDocumentsData updatedDocs;
+        switch (docKey) {
+          case 'profilePhoto':
+            updatedDocs =
+                currentDocs.copyWith(profilePhoto: res.documents!.profilePhoto);
+            break;
+          case 'panCard':
+            updatedDocs = currentDocs.copyWith(panCard: res.documents!.panCard);
+            break;
+          case 'aadhaarFront':
+            updatedDocs =
+                currentDocs.copyWith(aadhaarFront: res.documents!.aadhaarFront);
+            break;
+          case 'aadhaarBack':
+            updatedDocs =
+                currentDocs.copyWith(aadhaarBack: res.documents!.aadhaarBack);
+            break;
+          case 'registrationCertificate':
+            updatedDocs = currentDocs.copyWith(
+                registrationCertificate:
+                    res.documents!.registrationCertificate);
+            break;
+          case 'cancelledCheque':
+            updatedDocs = currentDocs.copyWith(
+                cancelledCheque: res.documents!.cancelledCheque);
+            break;
+          case 'degreeCertificates':
+            updatedDocs = currentDocs.copyWith(
+                degreeCertificates: res.documents!.degreeCertificates);
+            break;
+          default:
+            updatedDocs = currentDocs;
+        }
+
+        final updatedDoc = _doctor!.copyWith(documents: updatedDocs);
+        setState(() {
+          _doctor = updatedDoc;
+        });
+        AppState().setCurrentDoctorProfile(updatedDoc);
+        // Refresh full profile in background silently to keep all fields synced
+        _fetchProfile(showLoading: false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$docTitle updated successfully!'),
+            backgroundColor: const Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message.isNotEmpty
+                ? res.message
+                : 'Failed to upload document.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingDocKey = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error uploading document: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -143,6 +420,12 @@ class _DoctorProfileSettingsScreenState
                     fontSize: 18),
               ),
               actions: [
+                if (_doctor != null)
+                  IconButton(
+                    icon: const Icon(Icons.edit_rounded, color: Colors.white),
+                    tooltip: 'Edit Profile',
+                    onPressed: _openEditProfile,
+                  ),
                 IconButton(
                   icon: _isLoading
                       ? const SizedBox(
@@ -348,33 +631,108 @@ class _DoctorProfileSettingsScreenState
       ),
       child: Row(
         children: [
-          // Avatar
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 8)
-              ],
-            ),
-            child: CircleAvatar(
-              radius: 34,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-              backgroundImage:
-                  photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-              child: photoUrl.isEmpty
-                  ? Text(
-                      name[0].toUpperCase(),
-                      style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary),
-                    )
-                  : null,
-            ),
+          // Avatar with camera badge
+          Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 8)
+                  ],
+                ),
+                child: SizedBox(
+                  width: 68,
+                  height: 68,
+                  child: ClipOval(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      alignment: Alignment.center,
+                      children: [
+                        if (_localSelectedPhoto != null)
+                          Image.file(
+                            _localSelectedPhoto!,
+                            fit: BoxFit.cover,
+                          )
+                        else if (photoUrl.isNotEmpty)
+                          Image.network(
+                            photoUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              alignment: Alignment.center,
+                              child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : 'D',
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            color: AppColors.primary.withValues(alpha: 0.15),
+                            alignment: Alignment.center,
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : 'D',
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        if (_isUploadingPhoto)
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            child: const Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: _isUploadingPhoto ? null : _pickAndUploadProfilePhoto,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -431,6 +789,22 @@ class _DoctorProfileSettingsScreenState
                   ],
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            onPressed: _openEditProfile,
+            tooltip: 'Edit Profile',
+            icon: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.edit_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
           ),
         ],
@@ -872,17 +1246,17 @@ class _DoctorProfileSettingsScreenState
     }
 
     final docEntries = <_DocEntry>[
-      _DocEntry('Profile Photo', Icons.person_rounded, docs.profilePhoto,
+      _DocEntry('profilePhoto', 'Profile Photo', Icons.person_rounded, docs.profilePhoto,
           const Color(0xFF2563EB)),
-      _DocEntry('Aadhaar Front', Icons.credit_card_rounded, docs.aadhaarFront,
+      _DocEntry('aadhaarFront', 'Aadhaar Front', Icons.credit_card_rounded, docs.aadhaarFront,
           const Color(0xFF059669)),
-      _DocEntry('Aadhaar Back', Icons.credit_card_outlined, docs.aadhaarBack,
+      _DocEntry('aadhaarBack', 'Aadhaar Back', Icons.credit_card_outlined, docs.aadhaarBack,
           const Color(0xFF0D9488)),
-      _DocEntry('PAN Card', Icons.badge_rounded, docs.panCard,
+      _DocEntry('panCard', 'PAN Card', Icons.badge_rounded, docs.panCard,
           const Color(0xFF7C3AED)),
-      _DocEntry('Registration Certificate', Icons.workspace_premium_rounded,
+      _DocEntry('registrationCertificate', 'Registration Certificate', Icons.workspace_premium_rounded,
           docs.registrationCertificate, const Color(0xFFD97706)),
-      _DocEntry('Cancelled Cheque', Icons.account_balance_rounded,
+      _DocEntry('cancelledCheque', 'Cancelled Cheque', Icons.account_balance_rounded,
           docs.cancelledCheque, const Color(0xFFEA580C)),
     ];
 
@@ -909,6 +1283,7 @@ class _DoctorProfileSettingsScreenState
               const SizedBox(height: 8),
               ...docs.degreeCertificates!.asMap().entries.map((entry) =>
                   _docTile(_DocEntry(
+                      'degreeCertificates',
                       'Degree Certificate ${entry.key + 1}',
                       Icons.school_rounded,
                       entry.value,
@@ -1000,6 +1375,26 @@ class _DoctorProfileSettingsScreenState
                       fontSize: 10,
                       color: AppColors.textLight,
                       fontWeight: FontWeight.bold)),
+            ),
+          const SizedBox(width: 6),
+          if (_uploadingDocKey == entry.key)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primary,
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                hasDoc ? Icons.replay_rounded : Icons.upload_file_rounded,
+                size: 20,
+                color: AppColors.primary,
+              ),
+              tooltip: hasDoc ? 'Replace Document' : 'Upload Document',
+              onPressed: () => _uploadDocument(entry.key, entry.name),
             ),
         ],
       ),
@@ -1212,9 +1607,11 @@ class _DoctorProfileSettingsScreenState
 }
 
 class _DocEntry {
+  final String key;
   final String name;
   final IconData icon;
   final String? url;
   final Color color;
-  const _DocEntry(this.name, this.icon, this.url, this.color);
+  const _DocEntry(this.key, this.name, this.icon, this.url, this.color);
 }
+

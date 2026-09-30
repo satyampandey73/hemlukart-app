@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/book_appointment_model.dart';
 import '../models/my_appointments_model.dart';
+import 'api_helper.dart';
 
 class AppointmentService {
   static const String baseUrl =
@@ -124,7 +125,7 @@ class AppointmentService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -142,7 +143,10 @@ class AppointmentService {
       return MyAppointmentsApiResponse(
         success: false,
         appointments: [],
-        message: 'Error fetching doctor appointments: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching doctor appointments',
+        ),
       );
     }
   }
@@ -201,7 +205,7 @@ class AppointmentService {
     try {
       final response = await http
           .post(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -218,7 +222,10 @@ class AppointmentService {
     } catch (e) {
       return BookAppointmentApiResponse(
         success: false,
-        message: 'Error connecting to booking service: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error connecting to booking service',
+        ),
       );
     }
   }
@@ -258,7 +265,7 @@ class AppointmentService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -277,7 +284,10 @@ class AppointmentService {
       return MyAppointmentsApiResponse(
         success: false,
         appointments: [],
-        message: 'Error fetching my appointments: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching my appointments',
+        ),
       );
     }
   }
@@ -309,7 +319,7 @@ class AppointmentService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -326,7 +336,10 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error fetching appointment detail: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching appointment detail',
+        ),
       );
     }
   }
@@ -361,7 +374,7 @@ class AppointmentService {
     try {
       final response = await http
           .patch(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -378,7 +391,10 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error cancelling appointment: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error cancelling appointment',
+        ),
       );
     }
   }
@@ -415,7 +431,7 @@ class AppointmentService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -434,7 +450,10 @@ class AppointmentService {
       return MyAppointmentsApiResponse(
         success: false,
         appointments: [],
-        message: 'Error fetching doctor appointments: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error fetching doctor appointments',
+        ),
       );
     }
   }
@@ -465,7 +484,7 @@ class AppointmentService {
     try {
       final response = await http
           .patch(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(ApiHelper.defaultTimeout);
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -482,7 +501,7 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error confirming appointment: $e',
+        message: ApiHelper.getReadableErrorMessage(e, fallbackPrefix: 'Error confirming appointment'),
       );
     }
   }
@@ -514,7 +533,7 @@ class AppointmentService {
     try {
       final response = await http
           .patch(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(ApiHelper.defaultTimeout);
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -531,7 +550,7 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error cancelling appointment (doctor): $e',
+        message: ApiHelper.getReadableErrorMessage(e, fallbackPrefix: 'Error cancelling appointment'),
       );
     }
   }
@@ -569,7 +588,7 @@ class AppointmentService {
     try {
       final response = await http
           .patch(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(ApiHelper.defaultTimeout);
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -586,7 +605,7 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error rescheduling appointment: $e',
+        message: ApiHelper.getReadableErrorMessage(e, fallbackPrefix: 'Error rescheduling appointment'),
       );
     }
   }
@@ -617,7 +636,7 @@ class AppointmentService {
     try {
       final response = await http
           .patch(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(ApiHelper.defaultTimeout);
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -634,7 +653,7 @@ class AppointmentService {
     } catch (e) {
       return SingleAppointmentApiResponse(
         success: false,
-        message: 'Error completing appointment: $e',
+        message: ApiHelper.getReadableErrorMessage(e, fallbackPrefix: 'Error completing appointment'),
       );
     }
   }

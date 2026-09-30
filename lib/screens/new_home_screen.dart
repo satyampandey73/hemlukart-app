@@ -24,6 +24,7 @@ import '../models/blog_model.dart';
 import '../services/blog_service.dart';
 import 'blog_detail_screen.dart';
 import '../widgets/product_quantity_selector.dart';
+import '../widgets/variant_selector_bottom_sheet.dart';
 import '../services/doctor_service.dart';
 import 'my_prescriptions_screen.dart';
 import '../models/banner_model.dart';
@@ -31,6 +32,9 @@ import '../services/banner_service.dart';
 import 'clinic_listing_screen.dart';
 import 'clinic_detail_screen.dart';
 import '../services/clinic_service.dart';
+import 'registration_screen.dart';
+import 'partner_hub_dialog.dart';
+import 'contact_support_screen.dart';
 
 // harsh.s@btplsoft.com
 class NewHomeScreen extends StatefulWidget {
@@ -62,6 +66,16 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   List<bool> _faqExpandedStates = [];
   bool _isLoadingFaqs = false;
   String? _faqError;
+
+  // FAQ carousel
+  final PageController _faqPageController = PageController();
+  int _currentFaqPage = 0;
+  Timer? _faqCarouselTimer;
+  static const int _faqsPerPage = 3;
+
+  // Why Choose Us carousel (vertical)
+  final PageController _whyController = PageController();
+  Timer? _whyTimer;
 
   List<BrandModel> _apiBrands = [];
   bool _isLoadingBrands = false;
@@ -409,10 +423,14 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     _bannerTimer?.cancel();
     _testimonialTimer?.cancel();
     _hero2BannerTimer?.cancel();
+    _faqCarouselTimer?.cancel();
+    _whyTimer?.cancel();
     _appState.removeListener(_rebuild);
     _bannerController.dispose();
     _testimonialController.dispose();
     _hero2BannerController.dispose();
+    _faqPageController.dispose();
+    _whyController.dispose();
     super.dispose();
   }
 
@@ -571,6 +589,170 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     ]);
   }
 
+  Widget _buildBottomHubSection() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.18),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Quick Hubs & Support',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Expanded(
+                  child: _buildHubItem(
+                    title: "Doctor's Hub",
+                    icon: Icons.medical_services_rounded,
+                    iconColor: AppColors.primary,
+                    iconBg: AppColors.primary.withValues(alpha: 0.1),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RegistrationScreen(initialIsPatient: false),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _buildHubItem(
+                    title: "Partner's Hub",
+                    icon: Icons.handshake_rounded,
+                    iconColor: const Color(0xFF0D9488),
+                    iconBg: const Color(0xFFCCFBF1),
+                    onTap: () {
+                      PartnerHubDialog.show(context);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _buildHubItem(
+                    title: "Deals",
+                    icon: Icons.local_offer_rounded,
+                    iconColor: const Color(0xFFD97706),
+                    iconBg: const Color(0xFFFEF3C7),
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Exclusive Deals coming soon!'),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _buildHubItem(
+                    title: "Help",
+                    icon: Icons.help_outline_rounded,
+                    iconColor: const Color(0xFF2563EB),
+                    iconBg: const Color(0xFFEFF6FF),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ContactSupportScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHubItem({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: iconColor.withValues(alpha: 0.2)),
+              ),
+              child: Icon(icon, size: 22, color: iconColor),
+            ),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: AppColors.textDark,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -581,6 +763,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+
           // Header Search Section
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -751,27 +934,24 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
-                childAspectRatio: 1.6,
+                childAspectRatio: 1.05,
                 children: [
                   _buildQuickActionCard(
                     'Order Medicines',
-                    'Genuine products',
+                    'Genuine medicines delivered',
                     Icons.medication_liquid,
-                    const Color.fromARGB(255, 255, 255, 255),
                     () => widget.onTabChange(2),
                   ),
                   _buildQuickActionCard(
                     'Book a Doctor',
-                    'Expert Consulting',
-                    Icons.local_hospital,
-                    const Color.fromARGB(255, 255, 255, 255),
+                    'Expert consultations',
+                    Icons.medical_services_rounded,
                     () => widget.onTabChange(1),
                   ),
                   _buildQuickActionCard(
                     'Track Your Order',
-                    'Real-time tracking',
+                    'Real-time delivery updates',
                     Icons.local_shipping_outlined,
-                    const Color.fromARGB(255, 255, 255, 255),
                     () {
                       if (_appState.orders.isNotEmpty) {
                         Navigator.push(
@@ -796,9 +976,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
                   _buildQuickActionCard(
                     'View Prescriptions',
-                    'Digital health vaults',
+                    'Digital health records',
                     Icons.receipt_long,
-                    const Color.fromARGB(255, 255, 255, 255),
                     () async {
                       if (await LoginScreen.checkAndNavigate(context)) {
                         if (mounted) {
@@ -1045,8 +1224,14 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
           // Loved by Thousands (Testimonials Section from API)
           _buildTestimonialsSection(),
 
-          // FAQ Accordion Section from API
+          // Why Choose Us Section
+          _buildWhyChooseUsSection(),
+
+          // FAQ Accordion Section from API (with carousel)
           _buildFaqSection(),
+
+          // Bottom Hub Footer (Doctor's Hub, Partner's Hub, Deals, Help)
+          _buildBottomHubSection(),
         ],
       ),
     ),
@@ -1112,38 +1297,77 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     String title,
     String subtitle,
     IconData icon,
-    Color color,
     VoidCallback onTap,
   ) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withOpacity(0.04)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: AppColors.primary, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            Text(
-              subtitle,
-              style: const TextStyle(fontSize: 10, color: AppColors.textLight),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.55),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
           ],
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Circular icon container — light gray background, centered
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEEF2F5),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Icon(
+                    icon,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppColors.textLight,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1906,7 +2130,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     }
 
     return SizedBox(
-      height: 340,
+      height: 250,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final availableWidth = constraints.maxWidth - 32; // 16px padding each side
@@ -1920,211 +2144,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 padding: EdgeInsets.only(right: idx < products.length - 1 ? 12 : 0),
                 child: SizedBox(
                   width: cardWidth,
-                  child: _buildProductCard(products[idx]),
+                  child: FeaturedProductCard(product: products[idx]),
                 ),
               );
             },
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildProductCard(Product prod) {
-    final isWish = _appState.wishlistProductIds.contains(prod.id);
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => ProductDetailScreen(product: prod)),
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border.withOpacity(0.5)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.backgroundLight.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      image: DecorationImage(
-                        image:
-                            (prod.image.startsWith('http://') ||
-                                prod.image.startsWith('https://'))
-                            ? NetworkImage(prod.image) as ImageProvider
-                            : AssetImage(
-                                prod.image.isNotEmpty
-                                    ? prod.image
-                                    : 'assets/img2.png',
-                              ),
-                        fit: BoxFit.contain,
-                        onError: (_, __) {},
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _appState.toggleProductWishlist(prod.id);
-                        });
-                      },
-                      child: Icon(
-                        isWish ? Icons.favorite : Icons.favorite_border,
-                        color: isWish ? Colors.pink : AppColors.textLight,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                  if (prod.price < prod.originalPrice)
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _appState.isDoctorLoggedIn ? const Color(0xFF0D9488) : Colors.red,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          _appState.isDoctorLoggedIn
-                              ? (prod.roleDiscountLabel.isNotEmpty ? prod.roleDiscountLabel : 'Dr. ${prod.effectiveDiscountPercent}% OFF')
-                              : '${prod.effectiveDiscountPercent}% OFF',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              prod.brand,
-              style: const TextStyle(
-                fontSize: 9,
-                color: AppColors.textLight,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              prod.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.star, color: Colors.amber, size: 10),
-                const SizedBox(width: 2),
-                Text(
-                  '${prod.rating}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '(${prod.reviewsCount})',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.textLight,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.secondary, width: 1.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        prod.packSize.isNotEmpty ? prod.packSize : '1 Pack',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.secondary,
-                        ),
-                      ),
-                    ),
-                    const Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 14,
-                      color: AppColors.secondary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '₹${prod.price.toInt()}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    if (prod.price < prod.originalPrice)
-                      Text(
-                        '₹${prod.originalPrice.toInt()}',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textLight,
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
-                  ],
-                ),
-                ProductQuantitySelector(product: prod),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -2339,6 +2364,148 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
+  // ─── Why Choose Us ────────────────────────────────────────────────────────
+  // ─── Why Choose Us (vertical carousel, 3 cards visible) ──────────────────
+  Widget _buildWhyChooseUsSection() {
+    const features = [
+      (icon: Icons.verified_outlined,       title: 'Authentic Ayurvedic Products', sub: 'Natural & Safe'),
+      (icon: Icons.people_alt_outlined,     title: 'Expert Doctors',               sub: 'Guidance You Can Trust'),
+      (icon: Icons.local_shipping_outlined, title: 'Fast & Reliable',              sub: 'Delivery'),
+      (icon: Icons.shield_outlined,         title: '100% Secure',                  sub: 'and Reliable'),
+    ];
+
+    const double cardHeight = 92.0;
+    const int visibleCards = 3;
+    final int totalSlides = features.length;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Why Choose ChikitsaKart?',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  Text(
+                    'Trusted by thousands of patients',
+                    style: TextStyle(fontSize: 11, color: AppColors.textLight),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Vertical carousel — shows 3 cards at a time, slides 1 at a time
+          SizedBox(
+            height: cardHeight * visibleCards,
+            child: PageView.builder(
+              controller: _whyController,
+              scrollDirection: Axis.vertical,
+              itemCount: totalSlides,
+              itemBuilder: (ctx, idx) {
+                // Build 3 cards starting from idx (wrapping around)
+                return Column(
+                  children: List.generate(visibleCards, (i) {
+                    final featureIdx = (idx + i) % features.length;
+                    final f = features[featureIdx];
+                    // Use Expanded so cards fill the SizedBox without overflow
+                    return Expanded(
+                      child: _buildWhyFeatureCard(
+                        icon: f.icon,
+                        title: f.title,
+                        sub: f.sub,
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWhyFeatureCard({
+    required IconData icon,
+    required String title,
+    required String sub,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2EEF0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A2E35),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  // ─── FAQ Section with Carousel ────────────────────────────────────────────
   Widget _buildFaqSection() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -2367,7 +2534,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
               ),
               child: Column(
                 children: [
@@ -2403,7 +2570,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border.withOpacity(0.5)),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
               ),
               child: const Text(
                 'No FAQs available at the moment.',
@@ -2411,72 +2578,172 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               ),
             )
           else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _apiFaqs.length,
-              itemBuilder: (context, idx) {
-                final item = _apiFaqs[idx];
-                final isExp = idx < _faqExpandedStates.length
-                    ? _faqExpandedStates[idx]
-                    : false;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.border.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: [
-                        ListTile(
-                          onTap: () {
-                            setState(() {
-                              if (idx < _faqExpandedStates.length) {
-                                _faqExpandedStates[idx] =
-                                    !_faqExpandedStates[idx];
-                              }
-                            });
-                          },
-                          title: Text(
-                            item.question,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                          trailing: Icon(
-                            isExp ? Icons.expand_less : Icons.expand_more,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        if (isExp)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Text(
-                              item.answer,
-                              style: const TextStyle(
-                                color: AppColors.textLight,
-                                fontSize: 13,
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+            _buildFaqCarousel(),
         ],
       ),
+    );
+  }
+
+  double _calculateFaqContainerHeight() {
+    if (_apiFaqs.isEmpty) return 120.0;
+    final start = _currentFaqPage * _faqsPerPage;
+    final end = (start + _faqsPerPage).clamp(0, _apiFaqs.length);
+    final count = end - start;
+    if (count <= 0) return 120.0;
+
+    // Collapsed card height is approx 68px + 8px margin = 76px
+    double height = count * 76.0;
+    for (int i = start; i < end; i++) {
+      if (i < _faqExpandedStates.length && _faqExpandedStates[i]) {
+        final answer = _apiFaqs[i].answer;
+        final lines = (answer.length / 36).ceil().clamp(2, 25);
+        final answerHeight = lines * 19.0 + 32.0;
+        height += answerHeight;
+      }
+    }
+    return height;
+  }
+
+  Widget _buildFaqCarousel() {
+    // Show 3 FAQs per slide, vertical swipe (no auto-slide)
+    final int totalSlides = (_apiFaqs.length / _faqsPerPage).ceil();
+
+    if (_faqExpandedStates.length != _apiFaqs.length) {
+      _faqExpandedStates = List.filled(_apiFaqs.length, false);
+    }
+
+    return Column(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          height: _calculateFaqContainerHeight(),
+          child: PageView.builder(
+            controller: _faqPageController,
+            scrollDirection: Axis.vertical,
+            itemCount: totalSlides,
+            onPageChanged: (page) {
+              setState(() {
+                _currentFaqPage = page;
+                for (int i = 0; i < _faqExpandedStates.length; i++) {
+                  _faqExpandedStates[i] = false;
+                }
+              });
+            },
+            itemBuilder: (context, pageIdx) {
+              final start = pageIdx * _faqsPerPage;
+              final end = (start + _faqsPerPage).clamp(0, _apiFaqs.length);
+              final pageFaqs = _apiFaqs.sublist(start, end);
+
+              return SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: pageFaqs.asMap().entries.map((entry) {
+                    final globalIdx = start + entry.key;
+                    final item = entry.value;
+                    final isExp = globalIdx < _faqExpandedStates.length
+                        ? _faqExpandedStates[globalIdx]
+                        : false;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isExp
+                              ? AppColors.primary.withValues(alpha: 0.5)
+                              : AppColors.border.withValues(alpha: 0.5),
+                          width: isExp ? 1.5 : 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                dense: true,
+                                onTap: () {
+                                  setState(() {
+                                    final current = _faqExpandedStates[globalIdx];
+                                    for (int i = 0; i < _faqExpandedStates.length; i++) {
+                                      _faqExpandedStates[i] = false;
+                                    }
+                                    _faqExpandedStates[globalIdx] = !current;
+                                  });
+                                },
+                                title: Text(
+                                  item.question,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: isExp ? AppColors.primary : AppColors.textDark,
+                                  ),
+                                  maxLines: isExp ? null : 2,
+                                  overflow: isExp ? TextOverflow.visible : TextOverflow.ellipsis,
+                                ),
+                                trailing: Icon(
+                                  isExp
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            if (isExp)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                                child: Text(
+                                  item.answer,
+                                  style: const TextStyle(
+                                    color: AppColors.textLight,
+                                    fontSize: 12.5,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              );
+            },
+          ),
+        ),
+        if (totalSlides > 1) ...[
+          const SizedBox(height: 10),
+          // Vertical dot indicator
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(totalSlides, (i) {
+              final isActive = i == _currentFaqPage;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: isActive ? 18 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: isActive ? AppColors.primary : AppColors.border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
     );
   }
 
@@ -2649,3 +2916,302 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 }
+
+class FeaturedProductCard extends StatefulWidget {
+  final Product product;
+
+  const FeaturedProductCard({super.key, required this.product});
+
+  @override
+  State<FeaturedProductCard> createState() => _FeaturedProductCardState();
+}
+
+class _FeaturedProductCardState extends State<FeaturedProductCard> {
+  late List<ProductVariant> _variants;
+  late ProductVariant _selectedVariant;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVariants();
+  }
+
+  @override
+  void didUpdateWidget(covariant FeaturedProductCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.product.id != widget.product.id ||
+        oldWidget.product.price != widget.product.price ||
+        oldWidget.product.variants.length != widget.product.variants.length) {
+      _initVariants();
+    }
+  }
+
+  void _initVariants() {
+    _variants = widget.product.availableVariants;
+    if (_variants.isEmpty) {
+      _selectedVariant = ProductVariant(
+        id: widget.product.id,
+        packSize: widget.product.packSize.isNotEmpty
+            ? widget.product.packSize
+            : '1 Pack',
+        price: widget.product.price,
+        originalPrice: widget.product.originalPrice,
+      );
+      _variants = [_selectedVariant];
+    } else {
+      _selectedVariant = _variants.first;
+    }
+  }
+
+  Product get _activeProduct => widget.product.copyWithVariant(_selectedVariant);
+
+  void _openVariantSelector(BuildContext context) {
+    showVariantSelectorBottomSheet(
+      context: context,
+      product: widget.product,
+      variants: _variants,
+      selectedVariant: _selectedVariant,
+      onSelect: (v) => setState(() => _selectedVariant = v),
+    );
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+
+    final appState = AppState();
+    final activeProd = _activeProduct;
+
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final isWish = appState.wishlistProductIds.contains(activeProd.id);
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProductDetailScreen(product: activeProd),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.border.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color:
+                              AppColors.backgroundLight.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          image: DecorationImage(
+                            image: (activeProd.image.startsWith('http://') ||
+                                    activeProd.image.startsWith('https://'))
+                                ? NetworkImage(activeProd.image) as ImageProvider
+                                : AssetImage(
+                                    activeProd.image.isNotEmpty
+                                        ? activeProd.image
+                                        : 'assets/img2.png',
+                                  ),
+                            fit: BoxFit.contain,
+                            onError: (e, s) {},
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () {
+                            appState.toggleProductWishlist(activeProd.id);
+                          },
+                          child: Icon(
+                            isWish ? Icons.favorite : Icons.favorite_border,
+                            color: isWish ? Colors.pink : AppColors.textLight,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                      if (activeProd.price < activeProd.originalPrice)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: appState.isDoctorLoggedIn
+                                  ? const Color(0xFF0D9488)
+                                  : Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              appState.isDoctorLoggedIn
+                                  ? (activeProd.roleDiscountLabel.isNotEmpty
+                                      ? activeProd.roleDiscountLabel
+                                      : 'Dr. ${activeProd.effectiveDiscountPercent}% OFF')
+                                  : '${activeProd.effectiveDiscountPercent}% OFF',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  activeProd.brand,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.textLight,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  activeProd.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber, size: 10),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${activeProd.rating}',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '(${activeProd.reviewsCount})',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openVariantSelector(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.transparent,
+                        border:
+                            Border.all(color: AppColors.secondary, width: 1.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _selectedVariant.packSize.isNotEmpty
+                                  ? _selectedVariant.packSize
+                                  : '1 Pack',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.secondary,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.keyboard_arrow_down,
+                            size: 14,
+                            color: AppColors.secondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Price and Add button in a Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₹${activeProd.price.toInt()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          if (activeProd.price < activeProd.originalPrice)
+                            Text(
+                              '₹${activeProd.originalPrice.toInt()}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textLight,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    ProductQuantitySelector(
+                      product: activeProd,
+                      iconSize: 14,
+                      fontSize: 12,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+

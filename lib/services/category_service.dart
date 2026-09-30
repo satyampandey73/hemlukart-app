@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/category_model.dart';
+import 'api_helper.dart';
 
 class CategoryService {
   static const String baseUrl =
@@ -18,7 +19,7 @@ class CategoryService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -34,7 +35,10 @@ class CategoryService {
       return CategoriesApiResponse(
         success: false,
         categories: [],
-        message: 'Failed to fetch categories: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch categories',
+        ),
       );
     }
   }

@@ -307,9 +307,18 @@ class _OrderPlacedScreenState extends State<OrderPlacedScreen> {
                         ],
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: const [
-                            Text('Delivery Fee', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
-                            Text('FREE', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                          children: [
+                            const Text('Delivery Fee', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                            Text(
+                              widget.order.shippingCharge <= 0
+                                  ? 'FREE'
+                                  : '₹${widget.order.shippingCharge.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: widget.order.shippingCharge <= 0 ? Colors.green : AppColors.textDark,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 10),

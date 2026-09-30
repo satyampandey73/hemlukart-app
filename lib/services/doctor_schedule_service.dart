@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/doctor_schedule_model.dart';
+import 'api_helper.dart';
 
 class DoctorScheduleService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/schedules';
@@ -20,7 +21,7 @@ class DoctorScheduleService {
               'Authorization': 'Bearer $token',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -41,7 +42,10 @@ class DoctorScheduleService {
       return DoctorSchedulesApiResponse(
         success: false,
         schedules: [],
-        message: 'Network error fetching schedules: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch schedules',
+        ),
       );
     }
   }
@@ -67,7 +71,7 @@ class DoctorScheduleService {
             },
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -92,7 +96,10 @@ class DoctorScheduleService {
     } catch (e) {
       return DoctorScheduleMutationResponse(
         success: false,
-        message: 'Network error creating schedules: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to create schedules',
+        ),
       );
     }
   }
@@ -118,7 +125,7 @@ class DoctorScheduleService {
             },
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -137,7 +144,10 @@ class DoctorScheduleService {
     } catch (e) {
       return DoctorScheduleMutationResponse(
         success: false,
-        message: 'Network error updating schedules: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update schedules',
+        ),
       );
     }
   }
@@ -198,7 +208,7 @@ class DoctorScheduleService {
             },
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -223,7 +233,10 @@ class DoctorScheduleService {
     } catch (e) {
       return DoctorScheduleMutationResponse(
         success: false,
-        message: 'Network error updating schedule: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update schedule',
+        ),
       );
     }
   }
@@ -244,7 +257,7 @@ class DoctorScheduleService {
               'Authorization': 'Bearer $token',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 ||
           response.statusCode == 201 ||
@@ -274,7 +287,10 @@ class DoctorScheduleService {
     } catch (e) {
       return DoctorScheduleMutationResponse(
         success: false,
-        message: 'Network error deleting schedule: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to delete schedule',
+        ),
       );
     }
   }

@@ -4,14 +4,21 @@ import 'patient_registration_screen.dart';
 import 'provider_step1_screen.dart';
 
 class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({super.key});
+  final bool initialIsPatient;
+  const RegistrationScreen({super.key, this.initialIsPatient = true});
 
   @override
   State<RegistrationScreen> createState() => _RegistrationScreenState();
 }
 
 class _RegistrationScreenState extends State<RegistrationScreen> {
-  bool isPatient = true;
+  late bool isPatient;
+
+  @override
+  void initState() {
+    super.initState();
+    isPatient = widget.initialIsPatient;
+  }
 
   @override
   Widget build(BuildContext context) {

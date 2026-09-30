@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'api_helper.dart';
 
 class EPrescriptionService {
   static const String baseUrl =
@@ -51,7 +52,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .post(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -65,7 +66,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to create prescription',
+        ),
+      };
     }
   }
 
@@ -109,7 +116,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       final Map<String, dynamic> body = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
@@ -125,7 +132,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to load doctor prescriptions',
+        ),
+      };
     }
   }
 
@@ -147,7 +160,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       final Map<String, dynamic> body = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
@@ -159,7 +172,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch prescription',
+        ),
+      };
     }
   }
 
@@ -185,7 +204,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .patch(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       final Map<String, dynamic> resp = jsonDecode(response.body);
       if (response.statusCode == 200) {
         return {
@@ -200,7 +219,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update status',
+        ),
+      };
     }
   }
 
@@ -234,7 +259,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       final Map<String, dynamic> body = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
@@ -250,7 +275,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to load prescriptions',
+        ),
+      };
     }
   }
 
@@ -273,7 +304,7 @@ class EPrescriptionService {
     try {
       final response = await http
           .post(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       final Map<String, dynamic> resp = jsonDecode(response.body);
       if (response.statusCode == 200) {
         return {
@@ -288,7 +319,13 @@ class EPrescriptionService {
         };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Error: $e'};
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to cancel prescription',
+        ),
+      };
     }
   }
 }

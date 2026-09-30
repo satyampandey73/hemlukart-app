@@ -899,7 +899,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
   // ---------------- HEALTH CONCERNS (Illness Category Circles) ----------------
   Widget _buildHealthConcernsRow() {
     return SizedBox(
-      height: 95,
+      height: 98,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -935,16 +935,18 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                       size: 24,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    item['name'] as String,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textDark,
+                  const SizedBox(height: 5),
+                  Flexible(
+                    child: Text(
+                      item['name'] as String,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
                     ),
                   ),
                 ],
@@ -973,7 +975,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
           crossAxisCount: 3,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 1.1,
+          childAspectRatio: 0.95,
         ),
         itemCount: _quickActions.length,
         itemBuilder: (context, idx) {
@@ -1047,7 +1049,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                 Container(
                   width: double.infinity,
                   height: double.infinity,
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                   decoration: BoxDecoration(
                     color: (qa['color'] as Color).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
@@ -1057,21 +1059,26 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         qa['icon'] as IconData,
                         color: qa['color'] as Color,
-                        size: 22,
+                        size: 20,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        qa['name'] as String,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: qa['color'] as Color,
-                          height: 1.1,
+                      const SizedBox(height: 3),
+                      Flexible(
+                        child: Text(
+                          qa['name'] as String,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: qa['color'] as Color,
+                            height: 1.1,
+                          ),
                         ),
                       ),
                     ],

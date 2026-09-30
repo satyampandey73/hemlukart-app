@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/wishlist_model.dart';
+import 'api_helper.dart';
 
 class WishlistService {
   static const String baseUrl =
@@ -30,7 +31,7 @@ class WishlistService {
             headers: headers,
             body: jsonEncode({'productId': productId.trim()}),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -54,7 +55,10 @@ class WishlistService {
     } catch (e) {
       return WishlistActionResponse(
         success: false,
-        message: 'Failed to update wishlist: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update wishlist',
+        ),
       );
     }
   }
@@ -87,7 +91,7 @@ class WishlistService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -103,7 +107,10 @@ class WishlistService {
       return UserWishlistProductsApiResponse(
         success: false,
         data: [],
-        message: 'Failed to fetch wishlist products: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch wishlist products',
+        ),
       );
     }
   }
@@ -132,7 +139,7 @@ class WishlistService {
             headers: headers,
             body: jsonEncode({'targetDoctorId': targetDoctorId.trim()}),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -156,7 +163,10 @@ class WishlistService {
     } catch (e) {
       return WishlistActionResponse(
         success: false,
-        message: 'Failed to update doctor wishlist: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update doctor wishlist',
+        ),
       );
     }
   }
@@ -191,7 +201,7 @@ class WishlistService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -207,7 +217,10 @@ class WishlistService {
       return UserWishlistDoctorsApiResponse(
         success: false,
         data: [],
-        message: 'Failed to fetch doctor wishlist: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctor wishlist',
+        ),
       );
     }
   }

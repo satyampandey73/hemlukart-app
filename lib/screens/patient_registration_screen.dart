@@ -211,8 +211,8 @@ class _PatientRegistrationFormState extends State<PatientRegistrationForm> {
               if (val == null || val.trim().isEmpty) {
                 return 'Please enter your WhatsApp number';
               }
-              if (val.trim().length < 10) {
-                return 'Please enter a valid 10-digit phone number';
+              if (val.trim().length != 10 || !RegExp(r'^[6-9]\d{9}$').hasMatch(val.trim())) {
+                return 'Must be 10 digits starting with 6-9';
               }
               return null;
             },
@@ -231,8 +231,8 @@ class _PatientRegistrationFormState extends State<PatientRegistrationForm> {
               if (val == null || val.trim().isEmpty) {
                 return 'Please enter your mobile number';
               }
-              if (val.trim().length < 10) {
-                return 'Please enter a valid 10-digit mobile number';
+              if (val.trim().length != 10 || !RegExp(r'^[6-9]\d{9}$').hasMatch(val.trim())) {
+                return 'Must be 10 digits starting with 6-9';
               }
               return null;
             },

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/brand_model.dart';
+import 'api_helper.dart';
 
 class BrandService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/brands';
@@ -17,7 +18,7 @@ class BrandService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -33,7 +34,10 @@ class BrandService {
       return BrandApiResponse(
         success: false,
         brands: [],
-        message: 'Failed to fetch brands: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch brands',
+        ),
       );
     }
   }

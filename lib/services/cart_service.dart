@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/cart_model.dart';
+import 'api_helper.dart';
 
 class CartService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/cart';
@@ -10,6 +11,7 @@ class CartService {
   /// Response: {"success": true, "message": "Added to cart", "data": {...}}
   static Future<AddToCartApiResponse> addToCart({
     required String productId,
+    String? skuId,
     int quantity = 1,
     String? token,
   }) async {
@@ -23,17 +25,23 @@ class CartService {
       headers['Authorization'] = 'Bearer $token';
     }
 
+    // Build request body — include skuId if available so backend adds
+    // only the selected variant, not all variants of the product.
+    final Map<String, dynamic> requestBody = {
+      'productId': productId.trim(),
+      'quantity': quantity,
+      if (skuId != null && skuId.isNotEmpty && skuId != productId)
+        'skuId': skuId.trim(),
+    };
+
     try {
       final response = await http
           .post(
             url,
             headers: headers,
-            body: jsonEncode({
-              'productId': productId.trim(),
-              'quantity': quantity,
-            }),
+            body: jsonEncode(requestBody),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -52,7 +60,10 @@ class CartService {
     } catch (e) {
       return AddToCartApiResponse(
         success: false,
-        message: 'Failed to add item to cart: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to add item to cart',
+        ),
       );
     }
   }
@@ -73,7 +84,7 @@ class CartService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -87,7 +98,10 @@ class CartService {
     } catch (e) {
       return GetCartApiResponse(
         success: false,
-        message: 'Failed to fetch cart: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch cart',
+        ),
       );
     }
   }
@@ -113,14 +127,17 @@ class CartService {
     try {
       final response = await http
           .put(url, headers: headers, body: jsonEncode({'quantity': quantity}))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return CartActionApiResponse.fromJson(body);
     } catch (e) {
       return CartActionApiResponse(
         success: false,
-        message: 'Failed to update cart item quantity: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update cart item quantity',
+        ),
       );
     }
   }
@@ -144,14 +161,17 @@ class CartService {
     try {
       final response = await http
           .delete(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return CartActionApiResponse.fromJson(body);
     } catch (e) {
       return CartActionApiResponse(
         success: false,
-        message: 'Failed to remove item from cart: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to remove item from cart',
+        ),
       );
     }
   }
@@ -172,14 +192,17 @@ class CartService {
     try {
       final response = await http
           .delete(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return CartActionApiResponse.fromJson(body);
     } catch (e) {
       return CartActionApiResponse(
         success: false,
-        message: 'Failed to clear cart: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to clear cart',
+        ),
       );
     }
   }

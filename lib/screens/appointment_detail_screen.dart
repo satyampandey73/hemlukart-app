@@ -28,9 +28,15 @@ class AppointmentDetailScreen extends StatefulWidget {
 class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   final AppState _appState = AppState();
 
+  bool _doctorModeFromPrefs = false;
+
   bool get _isDoctorView {
-    if (widget.isForDoctor != null) return widget.isForDoctor!;
-    return _appState.isDoctorLoggedIn;
+    if (widget.isForDoctor == true) return true;
+    if (_doctorModeFromPrefs) return true;
+    if (_appState.isDoctorLoggedIn) return true;
+    final docToken = _appState.doctorToken;
+    if (docToken != null && docToken.isNotEmpty) return true;
+    return false;
   }
   bool _isLoading = true;
   String? _errorMessage;
@@ -49,6 +55,14 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   @override
   void initState() {
     super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      final token = prefs.getString('doctor_token');
+      if (token != null && token.isNotEmpty && mounted) {
+        setState(() {
+          _doctorModeFromPrefs = true;
+        });
+      }
+    });
     if (widget.initialDetail != null) {
       _detail = widget.initialDetail;
       _isLoading = false;
@@ -78,7 +92,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 children: [
                   Icon(Icons.cancel_outlined, color: Colors.red),
                   SizedBox(width: 8),
-                  Text('Cancel Appointment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Expanded(
+                    child: Text('Cancel Appointment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
                 ],
               ),
               content: SingleChildScrollView(
@@ -255,7 +271,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 children: [
                   Icon(Icons.event_repeat, color: Color(0xFF2563EB)),
                   SizedBox(width: 8),
-                  Text('Reschedule ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Expanded(
+                    child: Text('Reschedule', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
                 ],
               ),
               content: SingleChildScrollView(
@@ -506,15 +524,21 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
+    final s = status.toLowerCase().trim().replaceAll(' ', '_').replaceAll('-', '_');
+    if (s.contains('progress') || s.contains('process') || s == 'active' || s == 'ongoing') {
+      return const Color(0xFF0D9488); // Teal
+    }
+    switch (s) {
       case 'confirmed':
       case 'approved':
+      case 'scheduled':
         return Colors.green;
       case 'pending':
         return Colors.orange;
       case 'completed':
         return Colors.blue;
       case 'cancelled':
+      case 'canceled':
         return Colors.red;
       default:
         return AppColors.primary;
@@ -589,8 +613,23 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   Widget _buildContent() {
     final detail = _detail!;
     final statusColor = _getStatusColor(detail.status);
-    final bool isDoctor = _appState.isDoctorLoggedIn;
-    final bool isCancelled = detail.status.toLowerCase() == 'cancelled';
+    final bool isDoctor = _isDoctorView;
+    final String statusNorm = detail.status.toLowerCase().trim().replaceAll(' ', '_').replaceAll('-', '_');
+    final bool isConfirmed = statusNorm == 'confirmed' || statusNorm == 'approved' || statusNorm == 'scheduled';
+    final bool isInProgress = statusNorm.contains('progress') ||
+        statusNorm.contains('process') ||
+        statusNorm == 'active' ||
+        statusNorm == 'ongoing';
+    final bool isCompleted = statusNorm.contains('complet');
+    final bool isPending = statusNorm.contains('pending');
+    final bool isCancelled = statusNorm == 'cancelled' || statusNorm == 'canceled' || statusNorm.contains('cancel');
+
+    // Action permission flags
+    final bool canChat = !isCancelled && !isCompleted;
+    final bool canComplete = isDoctor && !isCancelled && !isCompleted && !isPending;
+    final bool canPrescribe = isDoctor && !isCancelled && !isPending;
+    final bool canReschedule = isDoctor && !isCancelled && !isCompleted && !isInProgress;
+    final bool canCancel = !isCancelled && !isCompleted;
 
     return RefreshIndicator(
       onRefresh: _fetchDetail,
@@ -612,11 +651,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               child: Row(
                 children: [
                   Icon(
-                    detail.status.toLowerCase() == 'confirmed'
+                    isConfirmed
                         ? Icons.check_circle
-                        : detail.status.toLowerCase() == 'cancelled'
-                            ? Icons.cancel
-                            : Icons.access_time,
+                        : isCompleted
+                            ? Icons.task_alt
+                            : isInProgress
+                                ? Icons.timelapse_rounded
+                                : isCancelled
+                                    ? Icons.cancel
+                                    : Icons.access_time,
                     color: statusColor,
                     size: 28,
                   ),
@@ -870,11 +913,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             if (detail.status.toLowerCase() != 'cancelled') ...[
               const SizedBox(height: 20),
               if (detail.isVideoConsultation) ...[
-                if (!detail.status.toLowerCase().contains('pending') &&
-                    (detail.status.toLowerCase().contains('confirm') ||
-                     detail.status.toLowerCase().contains('progress') ||
-                     detail.status.toLowerCase() == 'approved' ||
-                     detail.status.toLowerCase() == 'active')) ...[
+                if (!isPending && !isCancelled && !isCompleted) ...[
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -993,7 +1032,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                ] else if (detail.status.toLowerCase().contains('pending')) ...[
+                ] else if (isPending) ...[
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -1018,14 +1057,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   const SizedBox(height: 10),
                 ],
               ],
-              if (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved') ...[
+              if (canChat) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: _isActionInProgress
                         ? null
                         : () {
-                            final bool isDoctor = _appState.isDoctorLoggedIn;
                             final String recipientName = isDoctor
                                 ? (detail.patientName.isNotEmpty ? detail.patientName : 'Patient')
                                 : (detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor');
@@ -1057,157 +1095,156 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
-              if (_isDoctorView) ...[
-                if (detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved' || detail.status.toLowerCase() == 'completed') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isActionInProgress
-                          ? null
-                          : () => _showPrescriptionDialog(
-                                patientName: detail.patientName,
-                                appointmentId: detail.id,
-                                userId: detail.userId,
-                              ),
-                      icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
-                      label: const Text('Write Prescription', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F5B4C),
-                        disabledBackgroundColor: const Color(0xFF0F5B4C).withValues(alpha: 0.6),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                if (detail.status.toLowerCase() == 'pending') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isActionInProgress
-                          ? null
-                          : () async {
-                              setState(() => _isConfirming = true);
-                              try {
-                                final res = await _appState.confirmDoctorAppointment(detail.id);
-                                if (!mounted) return;
-                                if (res.success && res.appointment != null) {
-                                  setState(() => _detail = res.appointment);
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(res.message ?? 'Appointment confirmed successfully'),
-                                    backgroundColor: res.success ? Colors.green : Colors.red,
-                                  ),
-                                );
-                                await _fetchDetail();
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to confirm appointment: $e'), backgroundColor: Colors.red),
-                                );
-                              } finally {
-                                if (mounted) setState(() => _isConfirming = false);
-                              }
-                            },
-                      icon: _isConfirming
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.check_circle_outline, color: Colors.white),
-                      label: Text(
-                        _isConfirming ? 'Confirming Appointment...' : 'Confirm Appointment',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
-                        disabledBackgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.6),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ] else if (detail.status.toLowerCase() == 'confirmed') ...[
-                  if (detail.isMeetingTimeExpired && _isDoctorView)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 16),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Scheduled meeting time has expired. Doctor can mark this consultation as completed.',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+              if (canPrescribe) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isActionInProgress
+                        ? null
+                        : () => _showPrescriptionDialog(
+                              patientName: detail.patientName,
+                              appointmentId: detail.id,
+                              userId: detail.userId,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isActionInProgress
-                          ? null
-                          : () async {
-                              setState(() => _isCompleting = true);
-                              try {
-                                final res = await _appState.completeDoctorAppointment(detail.id);
-                                if (!mounted) return;
-                                if (res.success && res.appointment != null) {
-                                  setState(() => _detail = res.appointment);
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(res.message ?? 'Appointment marked as completed'),
-                                    backgroundColor: res.success ? Colors.green : Colors.red,
-                                  ),
-                                );
-                                await _fetchDetail();
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to complete appointment: $e'), backgroundColor: Colors.red),
-                                );
-                              } finally {
-                                if (mounted) setState(() => _isCompleting = false);
-                              }
-                            },
-                      icon: _isCompleting
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.task_alt, color: Colors.white),
-                      label: Text(
-                        _isCompleting ? 'Marking as Completed...' : 'Mark as Completed',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
-                        disabledBackgroundColor: const Color(0xFF059669).withValues(alpha: 0.6),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
+                    icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
+                    label: const Text('Write Prescription', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F5B4C),
+                      disabledBackgroundColor: const Color(0xFF0F5B4C).withValues(alpha: 0.6),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                ],
+                ),
+                const SizedBox(height: 10),
               ],
-              // Reschedule button — visible to doctors only for pending/confirmed appointments
-              if (_isDoctorView && (detail.status.toLowerCase() == 'pending' || detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved')) ...[
+              if (isDoctor && isPending) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isActionInProgress
+                        ? null
+                        : () async {
+                            setState(() => _isConfirming = true);
+                            try {
+                              final res = await _appState.confirmDoctorAppointment(detail.id);
+                              if (!mounted) return;
+                              if (res.success && res.appointment != null) {
+                                setState(() => _detail = res.appointment);
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res.message ?? 'Appointment confirmed successfully'),
+                                  backgroundColor: res.success ? Colors.green : Colors.red,
+                                ),
+                              );
+                              await _fetchDetail();
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to confirm appointment: $e'), backgroundColor: Colors.red),
+                              );
+                            } finally {
+                              if (mounted) setState(() => _isConfirming = false);
+                            }
+                          },
+                    icon: _isConfirming
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.check_circle_outline, color: Colors.white),
+                    label: Text(
+                      _isConfirming ? 'Confirming Appointment...' : 'Confirm Appointment',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      disabledBackgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.6),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (canComplete) ...[
+                if (detail.isMeetingTimeExpired && isDoctor)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.schedule_rounded, color: Color(0xFFD97706), size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Scheduled meeting time has expired. Doctor can mark this consultation as completed.',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF92400E)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isActionInProgress
+                        ? null
+                        : () async {
+                            setState(() => _isCompleting = true);
+                            try {
+                              final res = await _appState.completeDoctorAppointment(detail.id);
+                              if (!mounted) return;
+                              if (res.success && res.appointment != null) {
+                                setState(() => _detail = res.appointment);
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(res.message ?? 'Appointment completed successfully'),
+                                  backgroundColor: res.success ? Colors.green : Colors.red,
+                                ),
+                              );
+                              await _fetchDetail();
+                            } catch (e) {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to complete appointment: $e'), backgroundColor: Colors.red),
+                              );
+                            } finally {
+                              if (mounted) setState(() => _isCompleting = false);
+                            }
+                          },
+                    icon: _isCompleting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.task_alt, color: Colors.white),
+                    label: Text(
+                      _isCompleting ? 'Completing Appointment...' : 'Complete Appointment',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF059669),
+                      disabledBackgroundColor: const Color(0xFF059669).withValues(alpha: 0.6),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              // Reschedule button — visible to doctors only for pending/confirmed/in-progress appointments
+              if (canReschedule) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -1233,7 +1270,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ),
                 const SizedBox(height: 10),
               ],
-              if (detail.status.toLowerCase() == 'pending' || detail.status.toLowerCase() == 'confirmed' || detail.status.toLowerCase() == 'approved') ...[
+              if (canCancel) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -1266,7 +1303,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               ],
             ],
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 36),
           ],
         ),
       ),
@@ -1300,12 +1337,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             children: [
               Icon(icon, size: 18, color: AppColors.primary),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1347,14 +1387,21 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         children: [
           const Icon(Icons.circle, size: 8, color: AppColors.primary),
           const SizedBox(width: 10),
-          Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
           ),
-          const SizedBox(width: 10),
-          Text(
-            timeStr,
-            style: const TextStyle(color: AppColors.textLight, fontSize: 12),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              timeStr,
+              textAlign: TextAlign.end,
+              style: const TextStyle(color: AppColors.textLight, fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
           ),
         ],
       ),
@@ -1392,34 +1439,43 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.description, color: AppColors.primary, size: 20),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'DIGITAL E-PRESCRIPTION',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                          letterSpacing: 0.5,
-                        ),
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.description, color: AppColors.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DIGITAL E-PRESCRIPTION',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                              letterSpacing: 0.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          Text(
+                            'No: $rxNo',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textDark,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ],
                       ),
-                      Text(
-                        'No: $rxNo',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -1427,6 +1483,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.verified, size: 12, color: Color(0xFF16A34A)),
                     SizedBox(width: 4),
@@ -1486,10 +1543,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '${item['name'] ?? "Medicine"} ${item['strength'] ?? ""}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
+                      Expanded(
+                        child: Text(
+                          '${item['name'] ?? "Medicine"} ${item['strength'] ?? ""}'.trim(),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textDark),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -1506,9 +1568,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text(
-                        'Dosage: ${item['dosage'] ?? "1 tab"} • Frequency: ${item['frequency'] ?? "Daily"}',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                      Expanded(
+                        child: Text(
+                          'Dosage: ${item['dosage'] ?? "1 tab"} • Frequency: ${item['frequency'] ?? "Daily"}',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
                       ),
                     ],
                   ),
@@ -1544,9 +1610,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               children: [
                 const Icon(Icons.event_repeat, size: 14, color: AppColors.primary),
                 const SizedBox(width: 4),
-                Text(
-                  'Follow-Up Date: ${followUp.toString().split('T').first}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppColors.primary),
+                Expanded(
+                  child: Text(
+                    'Follow-Up Date: ${followUp.toString().split('T').first}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppColors.primary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -1615,19 +1684,24 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.description, color: AppColors.primary),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Create Digital E-Prescription',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textDark,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.description, color: AppColors.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Create Digital E-Prescription',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textDark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close),
@@ -1654,9 +1728,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                 children: [
                                   const Icon(Icons.person, size: 16, color: AppColors.primary),
                                   const SizedBox(width: 6),
-                                  Text(
-                                    'Patient: $patientName',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                                  Expanded(
+                                    child: Text(
+                                      'Patient: $patientName',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1689,10 +1766,14 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Prescribed Medications',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            const Expanded(
+                              child: Text(
+                                'Prescribed Medications',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             TextButton.icon(
                               onPressed: () {
                                 setStateModal(() {

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/video_call_model.dart';
+import 'api_helper.dart';
 
 class VideoCallService {
   static const String baseUrl =
@@ -27,7 +28,7 @@ class VideoCallService {
     try {
       final response = await http
           .post(url, headers: headers, body: jsonEncode(bodyData))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -44,7 +45,10 @@ class VideoCallService {
     } catch (e) {
       return StartVideoCallResponse(
         success: false,
-        message: 'Error starting video call: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error starting video call',
+        ),
       );
     }
   }
@@ -68,7 +72,7 @@ class VideoCallService {
     try {
       final response = await http
           .get(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
 
@@ -85,7 +89,10 @@ class VideoCallService {
       return ActiveVideoCallResponse(
         success: false,
         exists: false,
-        message: 'Error checking active video call: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error checking active video call',
+        ),
       );
     }
   }
@@ -107,7 +114,7 @@ class VideoCallService {
     try {
       final response = await http
           .patch(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode == 200 || response.statusCode == 201) {
         return true;
       }
@@ -135,7 +142,7 @@ class VideoCallService {
     try {
       final response = await http
           .patch(url, headers: headers)
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode == 200 || response.statusCode == 201) {
         return true;
       }

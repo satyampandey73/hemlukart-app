@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/clinic_model.dart';
+import 'api_helper.dart';
 
 class ClinicService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/clinics';
@@ -37,7 +38,7 @@ class ClinicService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -53,7 +54,10 @@ class ClinicService {
       return ClinicsApiResponse(
         success: false,
         clinics: [],
-        message: 'Failed to fetch clinics list: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch clinics list',
+        ),
       );
     }
   }
@@ -75,7 +79,7 @@ class ClinicService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -91,7 +95,10 @@ class ClinicService {
       return ClinicsApiResponse(
         success: false,
         clinics: [],
-        message: 'Failed to fetch clinics for doctor: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch clinics for doctor',
+        ),
       );
     }
   }
@@ -115,7 +122,7 @@ class ClinicService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -129,7 +136,10 @@ class ClinicService {
     } catch (e) {
       return SingleClinicApiResponse(
         success: false,
-        message: 'Failed to fetch clinic details: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch clinic details',
+        ),
       );
     }
   }
@@ -150,7 +160,7 @@ class ClinicService {
               'Authorization': 'Bearer $token',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -171,7 +181,10 @@ class ClinicService {
       return MyClinicsApiResponse(
         success: false,
         clinics: [],
-        message: 'Network error fetching doctor clinics: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctor clinics',
+        ),
       );
     }
   }
@@ -235,7 +248,7 @@ class ClinicService {
         }
       }
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 25));
+      final streamedResponse = await request.send().timeout(ApiHelper.defaultTimeout);
       final responseBody = await streamedResponse.stream.bytesToString();
 
       if (streamedResponse.statusCode == 200 || streamedResponse.statusCode == 201) {
@@ -328,7 +341,7 @@ class ClinicService {
         }
       }
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 25));
+      final streamedResponse = await request.send().timeout(ApiHelper.defaultTimeout);
       final responseBody = await streamedResponse.stream.bytesToString();
 
       if (streamedResponse.statusCode == 200 || streamedResponse.statusCode == 201) {
@@ -348,7 +361,10 @@ class ClinicService {
     } catch (e) {
       return ClinicMutationResponse(
         success: false,
-        message: 'Network error updating clinic: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update clinic',
+        ),
       );
     }
   }
@@ -369,7 +385,7 @@ class ClinicService {
               'Authorization': 'Bearer $token',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         try {
@@ -395,7 +411,10 @@ class ClinicService {
     } catch (e) {
       return ClinicMutationResponse(
         success: false,
-        message: 'Network error deleting clinic: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to delete clinic',
+        ),
       );
     }
   }
@@ -423,7 +442,7 @@ class ClinicService {
               'role': role.trim(),
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return {
@@ -434,7 +453,10 @@ class ClinicService {
     } catch (e) {
       return {
         'success': false,
-        'message': 'Network error adding doctor to clinic: $e',
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to add doctor to clinic',
+        ),
       };
     }
   }

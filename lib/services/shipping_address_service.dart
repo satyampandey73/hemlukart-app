@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/shipping_address_model.dart';
+import 'api_helper.dart';
 
 class ShippingAddressService {
   static const String baseUrl =
@@ -26,7 +27,7 @@ class ShippingAddressService {
     try {
       final response = await http
           .get(url, headers: _buildHeaders(token))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -42,7 +43,10 @@ class ShippingAddressService {
       return ShippingAddressesApiResponse(
         success: false,
         data: [],
-        message: 'Failed to fetch shipping addresses: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch shipping addresses',
+        ),
       );
     }
   }
@@ -77,14 +81,17 @@ class ShippingAddressService {
     try {
       final response = await http
           .post(url, headers: _buildHeaders(token), body: jsonEncode(payload))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return ShippingAddressApiResponse.fromJson(body);
     } catch (e) {
       return ShippingAddressApiResponse(
         success: false,
-        message: 'Failed to add shipping address: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to add shipping address',
+        ),
       );
     }
   }
@@ -120,14 +127,17 @@ class ShippingAddressService {
     try {
       final response = await http
           .put(url, headers: _buildHeaders(token), body: jsonEncode(payload))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return ShippingAddressApiResponse.fromJson(body);
     } catch (e) {
       return ShippingAddressApiResponse(
         success: false,
-        message: 'Failed to update shipping address: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update shipping address',
+        ),
       );
     }
   }
@@ -142,14 +152,17 @@ class ShippingAddressService {
     try {
       final response = await http
           .delete(url, headers: _buildHeaders(token))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return ShippingAddressActionResponse.fromJson(body);
     } catch (e) {
       return ShippingAddressActionResponse(
         success: false,
-        message: 'Failed to delete shipping address: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to delete shipping address',
+        ),
       );
     }
   }

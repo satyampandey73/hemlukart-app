@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../services/delivery_charge_service.dart';
 import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -18,12 +19,17 @@ class _CartScreenState extends State<CartScreen> {
   bool _promoApplied = false;
   double _promoDiscount = 0.0;
 
+  double _deliveryFee = 0.0;
+  bool _isFreeDelivery = false;
+  double _lastSubtotal = -1.0;
+
   @override
   void initState() {
     super.initState();
     _appState.addListener(_rebuild);
     _appState.fetchCartFromApi();
     _appState.fetchCoupons();
+    DeliveryChargeService.fetchActiveSlabs();
   }
 
   @override
@@ -52,7 +58,27 @@ class _CartScreenState extends State<CartScreen> {
       totalItems += item.quantity;
     }
 
-    double delivery = 0.0;
+    if (cart.isNotEmpty && subtotal != _lastSubtotal) {
+      _lastSubtotal = subtotal;
+      _deliveryFee = DeliveryChargeService.calculateFallbackCharge(subtotal);
+      _isFreeDelivery = _deliveryFee <= 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final res = await DeliveryChargeService.calculateDeliveryCharge(subtotal);
+        if (mounted && _lastSubtotal == subtotal) {
+          setState(() {
+            _deliveryFee = res.shippingCharge;
+            _isFreeDelivery = res.isFreeDelivery;
+          });
+        }
+      });
+    } else if (cart.isEmpty && _deliveryFee != 0.0) {
+      _deliveryFee = 0.0;
+      _isFreeDelivery = true;
+      _lastSubtotal = 0.0;
+    }
+
+    double delivery = _deliveryFee;
     double promoDiscount = 0.0;
     final appliedCoupon = _appState.appliedCoupon;
     if (appliedCoupon != null) {
@@ -186,7 +212,7 @@ class _CartScreenState extends State<CartScreen> {
                         // Prices Breakdown
                         _buildPriceSummaryRow('Subtotal ($totalItems items)', '₹${subtotal.toStringAsFixed(2)}'),
                         const SizedBox(height: 6),
-                        _buildPriceSummaryRow('Delivery Charges', delivery == 0.0 ? 'FREE' : '₹${delivery.toStringAsFixed(2)}'),
+                        _buildPriceSummaryRow('Delivery Charges', (_isFreeDelivery || delivery <= 0.0) ? 'FREE' : '₹${delivery.toStringAsFixed(2)}'),
                         if (appliedCoupon != null || _promoApplied) ...[
                           const SizedBox(height: 6),
                           _buildPriceSummaryRow(
@@ -477,8 +503,9 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                     const SizedBox(height: 6),
 
-                    // Custom Tags matching Figma
-                    Row(
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
                         if (prod.isPrescriptionRequired) ...[
                           Container(
@@ -493,11 +520,10 @@ class _CartScreenState extends State<CartScreen> {
                               style: TextStyle(color: Colors.blue[700], fontSize: 8, fontWeight: FontWeight.bold),
                             ),
                           ),
-                          const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF14B8A6), // Teal solid In Stock tag
+                              color: const Color(0xFF14B8A6),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
@@ -514,6 +540,7 @@ class _CartScreenState extends State<CartScreen> {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(Icons.info_outline, size: 8, color: Colors.grey[600]),
                                 const SizedBox(width: 2),
@@ -524,7 +551,6 @@ class _CartScreenState extends State<CartScreen> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -683,49 +709,52 @@ class _CartScreenState extends State<CartScreen> {
               ),
 
               // Wishlist & Remove buttons
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      _appState.toggleProductWishlist(prod.id);
-                      _appState.removeFromCart(prod);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Moved to Wishlist.')),
-                      );
-                    },
-                    icon: const Icon(Icons.favorite_border, size: 12, color: AppColors.secondary),
-                    label: const Text(
-                      'Move to Wishlist',
-                      style: TextStyle(color: AppColors.secondary, fontSize: 11, fontWeight: FontWeight.bold),
+              Flexible(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        _appState.toggleProductWishlist(prod.id);
+                        _appState.removeFromCart(prod);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Moved to Wishlist.')),
+                        );
+                      },
+                      icon: const Icon(Icons.favorite_border, size: 12, color: AppColors.secondary),
+                      label: const Text(
+                        'Wishlist',
+                        style: TextStyle(color: AppColors.secondary, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        side: const BorderSide(color: AppColors.secondary),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      side: const BorderSide(color: AppColors.secondary),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                      minimumSize: const Size(0, 28),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        _appState.removeFromCart(prod);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Removed from Cart.')),
+                        );
+                      },
+                      icon: const Icon(Icons.delete_outline, size: 14, color: AppColors.error),
+                      label: const Text(
+                        'Remove',
+                        style: TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () {
-                      _appState.removeFromCart(prod);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Removed from Cart.')),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_outline, size: 14, color: AppColors.error),
-                    label: const Text(
-                      'Remove',
-                      style: TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      minimumSize: const Size(0, 28),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),

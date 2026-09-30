@@ -12,6 +12,7 @@ import '../services/banner_service.dart';
 import 'cart_screen.dart';
 import 'login_screen.dart';
 import 'clinic_listing_screen.dart';
+import '../widgets/variant_selector_bottom_sheet.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final Product product;
@@ -41,10 +42,34 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   RatingStats? _ratingStats;
   bool _isLoadingRatings = false;
 
+  late List<ProductVariant> _variants;
+  late ProductVariant _selectedVariant;
+
+  void _initVariants() {
+    _variants = _currentProduct.availableVariants;
+    if (_variants.isEmpty) {
+      _selectedVariant = ProductVariant(
+        id: _currentProduct.id,
+        packSize: _currentProduct.packSize.isNotEmpty
+            ? _currentProduct.packSize
+            : '1 Unit',
+        price: _currentProduct.price,
+        originalPrice: _currentProduct.originalPrice,
+        isOutOfStock: _currentProduct.isOutOfStock,
+      );
+      _variants = [_selectedVariant];
+    } else {
+      _selectedVariant = matchInitialVariant(_variants, _currentProduct.packSize);
+    }
+  }
+
+  Product get _activeProduct => _currentProduct.copyWithVariant(_selectedVariant);
+
   @override
   void initState() {
     super.initState();
     _currentProduct = widget.product;
+    _initVariants();
     _selectedImage = _currentProduct.image.isNotEmpty
         ? _currentProduct.image
         : 'assets/p1.png';
@@ -84,6 +109,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       setState(() {
         if (liveProd != null) {
           _currentProduct = liveProd;
+          _initVariants();
           if (liveProd.image.isNotEmpty && liveProd.image.startsWith('http')) {
             _selectedImage = liveProd.image;
             _galleryImages = [liveProd.image];
@@ -211,13 +237,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   int _qty = 1;
 
-  String _selectedPackSize = '60 Tabs';
-  String _selectedPotency = '500mg';
-  String _selectedFlavour = 'Orange';
+  /// Returns the current CartItem for this product and selected variant, or null if not in cart.
+  CartItem? get _cartItem => _appState.cart.where(
+        (item) =>
+            item.product.id == _activeProduct.id &&
+            item.product.packSize == _activeProduct.packSize,
+      ).firstOrNull;
 
-  final List<String> _packSizes = ['30 Tabs', '60 Tabs', '120 Tabs'];
-  final List<String> _potencies = ['500mg', '1000mg'];
-  final List<String> _flavours = ['Orange', 'Pineapple', 'Vanilla'];
+  /// Sync _qty from the cart when the product is already added.
+  void _syncQtyFromCart() {
+    final item = _cartItem;
+    if (item != null && _qty != item.quantity) {
+      setState(() => _qty = item.quantity);
+    }
+  }
 
   bool _descExpanded = true;
   bool _benefitsExpanded = false;
@@ -225,7 +258,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final prod = _currentProduct;
+    final prod = _activeProduct;
+    // Sync local qty with cart whenever we rebuild (in case cart changed externally)
+    final cartEntry = _cartItem;
+    if (cartEntry != null && _qty != cartEntry.quantity) {
+      // Schedule after frame so we don't call setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncQtyFromCart());
+    }
     final isWish = _appState.wishlistProductIds.contains(prod.id);
 
     return Scaffold(
@@ -480,26 +519,178 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Attributes from API (Pack Size, Potency, Category)
-                  const Text(
-                    'Pack Size & Packing',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Chip(
-                    label: Text(prod.packSize),
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    labelStyle: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                  // Attributes from API (Bottle Type / Pack Size, Potency, Category)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Bottle Type / Pack Size',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      if (_variants.length > 1)
+                        Text(
+                          '${_variants.length} available',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: _variants.map((v) {
+                      final isSelected = v.packSize.toLowerCase() ==
+                          _selectedVariant.packSize.toLowerCase();
+                      final int disc = v.originalPrice > v.price
+                          ? (((v.originalPrice - v.price) / v.originalPrice) * 100).round()
+                          : 0;
+                      final displayPack = formatPackText(v.packSize);
+
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedVariant = v;
+                            _qty = _cartItem?.quantity ?? 1;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(14),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withValues(alpha: 0.06)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : const Color(0xFFE2E8F0),
+                              width: isSelected ? 1.8 : 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: isSelected
+                                    ? AppColors.primary.withValues(alpha: 0.12)
+                                    : Colors.black.withValues(alpha: 0.03),
+                                blurRadius: isSelected ? 8 : 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : Colors.transparent,
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : const Color(0xFFCBD5E1),
+                                        width: isSelected ? 2 : 1.5,
+                                      ),
+                                    ),
+                                    child: isSelected
+                                        ? const Center(
+                                            child: Icon(
+                                              Icons.check,
+                                              size: 11,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    displayPack,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '₹${v.price.toInt()}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  if (v.originalPrice > v.price) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '₹${v.originalPrice.toInt()}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF94A3B8),
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                  ],
+                                  if (disc > 0) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1.5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDCFCE7),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        '$disc% OFF',
+                                        style: const TextStyle(
+                                          fontSize: 9.5,
+                                          color: Color(0xFF16A34A),
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
                   const Text(
                     'Variant / Potency',
                     style: TextStyle(
@@ -509,16 +700,51 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Chip(
-                    label: Text(prod.potency),
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    labelStyle: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(
+                            Icons.verified_outlined,
+                            size: 15,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          prod.potency,
+                          style: const TextStyle(
+                            color: AppColors.textDark,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   const Text(
                     'Category',
                     style: TextStyle(
@@ -528,90 +754,162 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Chip(
-                    label: Text(prod.category),
-                    backgroundColor: Colors.grey.shade200,
-                    labelStyle: const TextStyle(
-                      color: AppColors.textDark,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(
+                            Icons.category_outlined,
+                            size: 15,
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          prod.category,
+                          style: const TextStyle(
+                            color: AppColors.textDark,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
                   // Qty adjust and Add to cart
                   Row(
                     children: [
                       Container(
                         decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFF8FAFC),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.remove, size: 20),
+                              icon: const Icon(Icons.remove, size: 18),
+                              color: const Color(0xFF475569),
                               onPressed: () {
-                                if (_qty > 1) setState(() => _qty--);
+                                if (_qty > 1) {
+                                  setState(() => _qty--);
+                                  // If already in cart, update immediately
+                                  if (_cartItem != null) {
+                                    _appState.updateCartQty(prod, _qty);
+                                  }
+                                }
                               },
                             ),
-                            Text(
-                              '$_qty',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(
+                                '$_qty',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Color(0xFF0F172A),
+                                ),
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.add, size: 20),
-                              onPressed: () => setState(() => _qty++),
+                              icon: const Icon(Icons.add, size: 18),
+                              color: AppColors.primary,
+                              onPressed: () {
+                                setState(() => _qty++);
+                                // If already in cart, update immediately
+                                if (_cartItem != null) {
+                                  _appState.updateCartQty(prod, _qty);
+                                }
+                              },
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: () {
-                            _appState.addToCart(prod, qty: _qty);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Added $_qty x ${prod.name} to cart!',
-                                ),
-                                action: SnackBarAction(
-                                  label: 'View Cart',
-                                  textColor: Colors.amber,
-                                  onPressed: () async {
-                                    final navigator = Navigator.of(context);
-                                    final shouldNavigate =
-                                        await LoginScreen.checkAndNavigate(
-                                          context,
-                                        );
-                                    if (!mounted || !context.mounted) return;
-                                    if (shouldNavigate) {
-                                      navigator.push(
-                                        MaterialPageRoute(
-                                          builder: (_) => const CartScreen(),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                ),
-                              ),
-                            );
-                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            foregroundColor: Colors.white,
+                            elevation: 2,
+                            shadowColor: AppColors.primary.withValues(alpha: 0.35),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(14),
                             ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
-                          child: const Text(
-                            'Add to Cart',
-                            style: TextStyle(
+                          onPressed: () async {
+                            // Capture context-dependent objects BEFORE any await
+                            final messenger = ScaffoldMessenger.of(context);
+                            final navigator = Navigator.of(context);
+                            if (_cartItem != null) {
+                              // Already in cart — just sync quantity
+                              await _appState.updateCartQty(prod, _qty);
+                              if (!mounted) return;
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Cart updated: $_qty x ${prod.name}',
+                                  ),
+                                  action: SnackBarAction(
+                                    label: 'View Cart',
+                                    textColor: Colors.amber,
+                                    onPressed: () {
+                                      navigator.push(MaterialPageRoute(
+                                        builder: (_) => const CartScreen(),
+                                      ));
+                                    },
+                                  ),
+                                ),
+                              );
+                            } else {
+                              // Not in cart yet — add it
+                              _appState.addToCart(prod, qty: _qty);
+                              if (!mounted) return;
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Added $_qty x ${prod.name} to cart!',
+                                  ),
+                                  action: SnackBarAction(
+                                    label: 'View Cart',
+                                    textColor: Colors.amber,
+                                    onPressed: () {
+                                      navigator.push(MaterialPageRoute(
+                                        builder: (_) => const CartScreen(),
+                                      ));
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: Text(
+                            _cartItem != null ? 'Update Cart' : 'Add to Cart',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 15,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/product_faq_model.dart';
+import 'api_helper.dart';
 
 class ProductFaqService {
   static const String baseUrl =
@@ -20,7 +21,7 @@ class ProductFaqService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -36,7 +37,10 @@ class ProductFaqService {
       return ProductFaqsApiResponse(
         success: false,
         faqs: [],
-        message: 'Failed to fetch product FAQs: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch product FAQs',
+        ),
       );
     }
   }
@@ -65,7 +69,7 @@ class ProductFaqService {
             headers: headers,
             body: jsonEncode({'question': question.trim()}),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -84,7 +88,10 @@ class ProductFaqService {
     } catch (e) {
       return AskProductFaqResponse(
         success: false,
-        message: 'Failed to submit question: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to submit question',
+        ),
       );
     }
   }

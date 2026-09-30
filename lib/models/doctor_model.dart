@@ -129,6 +129,39 @@ class DoctorDocumentsData {
     );
   }
 
+  DoctorDocumentsData copyWith({
+    String? panCard,
+    String? aadhaarBack,
+    String? aadhaarFront,
+    String? profilePhoto,
+    String? prescription,
+    String? aadhaarNumber,
+    String? panCardNumber,
+    String? cancelledCheque,
+    List<String>? degreeCertificates,
+    String? degreeUniversityNumber,
+    String? registrationCertificate,
+    String? medicalRegistrationNumber,
+  }) {
+    return DoctorDocumentsData(
+      panCard: panCard ?? this.panCard,
+      aadhaarBack: aadhaarBack ?? this.aadhaarBack,
+      aadhaarFront: aadhaarFront ?? this.aadhaarFront,
+      profilePhoto: profilePhoto ?? this.profilePhoto,
+      prescription: prescription ?? this.prescription,
+      aadhaarNumber: aadhaarNumber ?? this.aadhaarNumber,
+      panCardNumber: panCardNumber ?? this.panCardNumber,
+      cancelledCheque: cancelledCheque ?? this.cancelledCheque,
+      degreeCertificates: degreeCertificates ?? this.degreeCertificates,
+      degreeUniversityNumber:
+          degreeUniversityNumber ?? this.degreeUniversityNumber,
+      registrationCertificate:
+          registrationCertificate ?? this.registrationCertificate,
+      medicalRegistrationNumber:
+          medicalRegistrationNumber ?? this.medicalRegistrationNumber,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'panCard': panCard,
@@ -602,6 +635,92 @@ class ApiDoctor {
               .map((e) => DoctorConsultationFee.fromJson(e as Map<String, dynamic>))
               .toList()
           : null,
+    );
+  }
+
+  ApiDoctor copyWith({
+    String? id,
+    String? mobile,
+    bool? isMobileVerified,
+    String? fullName,
+    String? gender,
+    String? dateOfBirth,
+    String? email,
+    String? address,
+    String? city,
+    String? state,
+    String? pinCode,
+    String? ayushSystem,
+    DoctorGraduationDetails? graduationDetails,
+    String? registrationNumber,
+    String? stateAyushCouncil,
+    DoctorHighestQualification? highestQualification,
+    int? totalExperience,
+    String? currentClinicOrHospital,
+    String? currentDesignation,
+    DoctorExpertise? expertise,
+    String? about,
+    String? consultationPhilosophy,
+    String? achievements,
+    DoctorBankDetails? bankDetails,
+    DoctorDocumentsData? documents,
+    DoctorConsent? consent,
+    String? registrationStatus,
+    String? rejectionReason,
+    bool? isActive,
+    bool? isDeleted,
+    String? deletedAt,
+    String? lastLoginAt,
+    String? createdBy,
+    String? createdAt,
+    String? updatedAt,
+    String? createdByName,
+    String? createdByRole,
+    List<DoctorSchedule>? schedules,
+    List<DoctorConsultationFee>? consultationFees,
+  }) {
+    return ApiDoctor(
+      id: id ?? this.id,
+      mobile: mobile ?? this.mobile,
+      isMobileVerified: isMobileVerified ?? this.isMobileVerified,
+      fullName: fullName ?? this.fullName,
+      gender: gender ?? this.gender,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+      email: email ?? this.email,
+      address: address ?? this.address,
+      city: city ?? this.city,
+      state: state ?? this.state,
+      pinCode: pinCode ?? this.pinCode,
+      ayushSystem: ayushSystem ?? this.ayushSystem,
+      graduationDetails: graduationDetails ?? this.graduationDetails,
+      registrationNumber: registrationNumber ?? this.registrationNumber,
+      stateAyushCouncil: stateAyushCouncil ?? this.stateAyushCouncil,
+      highestQualification: highestQualification ?? this.highestQualification,
+      totalExperience: totalExperience ?? this.totalExperience,
+      currentClinicOrHospital:
+          currentClinicOrHospital ?? this.currentClinicOrHospital,
+      currentDesignation: currentDesignation ?? this.currentDesignation,
+      expertise: expertise ?? this.expertise,
+      about: about ?? this.about,
+      consultationPhilosophy:
+          consultationPhilosophy ?? this.consultationPhilosophy,
+      achievements: achievements ?? this.achievements,
+      bankDetails: bankDetails ?? this.bankDetails,
+      documents: documents ?? this.documents,
+      consent: consent ?? this.consent,
+      registrationStatus: registrationStatus ?? this.registrationStatus,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      isActive: isActive ?? this.isActive,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
+      lastLoginAt: lastLoginAt ?? this.lastLoginAt,
+      createdBy: createdBy ?? this.createdBy,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdByName: createdByName ?? this.createdByName,
+      createdByRole: createdByRole ?? this.createdByRole,
+      schedules: schedules ?? this.schedules,
+      consultationFees: consultationFees ?? this.consultationFees,
     );
   }
 }

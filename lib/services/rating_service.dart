@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/rating_model.dart';
+import 'api_helper.dart';
 
 class RatingService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/ratings';
@@ -43,7 +44,7 @@ class RatingService {
               'review': review.trim(),
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -67,7 +68,10 @@ class RatingService {
     } catch (e) {
       return AddRatingResponse(
         success: false,
-        message: 'Failed to submit rating: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to submit rating',
+        ),
       );
     }
   }
@@ -88,7 +92,7 @@ class RatingService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -102,7 +106,10 @@ class RatingService {
     } catch (e) {
       return GetRatingsResponse(
         success: false,
-        message: 'Failed to fetch ratings: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch ratings',
+        ),
       );
     }
   }
@@ -126,7 +133,7 @@ class RatingService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -140,7 +147,10 @@ class RatingService {
     } catch (e) {
       return GetRatingsResponse(
         success: false,
-        message: 'Failed to fetch all ratings: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch all ratings',
+        ),
       );
     }
   }

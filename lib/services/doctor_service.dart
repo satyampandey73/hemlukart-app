@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/doctor_model.dart';
+import 'api_helper.dart';
 import 'doctor_auth_service.dart';
 
 class DoctorService {
@@ -55,7 +56,7 @@ class DoctorService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -87,7 +88,10 @@ class DoctorService {
       return DoctorsListApiResponse(
         success: false,
         doctors: [],
-        message: 'Failed to fetch doctors list: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctors list',
+        ),
       );
     }
   }
@@ -111,7 +115,7 @@ class DoctorService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -125,7 +129,10 @@ class DoctorService {
     } catch (e) {
       return SingleDoctorApiResponse(
         success: false,
-        message: 'Failed to fetch doctor details: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctor details',
+        ),
       );
     }
   }

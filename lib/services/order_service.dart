@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/order_model.dart';
+import 'api_helper.dart';
 
 class OrderService {
   static const String checkoutUrl =
@@ -43,7 +44,7 @@ class OrderService {
       }
       request.files.add(await http.MultipartFile.fromPath('file', trimmed));
       final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 30),
       );
       final response = await http.Response.fromStream(streamedResponse);
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -99,14 +100,17 @@ class OrderService {
     try {
       final response = await http
           .post(url, headers: _buildHeaders(token), body: jsonEncode(payload))
-          .timeout(const Duration(seconds: 20));
+          .timeout(const Duration(seconds: 30));
 
       final Map<String, dynamic> body = jsonDecode(response.body);
       return CheckoutApiResponse.fromJson(body);
     } catch (e) {
       return CheckoutApiResponse(
         success: false,
-        message: 'Failed to process checkout: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to process checkout',
+        ),
       );
     }
   }
@@ -118,7 +122,7 @@ class OrderService {
     try {
       final response = await http
           .get(url, headers: _buildHeaders(token))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -134,7 +138,10 @@ class OrderService {
       return MyOrdersApiResponse(
         success: false,
         data: [],
-        message: 'Failed to fetch user orders: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch user orders',
+        ),
       );
     }
   }
@@ -149,7 +156,7 @@ class OrderService {
     try {
       final response = await http
           .get(url, headers: _buildHeaders(token))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -163,7 +170,10 @@ class OrderService {
     } catch (e) {
       return SingleOrderDetailApiResponse(
         success: false,
-        message: 'Failed to fetch order details: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch order details',
+        ),
       );
     }
   }

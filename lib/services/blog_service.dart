@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/blog_model.dart';
+import 'api_helper.dart';
 
 class BlogService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/blogs';
@@ -17,7 +18,7 @@ class BlogService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -33,7 +34,10 @@ class BlogService {
       return BlogListApiResponse(
         success: false,
         blogs: [],
-        message: 'Failed to fetch blogs: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch blogs',
+        ),
       );
     }
   }
@@ -50,7 +54,7 @@ class BlogService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -66,7 +70,10 @@ class BlogService {
       return BlogDetailApiResponse(
         success: false,
         blog: null,
-        message: 'Failed to fetch blog details: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch blog details',
+        ),
       );
     }
   }

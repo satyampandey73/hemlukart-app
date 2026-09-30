@@ -344,6 +344,7 @@ class CheckoutData {
       items: cartItems,
       totalAmount: order.totalAmount,
       discount: order.discountAmount,
+      shippingCharge: order.shippingCharge,
       status: order.orderStatus.isNotEmpty
           ? '${order.orderStatus[0].toUpperCase()}${order.orderStatus.substring(1)}'
           : 'Placed',
@@ -449,6 +450,7 @@ class MyOrderItem {
       items: cartItems,
       totalAmount: orderDetails.totalAmount,
       discount: orderDetails.discountAmount,
+      shippingCharge: orderDetails.shippingCharge,
       status: orderDetails.orderStatus.isNotEmpty
           ? '${orderDetails.orderStatus[0].toUpperCase()}${orderDetails.orderStatus.substring(1)}'
           : 'Placed',
@@ -589,6 +591,7 @@ class SingleOrderDetailData {
       items: cartItems,
       totalAmount: order.totalAmount,
       discount: order.discountAmount,
+      shippingCharge: order.shippingCharge,
       status: order.orderStatus.isNotEmpty
           ? '${order.orderStatus[0].toUpperCase()}${order.orderStatus.substring(1)}'
           : 'Placed',

@@ -106,6 +106,11 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
     final paymentMode = (_apiOrderDetail?.order.paymentMode ?? widget.order?.paymentMode ?? 'cod').toUpperCase();
     final totalAmount = _apiOrderDetail?.order.totalAmount ?? widget.order?.totalAmount ?? 0.0;
+    final shippingCharge = _apiOrderDetail?.order.shippingCharge ?? widget.order?.shippingCharge ?? 0.0;
+    final discountAmount = _apiOrderDetail?.order.discountAmount ?? widget.order?.discount ?? 0.0;
+    final subtotal = (_apiOrderDetail?.order.subtotal != null && _apiOrderDetail!.order.subtotal > 0)
+        ? _apiOrderDetail!.order.subtotal
+        : (totalAmount - shippingCharge + discountAmount);
 
     final historyList = _apiOrderDetail?.history ?? [];
     final itemsList = _apiOrderDetail?.items ?? [];
@@ -586,7 +591,48 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                             }).toList(),
                           ),
 
-                        const Divider(height: 12),
+                        const Divider(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Items Subtotal', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                            Text('₹${subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        if (discountAmount > 0) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Discount Saved', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600)),
+                              Text('-₹${discountAmount.toStringAsFixed(2)}', style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Delivery Fee', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                            Text(
+                              shippingCharge <= 0 ? 'FREE' : '₹${shippingCharge.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: shippingCharge <= 0 ? Colors.green : AppColors.textDark,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Paid', style: TextStyle(color: AppColors.textDark, fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text('₹${totalAmount.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 15)),
+                          ],
+                        ),
+                        const Divider(height: 16),
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(

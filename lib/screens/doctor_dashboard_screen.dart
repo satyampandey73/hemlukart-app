@@ -24,6 +24,7 @@ import 'new_home_screen.dart';
 import 'product_catalog_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'doctor_eprescriptions_screen.dart';
+import 'chat_screen.dart';
 
 class DoctorDashboardScreen extends StatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -706,7 +707,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         if (status == 'cancelled' || status == 'completed') {
           return false;
         }
-        return status == 'pending' || status == 'confirmed' || status == 'scheduled' || status == 'in-progress' || status == 'in_progress';
+        final s = status.replaceAll(' ', '_').replaceAll('-', '_');
+        return s == 'pending' ||
+            s == 'confirmed' ||
+            s == 'scheduled' ||
+            s.contains('progress') ||
+            s.contains('process') ||
+            s == 'active' ||
+            s == 'ongoing';
       }
       if (_selectedFilter == 'Completed') {
         return status == 'completed';
@@ -769,7 +777,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 Expanded(
                   child: _buildStatCard(
                     title: 'Active Consults',
-                    value: '${_doctorAppointments.where((a) => a.status.toLowerCase() == 'in-progress' || a.status.toLowerCase() == 'in_progress' || a.status.toLowerCase() == 'confirmed' || a.status.toLowerCase() == 'pending' || a.status.toLowerCase() == 'scheduled').length}',
+                    value: '${_doctorAppointments.where((a) => !a.status.toLowerCase().contains('cancel') && !a.status.toLowerCase().contains('complet')).length}',
                     subtitle: 'Active Slots',
                     icon: Icons.videocam_rounded,
                     color: const Color(0xFFD97706),
@@ -792,9 +800,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                     color: AppColors.textDark,
                   ),
                 ),
-                Text(
-                  '${displayAppointments.length} ${_selectedFilter == 'All' ? 'scheduled' : _selectedFilter.toLowerCase()}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${displayAppointments.length} ${_selectedFilter == 'All' ? 'scheduled' : _selectedFilter.toLowerCase()}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+                    textAlign: TextAlign.end,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -880,37 +893,44 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.local_pharmacy_rounded, color: Color(0xFF0D9488), size: 18),
-                const SizedBox(width: 6),
-                const Text(
-                  'Ayush Pharmacy',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D9488).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
-                  ),
-                  child: const Text(
-                    'Doctor Pricing',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF0D9488),
+            Expanded(
+              child: Row(
+                children: [
+                  const Icon(Icons.local_pharmacy_rounded, color: Color(0xFF0D9488), size: 18),
+                  const SizedBox(width: 6),
+                  const Flexible(
+                    child: Text(
+                      'Ayush Pharmacy',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xFF0D9488).withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      'Doctor Pricing',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0D9488),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 4),
             TextButton(
               onPressed: () {
                 Navigator.push(
@@ -1388,10 +1408,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Showing 1-${filteredPatients.length} of 1,248 patients',
-                  style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                Expanded(
+                  child: Text(
+                    'Showing 1-${filteredPatients.length} of 1,248 patients',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Row(
                   children: [
                     Container(
@@ -1437,7 +1461,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
               Icon(icon, size: 16, color: accentColor),
             ],
           ),
@@ -1882,12 +1913,16 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    hasFilter
-                        ? '${results.length} result${results.length == 1 ? "" : "s"} for "$_rxSearchQuery"${_rxStatusFilter != "All Statuses" ? " · $_rxStatusFilter" : ""}'
-                        : '${results.length} prescription${results.length == 1 ? "" : "s"} total',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+                  Expanded(
+                    child: Text(
+                      hasFilter
+                          ? '${results.length} result${results.length == 1 ? "" : "s"} for "$_rxSearchQuery"${_rxStatusFilter != "All Statuses" ? " · $_rxStatusFilter" : ""}'
+                          : '${results.length} prescription${results.length == 1 ? "" : "s"} total',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () => _refreshPrescriptions(),
                     child: const Row(
@@ -2011,7 +2046,14 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(item['patientName'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              Expanded(
+                child: Text(
+                  item['patientName'],
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
               Text(item['timeAgo'], style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
             ],
           ),
@@ -2298,15 +2340,19 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    rxNo,
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Color(0xFF94A3B8),
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
+                  Expanded(
+                    child: Text(
+                      rxNo,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Row(
                     children: [
                       if (issuedDate.isNotEmpty) ...[
@@ -2343,18 +2389,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   // TAB 3: TELEHEALTH & CONSULTATION
   // ===========================================================================
   Widget _buildTelehealthTab() {
-    // Filter: video consultations with confirmed status only
+    // Filter: video consultations with confirmed or active status
     final videoAppointments = _doctorAppointments
         .where((a) =>
             (a.consultationType.toLowerCase() == 'video' ||
                 a.consultationType.toLowerCase() == 'online' ||
                 a.consultationType.toLowerCase() == 'telehealth') &&
-            a.status.toLowerCase() == 'confirmed')
+            (a.status.toLowerCase() == 'confirmed' ||
+             a.status.toLowerCase().contains('progress') ||
+             a.status.toLowerCase().contains('process') ||
+             a.status.toLowerCase() == 'active' ||
+             a.status.toLowerCase() == 'ongoing'))
         .toList();
 
-    // For display purposes — confirmed appointments shown as "upcoming"
-    final activeApts = <UserAppointmentItem>[];
-    final upcomingApts = videoAppointments;
+    // Categorize active (in-progress/in-process) vs upcoming
+    final activeApts = videoAppointments.where((a) {
+      final s = a.status.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+      return s.contains('progress') || s.contains('process') || s == 'active' || s == 'ongoing';
+    }).toList();
+    final upcomingApts = videoAppointments.where((a) {
+      final s = a.status.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+      return !(s.contains('progress') || s.contains('process') || s == 'active' || s == 'ongoing');
+    }).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(14),
@@ -2363,22 +2419,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         children: [
           // ── Header ──────────────────────────────────────────────
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Text('Telehealth', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(12)),
-                    child: Text(
-                      '${videoAppointments.length} Confirmed',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text('Telehealth', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(12)),
+                        child: Text(
+                          '${videoAppointments.length} Confirmed',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -2386,11 +2448,12 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFF6EE7B7)),
                 ),
-                child: Row(
-                  children: const [
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Icon(Icons.circle, color: Color(0xFF059669), size: 7),
                     SizedBox(width: 4),
-                    Text('Video Consultations', style: TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600)),
+                    Text('Video Consult', style: TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
@@ -2548,22 +2611,28 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                       Text(
                         apt.patientName.isNotEmpty ? apt.patientName : 'Patient',
                         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                       const SizedBox(height: 2),
                       Row(
                         children: [
                           const Icon(Icons.videocam_outlined, size: 12, color: Color(0xFF64748B)),
                           const SizedBox(width: 3),
-                          const Text('Video Consultation', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                          if (apt.patientAge != null) ...[
-                            const Text(' • ', style: TextStyle(fontSize: 11, color: Color(0xFFCBD5E1))),
-                            Text('${apt.patientAge}y', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                          ],
+                          Expanded(
+                            child: Text(
+                              'Video Consultation${apt.patientAge != null ? " • ${apt.patientAge}y" : ""}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 // Status badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2826,32 +2895,50 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       complaint = item['complaint'] ?? item['symptoms'] ?? 'General Consult';
     }
 
-    final bool isActive = status.toLowerCase() != 'cancelled' && status.toLowerCase() != 'completed';
+    // isActive previously used for single-button — replaced by statusNorm checks below
 
     Color statusColor;
     Color statusBgColor;
-    switch (status.toLowerCase()) {
-      case 'confirmed':
-      case 'approved':
-        statusColor = const Color(0xFF16A34A);
-        statusBgColor = const Color(0xFFDCFCE7);
-        break;
-      case 'pending':
-        statusColor = const Color(0xFFD97706);
-        statusBgColor = const Color(0xFFFEF3C7);
-        break;
-      case 'completed':
-        statusColor = const Color(0xFF2563EB);
-        statusBgColor = const Color(0xFFDBEAFE);
-        break;
-      case 'cancelled':
-        statusColor = const Color(0xFFDC2626);
-        statusBgColor = const Color(0xFFFEE2E2);
-        break;
-      default:
-        statusColor = const Color(0xFF2563EB);
-        statusBgColor = const Color(0xFFDBEAFE);
+    final String sLower = status.toLowerCase().trim().replaceAll(' ', '_').replaceAll('-', '_');
+    if (sLower.contains('progress') || sLower.contains('process') || sLower == 'active' || sLower == 'ongoing') {
+      statusColor = const Color(0xFF0D9488);
+      statusBgColor = const Color(0xFFCCFBF1);
+    } else {
+      switch (sLower) {
+        case 'confirmed':
+        case 'approved':
+        case 'scheduled':
+          statusColor = const Color(0xFF16A34A);
+          statusBgColor = const Color(0xFFDCFCE7);
+          break;
+        case 'pending':
+          statusColor = const Color(0xFFD97706);
+          statusBgColor = const Color(0xFFFEF3C7);
+          break;
+        case 'completed':
+          statusColor = const Color(0xFF2563EB);
+          statusBgColor = const Color(0xFFDBEAFE);
+          break;
+        case 'cancelled':
+        case 'canceled':
+          statusColor = const Color(0xFFDC2626);
+          statusBgColor = const Color(0xFFFEE2E2);
+          break;
+        default:
+          statusColor = const Color(0xFF2563EB);
+          statusBgColor = const Color(0xFFDBEAFE);
+      }
     }
+
+    final String statusNorm = sLower;
+    final bool isCompleted = statusNorm.contains('complet');
+    final bool isConfirmedOrActive = statusNorm.contains('confirm') ||
+        statusNorm.contains('progress') ||
+        statusNorm.contains('process') ||
+        statusNorm == 'approved' ||
+        statusNorm == 'active' ||
+        statusNorm == 'ongoing' ||
+        statusNorm == 'scheduled';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -2911,32 +2998,86 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Text('$time • ${type == 'video' ? '🎥 Video' : '🏥 In-Person'} • $complaint',
                   style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    if (id.isNotEmpty) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AppointmentDetailScreen(
-                            appointmentId: id,
-                            isForDoctor: true,
+              // ── Action buttons row ──
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  // View Details — always visible
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      if (id.isNotEmpty) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AppointmentDetailScreen(
+                              appointmentId: id,
+                              isForDoctor: true,
+                            ),
                           ),
-                        ),
-                      ).then((_) => _fetchDoctorDashboardData());
-                    }
-                  },
-                  icon: const Icon(Icons.visibility_outlined, size: 14),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    side: const BorderSide(color: AppColors.primary),
-                    foregroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ).then((_) => _fetchDoctorDashboardData());
+                      }
+                    },
+                    icon: const Icon(Icons.visibility_outlined, size: 14),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      side: const BorderSide(color: AppColors.primary),
+                      foregroundColor: AppColors.primary,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    label: const Text('View Details',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
-                  label: const Text('View Details',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                ),
+
+                  // Chat — visible for confirmed / in-progress consultations (hidden when completed)
+                  if (!isCompleted && isConfirmedOrActive)
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(
+                              appointmentId: id,
+                              recipientName: patientName.isNotEmpty ? patientName : 'Patient',
+                              recipientSubtitle: complaint,
+                              recipientAvatar: null,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                      label: const Text('Chat',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+
+                  // Cancel — only for confirmed / in-progress
+                  if (isConfirmedOrActive)
+                    OutlinedButton.icon(
+                      onPressed: () => _showDoctorCancelDialog(
+                        appointmentId: id,
+                        patientName: patientName,
+                      ),
+                      icon: const Icon(Icons.cancel_outlined, size: 14, color: Colors.red),
+                      label: const Text('Cancel',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

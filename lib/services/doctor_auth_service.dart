@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:path/path.dart' as p;
 import '../models/doctor_model.dart';
+import 'api_helper.dart';
 
 class DoctorAuthService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/doctors';
@@ -318,7 +321,12 @@ class DoctorAuthService {
     final Uri url = Uri.parse('$baseUrl/register/documents');
     try {
       final request = http.MultipartRequest('POST', url);
-      request.headers['Authorization'] = 'Bearer $token';
+      final cleanToken = token.trim();
+      final authHeader = cleanToken.toLowerCase().startsWith('bearer ')
+          ? cleanToken
+          : 'Bearer $cleanToken';
+      request.headers['Authorization'] = authHeader;
+      request.headers['Accept'] = 'application/json';
 
       if (aadhaarNumber != null && aadhaarNumber.isNotEmpty) {
         request.fields['aadhaarNumber'] = aadhaarNumber.trim();
@@ -334,6 +342,25 @@ class DoctorAuthService {
       if (degreeUniversityNumber != null && degreeUniversityNumber.isNotEmpty) {
         request.fields['degreeUniversityNumber'] = degreeUniversityNumber
             .trim();
+      }
+
+      // Helper for media types
+      MediaType resolveMediaType(String filenameOrPath) {
+        final ext = p.extension(filenameOrPath).toLowerCase().replaceAll('.', '');
+        switch (ext) {
+          case 'png':
+            return MediaType('image', 'png');
+          case 'webp':
+            return MediaType('image', 'webp');
+          case 'gif':
+            return MediaType('image', 'gif');
+          case 'pdf':
+            return MediaType('application', 'pdf');
+          case 'jpg':
+          case 'jpeg':
+          default:
+            return MediaType('image', 'jpeg');
+        }
       }
 
       // Attach files if provided via filePaths or fileBytesMap
@@ -352,36 +379,64 @@ class DoctorAuthService {
         if (filePaths != null &&
             filePaths.containsKey(key) &&
             filePaths[key]!.isNotEmpty) {
+          final filePath = filePaths[key]!;
+          final filename = customName ?? p.basename(filePath);
           request.files.add(
             await http.MultipartFile.fromPath(
               key,
-              filePaths[key]!,
-              filename: customName,
+              filePath,
+              filename: filename,
+              contentType: resolveMediaType(filename),
             ),
           );
         } else if (fileBytesMap != null &&
             fileBytesMap.containsKey(key) &&
             fileBytesMap[key]!.isNotEmpty) {
+          final filename = customName ?? '$key.jpg';
           request.files.add(
             http.MultipartFile.fromBytes(
               key,
               fileBytesMap[key]!,
-              filename: customName ?? '$key.jpg',
+              filename: filename,
+              contentType: resolveMediaType(filename),
             ),
-          );
-        } else {
-          // Provide placeholder sample file bytes if not selected so server multipart validator passes
-          final dummyBytes = utf8.encode('Sample document content for $key');
-          request.files.add(
-            http.MultipartFile.fromBytes(key, dummyBytes, filename: '$key.txt'),
           );
         }
       }
 
-      final streamedResponse = await request.send();
+      final streamedResponse =
+          await request.send().timeout(const Duration(seconds: 45));
       final response = await http.Response.fromStream(streamedResponse);
-      final Map<String, dynamic> body = jsonDecode(response.body);
-      return DoctorDocumentsResponse.fromJson(body);
+
+      dynamic body;
+      try {
+        body = jsonDecode(response.body);
+      } catch (parseError) {
+        return DoctorDocumentsResponse(
+          success: false,
+          message:
+              'Server error (${response.statusCode}): ${response.reasonPhrase ?? 'Upload failed'}',
+        );
+      }
+
+      if (body is Map<String, dynamic>) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return DoctorDocumentsResponse.fromJson(body);
+        } else {
+          final errorMsg = body['message'] ??
+              body['error'] ??
+              'Server error (${response.statusCode})';
+          return DoctorDocumentsResponse(
+            success: false,
+            message: errorMsg.toString(),
+          );
+        }
+      }
+
+      return DoctorDocumentsResponse(
+        success: false,
+        message: 'Invalid response from server (${response.statusCode})',
+      );
     } catch (e) {
       return DoctorDocumentsResponse(
         success: false,
@@ -491,7 +546,7 @@ class DoctorAuthService {
               'Authorization': 'Bearer $token',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -505,8 +560,45 @@ class DoctorAuthService {
     } catch (e) {
       return SingleDoctorApiResponse(
         success: false,
-        message: 'Failed to fetch doctor profile: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctor profile',
+        ),
+      );
+    }
+  }
+
+  /// Endpoint 11: Update Doctor Profile
+  /// API: PATCH https://backend.chikitsakart.com/api/doctors/profile
+  static Future<SingleDoctorApiResponse> updateProfile({
+    required String token,
+    required Map<String, dynamic> data,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/profile');
+    try {
+      final response = await http
+          .patch(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(data),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return SingleDoctorApiResponse.fromJson(body);
+    } catch (e) {
+      return SingleDoctorApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update doctor profile',
+        ),
       );
     }
   }
 }
+

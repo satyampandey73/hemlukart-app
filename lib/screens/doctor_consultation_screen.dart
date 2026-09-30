@@ -204,11 +204,14 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                       children: const [
                         Icon(Icons.search, color: AppColors.textLight),
                         SizedBox(width: 8),
-                        Text(
-                          'Search for doctors, specializations...',
-                          style: TextStyle(
-                            color: AppColors.textLight,
-                            fontSize: 14,
+                        Expanded(
+                          child: Text(
+                            'Search for doctors, specializations...',
+                            style: TextStyle(
+                              color: AppColors.textLight,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -287,24 +290,29 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[600],
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'EXPERIENCED PHYSICIAN',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[600],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'EXPERIENCED PHYSICIAN',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 6,
@@ -402,12 +410,12 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Row(
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
                           children: [
                             _buildBadge(topDoc.specialty.isNotEmpty ? topDoc.specialty : 'General Health'),
-                            const SizedBox(width: 4),
                             _buildBadge('${topDoc.experienceYears}+ Yrs Exp'),
-                            const SizedBox(width: 4),
                             _buildBadge(topDoc.system.isNotEmpty ? topDoc.system : 'Verified Specialist'),
                           ],
                         ),
@@ -415,26 +423,33 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  fee > 0 ? '₹$fee/- only' : '₹199/- only',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                    color: AppColors.primary,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    fee > 0 ? '₹$fee/- only' : '₹199/- only',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                      color: AppColors.primary,
+                                    ),
                                   ),
-                                ),
-                                const Text(
-                                  'Get 20% cashback on PLUS',
-                                  style: TextStyle(
-                                    color: AppColors.textLight,
-                                    fontSize: 10,
+                                  const Text(
+                                    'Get 20% cashback on PLUS',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: AppColors.textLight,
+                                      fontSize: 9.5,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             ElevatedButton(
                               onPressed: () async {
                                 if (await LoginScreen.checkAndNavigate(context)) {
@@ -452,8 +467,8 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue[600],
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
+                                  horizontal: 12,
+                                  vertical: 9,
                                 ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(6),
@@ -493,7 +508,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 100,
+              height: 105,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -516,7 +531,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           CircleAvatar(
-                            radius: 26,
+                            radius: 25,
                             backgroundColor: const Color.fromARGB(
                               255,
                               248,
@@ -529,16 +544,18 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                               size: 24,
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            spec['name'],
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textDark,
+                          const SizedBox(height: 5),
+                          Flexible(
+                            child: Text(
+                              spec['name'],
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textDark,
+                              ),
                             ),
                           ),
                         ],
@@ -572,7 +589,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                 crossAxisCount: 2,
                 mainAxisSpacing: 10,
                 crossAxisSpacing: 10,
-                childAspectRatio: 2.2,
+                childAspectRatio: 1.85,
               ),
               itemCount: _topConcerns.length,
               itemBuilder: (context, idx) {
@@ -587,7 +604,7 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     decoration: BoxDecoration(
                       color: concern['color'],
                       borderRadius: BorderRadius.circular(8),
@@ -598,25 +615,30 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         Icon(
                           concern['icon'],
                           color: AppColors.primary,
-                          size: 24,
+                          size: 22,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 concern['name'],
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                                  fontSize: 11.5,
                                   color: AppColors.textDark,
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 1),
                               Text(
                                 concern['desc'],
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 9,
                                   color: AppColors.textLight,
@@ -915,12 +937,15 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Text(
-                  '+139 Doctors are online',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
+                const Expanded(
+                  child: Text(
+                    '+139 Doctors are online',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -959,10 +984,11 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
               children: const [
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.verified_user,
-                        size: 18,
+                        size: 16,
                         color: AppColors.textDark,
                       ),
                       SizedBox(height: 2),
@@ -970,9 +996,9 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         'Verified\nDoctors',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 9,
+                          fontSize: 8.5,
                           color: AppColors.textDark,
-                          height: 1.2,
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -980,10 +1006,11 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                 ),
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.description,
-                        size: 18,
+                        size: 16,
                         color: AppColors.textDark,
                       ),
                       SizedBox(height: 2),
@@ -991,9 +1018,9 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         'Digital\nPrescription',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 9,
+                          fontSize: 8.5,
                           color: AppColors.textDark,
-                          height: 1.2,
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -1001,10 +1028,11 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                 ),
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.follow_the_signs,
-                        size: 18,
+                        size: 16,
                         color: AppColors.textDark,
                       ),
                       SizedBox(height: 2),
@@ -1012,9 +1040,9 @@ class _DoctorConsultationScreenState extends State<DoctorConsultationScreen> {
                         'Free\nFollow-up',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 9,
+                          fontSize: 8.5,
                           color: AppColors.textDark,
-                          height: 1.2,
+                          height: 1.1,
                         ),
                       ),
                     ],

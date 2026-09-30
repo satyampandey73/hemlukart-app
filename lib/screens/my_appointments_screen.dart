@@ -1082,14 +1082,16 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                     ),
                   ],
 
-                  if (apt.status.toLowerCase() != 'cancelled') ...[
+                  // Show action buttons unless appointment is cancelled
+                  if (!statusNorm.contains('cancel')) ...[
                     const Divider(height: 20),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       alignment: WrapAlignment.end,
                       children: [
-                        if (apt.status.toLowerCase() != 'cancelled') ...[
+                        // ── Video call join (only for non-cancelled, non-completed) ──
+                        if (!statusNorm.contains('cancel') && !statusNorm.contains('complet')) ...[
                           if (apt.isVideoConsultation) ...[
                             if (canJoinCall)
                               ElevatedButton.icon(
@@ -1153,54 +1155,61 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                                 ),
                               ),
                           ],
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    appointmentId: apt.id,
-                                    recipientName:
-                                        apt.doctorName != null &&
-                                            apt.doctorName!.isNotEmpty
-                                        ? 'Dr. ${apt.doctorName}'
-                                        : 'Doctor',
-                                    recipientSubtitle:
-                                        apt.doctorSpecialty ??
-                                        'Ayush Specialist',
-                                    recipientAvatar: apt.displayDoctorPhoto,
-                                  ),
+                        ],
+
+                        // ── Chat Now — shown for all non-cancelled (including completed) ──
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  appointmentId: apt.id,
+                                  recipientName:
+                                      apt.doctorName != null &&
+                                          apt.doctorName!.isNotEmpty
+                                      ? 'Dr. ${apt.doctorName}'
+                                      : 'Doctor',
+                                  recipientSubtitle:
+                                      apt.doctorSpecialty ??
+                                      'Ayush Specialist',
+                                  recipientAvatar: apt.displayDoctorPhoto,
                                 ),
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 14,
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            'Chat Now',
+                            style: TextStyle(
                               color: Colors.white,
-                            ),
-                            label: const Text(
-                              'Chat Now',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                               ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ],
-                        if (apt.status.toLowerCase() != 'completed')
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                             ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+
+                        // ── Cancel — only for confirmed / in-progress ──
+                        if (statusNorm.contains('confirm') ||
+                            statusNorm.contains('progress') ||
+                            statusNorm == 'approved' ||
+                            statusNorm == 'active')
                           OutlinedButton.icon(
                             onPressed: () => _showCancelDialog(apt),
                             icon: const Icon(

@@ -80,7 +80,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     final user = appState.currentUser;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FB),
+      backgroundColor: AppColors.primary,
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
@@ -88,22 +88,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
             pinned: true,
             backgroundColor: AppColors.primary,
             iconTheme: const IconThemeData(color: Colors.white),
-            actions: [
-              if (_isLoadingProfile)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14),
-                  child: SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                  tooltip: 'Sync profile',
-                  onPressed: _loadProfile,
-                ),
-            ],
+            actions: const [],
             flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
               background: _buildProfileHeader(user),
@@ -123,12 +108,15 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
             ),
           ),
         ],
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildProfileTab(user),
-            _buildSettingsTab(user),
-          ],
+        body: ColoredBox(
+          color: const Color(0xFFF3F6FB),
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildProfileTab(user),
+              _buildSettingsTab(user),
+            ],
+          ),
         ),
       ),
     );
@@ -268,6 +256,67 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Edit Profile Banner ───────────────────────────────────────
+            GestureDetector(
+              onTap: () => _showEditProfileDialog(context, user),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFF14B8A6)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.edit_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Edit Profile',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Update your name, photo, address & more',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 16),
+                  ],
+                ),
+              ),
+            ),
+
             // ── Personal Information ──────────────────────────────────────
             _buildExpandableSection(
               icon: Icons.person_outline_rounded,
@@ -308,78 +357,23 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
                       ? '+91 ${user.whatsappNumber}'
                       : 'N/A',
                 ),
-                _infoRow(
-                  icon: Icons.cake_outlined,
-                  iconColor: const Color(0xFFDB2777),
-                  label: 'Date of Birth',
-                  value: user?.dateOfBirth ?? 'N/A',
-                ),
-                _infoRow(
-                  icon: Icons.wc_outlined,
-                  iconColor: const Color(0xFF0891B2),
-                  label: 'Gender',
-                  value: user?.gender != null
-                      ? '${user!.gender![0].toUpperCase()}${user.gender!.substring(1)}'
-                      : 'N/A',
-                ),
+                // Date of Birth — hidden
+                // Gender — hidden
               ],
             ),
 
-            // ── Address Details ──────────────────────────────────────────
-            _buildExpandableSection(
-              icon: Icons.location_on_outlined,
-              iconColor: const Color(0xFFEA580C),
-              title: 'Address',
-              subtitle: user != null &&
-                      ((user.city != null && user.city!.isNotEmpty) ||
-                          (user.state != null && user.state!.isNotEmpty))
-                  ? '${user.city ?? ''}${user.city != null && user.state != null ? ', ' : ''}${user.state ?? ''}'
-                  : 'Delivery address, city & pincode',
-              isExpanded: _isAddressExpanded,
-              onToggle: () =>
-                  setState(() => _isAddressExpanded = !_isAddressExpanded),
-              children: [
-                _infoRow(
-                  icon: Icons.home_outlined,
-                  iconColor: const Color(0xFFEA580C),
-                  label: 'Address',
-                  value: user?.address ?? 'N/A',
-                ),
-                _infoRow(
-                  icon: Icons.location_city_outlined,
-                  iconColor: const Color(0xFF7C3AED),
-                  label: 'City',
-                  value: user?.city ?? 'N/A',
-                ),
-                _infoRow(
-                  icon: Icons.map_outlined,
-                  iconColor: const Color(0xFF0284C7),
-                  label: 'State',
-                  value: user?.state ?? 'N/A',
-                ),
-                _infoRow(
-                  icon: Icons.markunread_mailbox_outlined,
-                  iconColor: const Color(0xFF16A34A),
-                  label: 'Pincode',
-                  value: user?.pincode ?? 'N/A',
-                ),
-              ],
-              bottomAction: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _showEditProfileDialog(context, user),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Edit Profile Details'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ),
+            // ── Address Details — commented out ───────────────────────────
+            // _buildExpandableSection(
+            //   icon: Icons.location_on_outlined,
+            //   iconColor: const Color(0xFFEA580C),
+            //   title: 'Address',
+            //   subtitle: ...,
+            //   isExpanded: _isAddressExpanded,
+            //   onToggle: () => setState(() => _isAddressExpanded = !_isAddressExpanded),
+            //   children: [ address, city, state, pincode rows ],
+            //   bottomAction: 'Edit Profile Details' button,
+            // ),
+
 
             // ── Account Details ───────────────────────────────────────────
             _buildExpandableSection(
@@ -1323,57 +1317,9 @@ class _EditProfileScreenState extends State<_EditProfileScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Date of Birth
-              GestureDetector(
-                onTap: _pickDate,
-                child: AbsorbPointer(
-                  child: _buildField(
-                    controller: _dobCtrl,
-                    label: 'Date of Birth',
-                    icon: Icons.cake_outlined,
-                    hintText: 'YYYY-MM-DD',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
+              // Date of Birth — removed
+              // Gender — removed
 
-              // Gender
-              _editSectionLabel(Icons.wc_outlined, 'Gender'),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: ['male', 'female', 'other'].map((g) {
-                    final selected = _selectedGender == g;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedGender = g),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          decoration: BoxDecoration(
-                            color: selected ? AppColors.primary : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '${g[0].toUpperCase()}${g.substring(1)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: selected ? Colors.white : AppColors.textLight,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 24),
 
               // ── Address ──────────────────────────────────────────────────
               _editSectionLabel(Icons.location_on_outlined, 'Address Details'),

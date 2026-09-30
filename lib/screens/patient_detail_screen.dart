@@ -92,11 +92,15 @@ class PatientDetailScreen extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Age: ${patient['age']} • ${patient['gender']}',
                   style: const TextStyle(fontSize: 13, color: Colors.white70),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -164,14 +168,14 @@ class PatientDetailScreen extends StatelessWidget {
             itemCount: items.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              childAspectRatio: 2.6,
+              childAspectRatio: 2.3,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
             ),
             itemBuilder: (_, i) {
               final item = items[i];
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(10),
@@ -180,7 +184,7 @@ class PatientDetailScreen extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(item['icon'] as IconData, size: 16, color: AppColors.primary),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -189,6 +193,8 @@ class PatientDetailScreen extends StatelessWidget {
                           Text(
                             item['label'].toString(),
                             style: const TextStyle(fontSize: 9, color: Color(0xFF64748B)),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                           Text(
                             item['value'].toString(),
@@ -198,6 +204,7 @@ class PatientDetailScreen extends StatelessWidget {
                               color: Color(0xFF0F172A),
                             ),
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ],
                       ),
@@ -241,10 +248,14 @@ class PatientDetailScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Appointment History',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              const Expanded(
+                child: Text(
+                  'Appointment History',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
@@ -282,16 +293,23 @@ class PatientDetailScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF64748B)),
-                  const SizedBox(width: 5),
-                  Text(
-                    apt.formattedDateTime,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                  ),
-                ],
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, size: 13, color: Color(0xFF64748B)),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        apt.formattedDateTime,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
@@ -362,7 +380,13 @@ class PatientDetailScreen extends StatelessWidget {
       children: [
         Icon(icon, size: 12, color: AppColors.primary),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
+        Flexible(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }

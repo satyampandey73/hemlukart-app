@@ -43,6 +43,8 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   DateTime _selectedDate = DateTime.now();
   DoctorSchedule? _selectedSchedule;
   List<UserAppointmentItem> _doctorBookedAppointments = [];
+  int _calendarWeekOffset = 0;
+  late final PageController _calendarPageController;
 
   bool _isLoadingSlots = false;
   bool _isBooking = false;
@@ -267,6 +269,18 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     _selectedDate = widget.initialDate ?? DateTime.now();
     _selectedSchedule = widget.initialSchedule;
 
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initDateNorm = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final diffDays = initDateNorm.difference(today).inDays;
+    if (diffDays >= 0 && diffDays <= 15) {
+      _calendarWeekOffset = (diffDays / 7).floor().clamp(0, 2);
+    } else {
+      _selectedDate = today;
+      _calendarWeekOffset = 0;
+    }
+    _calendarPageController = PageController(initialPage: _calendarWeekOffset);
+
     final user = _appState.currentUser;
     _patientNameController = TextEditingController(text: user?.fullName ?? '');
     _patientMobileController = TextEditingController(text: user?.mobile ?? '');
@@ -356,6 +370,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     _cardCvvController.dispose();
     _upiIdController.dispose();
     _couponCodeController.dispose();
+    _calendarPageController.dispose();
     super.dispose();
   }
 
@@ -459,13 +474,6 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     final fee = _currentConsultationFee;
     final total = fee - _appliedDiscount;
     return total > 0 ? total : 0.0;
-  }
-
-  String _formatDateForApi(DateTime date) {
-    final year = date.year.toString().padLeft(4, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    return '$year-$month-$day';
   }
 
   String _formatDateForHeader(DateTime date) {
@@ -1374,6 +1382,11 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   // -------------------------------------------------------------
   Widget _buildCalendarDatePicker(Set<String> availableDaysSet) {
     final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStartDate = today.add(Duration(days: _calendarWeekOffset * 7));
+    final weekEndDate = today.add(Duration(days: _calendarWeekOffset * 7 + 6));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1381,95 +1394,283 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Select Date',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textDark),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F4C47).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.calendar_month_rounded,
+                    size: 16,
+                    color: Color(0xFF0F4C47),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Select Date',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textDark),
+                ),
+              ],
             ),
-            Text(
-              _formatDateForApi(_selectedDate),
-              style: const TextStyle(fontSize: 13, color: Color(0xFF0F4C47), fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                if (_calendarWeekOffset > 0) ...[
+                  GestureDetector(
+                    onTap: () {
+                      _calendarPageController.previousPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(Icons.chevron_left, size: 18, color: Color(0xFF0F4C47)),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F4C47).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${weekStartDate.day} ${months[weekStartDate.month - 1]} - ${weekEndDate.day} ${months[weekEndDate.month - 1]}',
+                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                if (_calendarWeekOffset < 2)
+                  GestureDetector(
+                    onTap: () {
+                      _calendarPageController.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(Icons.chevron_right, size: 18, color: Color(0xFF0F4C47)),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 80,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: 14,
-            itemBuilder: (context, idx) {
-              final date = DateTime.now().add(Duration(days: idx));
-              final isSel = date.year == _selectedDate.year &&
-                  date.month == _selectedDate.month &&
-                  date.day == _selectedDate.day;
-              final hasSlotsOnDay = availableDaysSet.contains(_getDayOfWeek(date));
-
-              return GestureDetector(
-                onTap: () {
-                  if (!isSel) {
-                    setState(() {
-                      _selectedDate = date;
+          height: 68,
+          child: PageView.builder(
+            controller: _calendarPageController,
+            itemCount: 3,
+            physics: const BouncingScrollPhysics(),
+            onPageChanged: (pageIndex) {
+              setState(() {
+                _calendarWeekOffset = pageIndex;
+                final weekStart = today.add(Duration(days: pageIndex * 7));
+                final weekEnd = today.add(Duration(days: pageIndex * 7 + 6));
+                final curDate = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+                if (curDate.isBefore(weekStart) || curDate.isAfter(weekEnd)) {
+                  for (int i = 0; i < 7; i++) {
+                    final d = today.add(Duration(days: pageIndex * 7 + i));
+                    final diff = DateTime(d.year, d.month, d.day).difference(today).inDays;
+                    if (diff >= 0 && diff <= 15) {
+                      _selectedDate = d;
                       _selectedSchedule = null;
-                    });
-                    _fetchSlotsForSelectedDate();
+                      break;
+                    }
                   }
-                },
-                child: Container(
-                  width: 62,
-                  margin: const EdgeInsets.only(right: 10),
-                  decoration: BoxDecoration(
-                    color: isSel ? const Color(0xFF0F4C47) : Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isSel ? const Color(0xFF0F4C47) : Colors.grey.shade200,
-                      width: isSel ? 2 : 1,
-                    ),
-                    boxShadow: isSel
-                        ? [
-                            BoxShadow(
-                              color: const Color(0xFF0F4C47).withOpacity(0.2),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        weekdays[date.weekday - 1],
-                        style: TextStyle(
-                          color: isSel ? Colors.white70 : AppColors.textLight,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${date.day}',
-                        style: TextStyle(
-                          color: isSel ? Colors.white : AppColors.textDark,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        width: 5,
-                        height: 5,
+                }
+              });
+              _fetchSlotsForSelectedDate();
+            },
+            itemBuilder: (context, pageIndex) {
+              return Row(
+                children: List.generate(7, (idx) {
+                  final date = today.add(Duration(days: pageIndex * 7 + idx));
+                  final normalizedDate = DateTime(date.year, date.month, date.day);
+                  final dayDiff = normalizedDate.difference(today).inDays;
+                  final isWithin15Days = dayDiff >= 0 && dayDiff <= 15;
+                  final isSel = isWithin15Days &&
+                      date.year == _selectedDate.year &&
+                      date.month == _selectedDate.month &&
+                      date.day == _selectedDate.day;
+                  final isToday = dayDiff == 0;
+                  final hasSlotsOnDay = isWithin15Days && availableDaysSet.contains(_getDayOfWeek(date));
+                  final dayLabel = isToday ? 'Today' : weekdays[date.weekday - 1];
+
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: isWithin15Days
+                          ? () {
+                              if (!isSel) {
+                                setState(() {
+                                  _selectedDate = date;
+                                  _selectedSchedule = null;
+                                });
+                                _fetchSlotsForSelectedDate();
+                              }
+                            }
+                          : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.symmetric(horizontal: 2.0),
+                        padding: const EdgeInsets.symmetric(vertical: 7),
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: hasSlotsOnDay
-                              ? (isSel ? Colors.white : const Color(0xFF059669))
-                              : Colors.transparent,
+                          color: isSel
+                              ? const Color(0xFF0F4C47)
+                              : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC)),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSel
+                                ? const Color(0xFF0F4C47)
+                                : (isWithin15Days
+                                    ? (hasSlotsOnDay
+                                        ? const Color(0xFF0F4C47).withValues(alpha: 0.3)
+                                        : const Color(0xFFE2E8F0))
+                                    : const Color(0xFFF1F5F9)),
+                            width: isSel ? 1.5 : 1,
+                          ),
+                          boxShadow: isSel
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFF0F4C47).withValues(alpha: 0.25),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              dayLabel,
+                              style: TextStyle(
+                                color: !isWithin15Days
+                                    ? Colors.grey.shade400
+                                    : (isSel
+                                        ? Colors.white70
+                                        : (hasSlotsOnDay ? AppColors.textDark : AppColors.textLight)),
+                                fontSize: 9.5,
+                                fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${date.day}',
+                              style: TextStyle(
+                                color: !isWithin15Days
+                                    ? Colors.grey.shade300
+                                    : (isSel
+                                        ? Colors.white
+                                        : (hasSlotsOnDay ? AppColors.textDark : Colors.grey.shade400)),
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: (isWithin15Days && hasSlotsOnDay)
+                                    ? (isSel ? Colors.white : const Color(0xFF10B981))
+                                    : Colors.transparent,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                }),
               );
             },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(3, (pIdx) {
+            final isActive = _calendarWeekOffset == pIdx;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 2.5),
+              width: isActive ? 16 : 5,
+              height: 4,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFF0F4C47)
+                    : const Color(0xFF0F4C47).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.event_available_outlined, size: 14, color: Color(0xFF0F4C47)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${_getDayOfWeek(_selectedDate).toUpperCase()} • ${_getFormattedDate(_selectedDate)}',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: availableDaysSet.contains(_getDayOfWeek(_selectedDate))
+                          ? const Color(0xFF10B981)
+                          : Colors.grey.shade400,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    availableDaysSet.contains(_getDayOfWeek(_selectedDate)) ? 'Slots Open' : 'No Slots',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: availableDaysSet.contains(_getDayOfWeek(_selectedDate))
+                          ? const Color(0xFF10B981)
+                          : AppColors.textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ],

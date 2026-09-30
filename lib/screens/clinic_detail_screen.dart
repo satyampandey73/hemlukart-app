@@ -4,7 +4,6 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/clinic_model.dart';
 import '../services/clinic_service.dart';
-import 'doctor_listing_screen.dart';
 import 'doctor_profile_screen.dart';
 import 'cart_screen.dart';
 import 'book_appointment_screen.dart';
@@ -652,12 +651,15 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
             children: [
               const Icon(Icons.star, color: Colors.amber, size: 16),
               const SizedBox(width: 4),
-              Text(
-                '${rating.toStringAsFixed(1)} (125 reviews)',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  '${rating.toStringAsFixed(1)} (125 reviews)',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -690,12 +692,15 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
               children: [
                 const Icon(Icons.phone_iphone_outlined, color: Color(0xFF0F766E), size: 16),
                 const SizedBox(width: 8),
-                Text(
-                  phone,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textDark,
-                    fontWeight: FontWeight.w500,
+                Expanded(
+                  child: Text(
+                    phone,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textDark,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -868,16 +873,19 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            children: [
+          Row(
+            children: const [
               Icon(Icons.info_outline, color: AppColors.primary, size: 20),
               SizedBox(width: 8),
-              Text(
-                'About Clinic & Vision',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  'About Clinic & Vision',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -925,20 +933,23 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            children: [
+          Row(
+            children: const [
               Icon(
                 Icons.local_hospital_outlined,
                 color: AppColors.primary,
                 size: 20,
               ),
               SizedBox(width: 8),
-              Text(
-                'Available Treatments & Services',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  'Available Treatments & Services',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1012,20 +1023,23 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            children: [
+          Row(
+            children: const [
               Icon(
                 Icons.contact_phone_outlined,
                 color: AppColors.primary,
                 size: 20,
               ),
               SizedBox(width: 8),
-              Text(
-                'Contact & Support Details',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  'Contact & Support Details',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1181,12 +1195,15 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              'Available Doctors (${docs.length})',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
+            Expanded(
+              child: Text(
+                'Available Doctors (${docs.length})',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textDark,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -1344,69 +1361,20 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
 
           const SizedBox(height: 14),
 
-          // Contact Box (Phone & Email)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFF1F5F9)),
-            ),
-            child: Column(
-              children: [
-                if (doc.mobile != null && doc.mobile!.isNotEmpty)
-                  Row(
-                    children: [
-                      const Icon(Icons.phone_outlined, size: 14, color: Color(0xFF0F766E)),
-                      const SizedBox(width: 8),
-                      Text(
-                        doc.mobile!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textDark,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                if (doc.mobile != null && doc.mobile!.isNotEmpty &&
-                    doc.email != null && doc.email!.isNotEmpty)
-                  const SizedBox(height: 6),
-                if (doc.email != null && doc.email!.isNotEmpty)
-                  Row(
-                    children: [
-                      const Icon(Icons.email_outlined, size: 14, color: Color(0xFF7C3AED)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          doc.email!,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textDark,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           // Available Timings
           Row(
-            children: [
-              const Icon(Icons.calendar_month_outlined, size: 16, color: Color(0xFF0F766E)),
-              const SizedBox(width: 6),
-              const Text(
-                'Available Timings',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+            children: const [
+              Icon(Icons.calendar_month_outlined, size: 16, color: Color(0xFF0F766E)),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Available Timings',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1484,20 +1452,23 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            children: [
+          Row(
+            children: const [
               Icon(
                 Icons.rate_review_outlined,
                 color: AppColors.primary,
                 size: 20,
               ),
               SizedBox(width: 8),
-              Text(
-                'Patient Reviews & Testimonials',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  'Patient Reviews & Testimonials',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1535,14 +1506,18 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              name,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: AppColors.textDark,
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppColors.textDark,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               date,
               style: const TextStyle(fontSize: 11, color: AppColors.textLight),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/product_model.dart';
+import 'api_helper.dart';
 
 class ProductService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/products';
@@ -9,9 +10,13 @@ class ProductService {
   /// Query Parameters:
   /// - categoryId: Optional category UUID (e.g. 35d62575-7f10-409d-955e-b1dfb172f2f3)
   /// - search: Optional search query string (e.g. Ashwagandha)
+  /// - page: Optional page number for pagination (e.g. 1, 2)
+  /// - limit: Optional limit per page
   static Future<ProductsApiResponse> getProducts({
     String? categoryId,
     String? search,
+    int? page,
+    int? limit,
   }) async {
     Uri url = Uri.parse(baseUrl);
     final Map<String, String> queryParams = {};
@@ -20,6 +25,12 @@ class ProductService {
     }
     if (search != null && search.trim().isNotEmpty) {
       queryParams['search'] = search.trim();
+    }
+    if (page != null) {
+      queryParams['page'] = page.toString();
+    }
+    if (limit != null) {
+      queryParams['limit'] = limit.toString();
     }
     if (queryParams.isNotEmpty) {
       url = url.replace(queryParameters: queryParams);
@@ -33,7 +44,7 @@ class ProductService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -49,7 +60,10 @@ class ProductService {
       return ProductsApiResponse(
         success: false,
         products: [],
-        message: 'Failed to fetch products: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch products',
+        ),
       );
     }
   }
@@ -66,7 +80,7 @@ class ProductService {
               'Accept': 'application/json',
             },
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -80,7 +94,10 @@ class ProductService {
     } catch (e) {
       return SingleProductApiResponse(
         success: false,
-        message: 'Failed to fetch product details: $e',
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch product details',
+        ),
       );
     }
   }
