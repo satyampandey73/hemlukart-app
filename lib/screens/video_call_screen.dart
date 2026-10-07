@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +14,9 @@ import '../services/chat_service.dart';
 import '../services/eprescription_service.dart';
 import '../services/video_call_service.dart';
 import '../services/webrtc_call_manager.dart';
+import '../services/product_service.dart';
+import '../services/prescription_product_helper.dart';
+import 'cart_screen.dart';
 
 class VideoCallScreen extends StatefulWidget {
   final String appointmentId;
@@ -103,6 +107,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     'Multivitamin Zinc',
   ];
   List<String> _filteredSuggestions = [];
+  List<Product> _storeProductSuggestions = [];
+  bool _isSearchingProducts = false;
+  Timer? _medSearchDebounce;
 
   // View Prescription State
   List<Map<String, dynamic>> _prescriptions = [];
@@ -132,6 +139,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void dispose() {
     _callDurationTimer?.cancel();
     _chatPollingTimer?.cancel();
+    _medSearchDebounce?.cancel();
     _chatMsgController.dispose();
     _chatScrollController.dispose();
     _medSearchController.dispose();
@@ -782,13 +790,56 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   // ISSUE PRESCRIPTION METHODS (Doctor Only)
   // -------------------------------------------------------------
   void _onSearchMedicationChanged(String query) {
+    _medSearchDebounce?.cancel();
     if (query.trim().isEmpty) {
-      setState(() => _filteredSuggestions = []);
+      setState(() {
+        _filteredSuggestions = [];
+        _storeProductSuggestions = [];
+        _isSearchingProducts = false;
+      });
       return;
     }
     final q = query.toLowerCase().trim();
     setState(() {
       _filteredSuggestions = _suggestedMeds.where((m) => m.toLowerCase().contains(q)).toList();
+      _isSearchingProducts = true;
+    });
+
+    _medSearchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final res = await ProductService.getProducts(search: query.trim(), limit: 6);
+        if (mounted) {
+          setState(() {
+            _storeProductSuggestions = res.products.map((p) => p.toProduct()).toList();
+            _isSearchingProducts = false;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => _isSearchingProducts = false);
+        }
+      }
+    });
+  }
+
+  void _addStoreProduct(Product prod) {
+    PrescriptionProductHelper.cacheProduct(prod);
+    setState(() {
+      _rxMedications.add({
+        'name': prod.name,
+        'productId': prod.id,
+        'price': prod.price,
+        'image': prod.image,
+        'dosageForm': prod.packSize.isNotEmpty ? prod.packSize : 'Tablet',
+        'dosage': prod.potency.isNotEmpty && prod.potency != 'Standard' ? prod.potency : '1 Unit',
+        'frequency': '1-0-1',
+        'duration': '5 days',
+        'timing': 'After meals',
+        'instructions': 'As directed',
+      });
+      _medSearchController.clear();
+      _filteredSuggestions = [];
+      _storeProductSuggestions = [];
     });
   }
 
@@ -796,6 +847,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     setState(() {
       _rxMedications.add({
         'name': medName,
+        'productId': null,
         'dosageForm': 'Tablet',
         'dosage': '1 Tab',
         'frequency': '1-0-1',
@@ -805,6 +857,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       });
       _medSearchController.clear();
       _filteredSuggestions = [];
+      _storeProductSuggestions = [];
     });
   }
 
@@ -833,7 +886,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     setState(() => _isSubmittingRx = true);
 
     List<Map<String, dynamic>> medsPayload = _rxMedications.map((m) {
-      return {
+      final map = <String, dynamic>{
         "name": m['name'] ?? 'Medication',
         "strength": m['dosage'] ?? '',
         "dosageForm": m['dosageForm'] ?? 'Tablet',
@@ -845,6 +898,10 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         "quantity": 30,
         "refillable": false,
       };
+      if (m['productId'] != null && m['productId'].toString().isNotEmpty) {
+        map['productId'] = m['productId'];
+      }
+      return map;
     }).toList();
 
     final res = await EPrescriptionService.createPrescription(
@@ -1149,7 +1206,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFF1F5F9),
         body: SafeArea(
-          child: _isVideoMinimized ? _buildMinimizedLayout() : _buildFullscreenLayout(),
+          child: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            behavior: HitTestBehavior.translucent,
+            child: _isVideoMinimized ? _buildMinimizedLayout() : _buildFullscreenLayout(),
+          ),
         ),
       ),
     );
@@ -1212,13 +1273,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   // MINIMIZED VIDEO LAYOUT
   // -------------------------------------------------------------
   Widget _buildMinimizedLayout() {
+    final mediaQuery = MediaQuery.of(context);
+    final screenH = mediaQuery.size.height;
+    final isKeyboardOpen = mediaQuery.viewInsets.bottom > 0;
+    final double videoHeight = isKeyboardOpen
+        ? 125.0
+        : (screenH < 680 ? 155.0 : (screenH < 780 ? 185.0 : 215.0));
+    final bool isCompactVideo = videoHeight < 160;
+
     return Column(
       children: [
         // Top Minimized Video Box
         Container(
-          height: 215,
+          height: videoHeight,
           width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+          margin: EdgeInsets.fromLTRB(10, isKeyboardOpen ? 4 : 8, 10, isKeyboardOpen ? 2 : 6),
           decoration: BoxDecoration(
             color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(16),
@@ -1252,23 +1321,30 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           CircleAvatar(
-                            radius: 28,
+                            radius: isCompactVideo ? 18 : 28,
                             backgroundColor: Colors.white.withValues(alpha: 0.1),
                             backgroundImage: (widget.peerAvatar != null && widget.peerAvatar!.startsWith('http'))
                                 ? NetworkImage(widget.peerAvatar!) as ImageProvider
                                 : const AssetImage('assets/d1.jpg'),
                             onBackgroundImageError: (_, __) {},
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 4),
                           Text(
                             widget.peerName,
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(
+                              fontSize: isCompactVideo ? 13 : 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             _callManager.isPeerConnected ? 'Connected (Audio Only)' : 'Waiting for connection...',
-                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            style: TextStyle(
+                              fontSize: isCompactVideo ? 10 : 11,
+                              color: Colors.white70,
+                            ),
                           ),
                         ],
                       ),
@@ -1278,20 +1354,23 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 // Local video PiP in bottom-right
                 Positioned(
                   right: 10,
-                  bottom: 44,
-                  child: _buildLocalVideoPip(width: 65, height: 85),
+                  bottom: isCompactVideo ? 34 : 44,
+                  child: _buildLocalVideoPip(
+                    width: isCompactVideo ? 46 : 65,
+                    height: isCompactVideo ? 60 : 85,
+                  ),
                 ),
 
                 // Top Pills: Live session on left, Maximize & End Call on right
                 Positioned(
                   left: 10,
-                  top: 10,
+                  top: isCompactVideo ? 6 : 10,
                   child: _buildLiveSessionPill(),
                 ),
 
                 Positioned(
                   right: 10,
-                  top: 10,
+                  top: isCompactVideo ? 6 : 10,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1301,12 +1380,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           setState(() => _isVideoMinimized = false);
                         },
                         child: Container(
-                          padding: const EdgeInsets.all(6),
+                          padding: const EdgeInsets.all(5),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.6),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 20),
+                          child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 18),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1314,7 +1393,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                       GestureDetector(
                         onTap: _handleEndCall,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(16),
@@ -1322,9 +1401,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.call_end_rounded, color: Colors.white, size: 14),
+                              Icon(Icons.call_end_rounded, color: Colors.white, size: 13),
                               SizedBox(width: 4),
-                              Text('End Call', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text('End Call', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ),
@@ -1337,7 +1416,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 7,
+                  bottom: isCompactVideo ? 3 : 7,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -1349,7 +1428,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           setState(() => _callManager.toggleMute());
                         },
                       ),
-                      const SizedBox(width: 14),
+                      SizedBox(width: isCompactVideo ? 8 : 14),
                       _buildCompactControlBtn(
                         icon: _callManager.isVideoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
                         color: _callManager.isVideoOff ? Colors.redAccent : Colors.white,
@@ -1358,7 +1437,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           setState(() => _callManager.toggleCamera());
                         },
                       ),
-                      const SizedBox(width: 14),
+                      SizedBox(width: isCompactVideo ? 8 : 14),
                       _buildCompactControlBtn(
                         icon: Icons.cameraswitch_rounded,
                         color: Colors.white,
@@ -1368,7 +1447,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                           setState(() {});
                         },
                       ),
-                      const SizedBox(width: 14),
+                      SizedBox(width: isCompactVideo ? 8 : 14),
                       _buildCompactControlBtn(
                         icon: _isSpeakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
                         color: _isSpeakerOn ? Colors.greenAccent : Colors.white70,
@@ -1429,9 +1508,10 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       {'id': 'Consultation History', 'title': 'Consultation History', 'icon': Icons.history_rounded},
     ];
 
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Container(
       margin: EdgeInsets.symmetric(horizontal: isEmbeddedInFull ? 12 : 10),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: isKeyboardOpen ? 5 : 8),
       decoration: BoxDecoration(
         color: isEmbeddedInFull ? const Color(0xFF1E293B).withValues(alpha: 0.95) : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -1632,178 +1712,216 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   // -------------------------------------------------------------
   // 1. CHAT MODULE (Matching screenshot 1)
   // -------------------------------------------------------------
+  Widget _buildNoticeBanner() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F4C47),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 14),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Consultation Session Notice: Real-time encrypted communication active. Share reports, ask queries, or send messages during this live call.',
+              style: TextStyle(color: Colors.white, fontSize: 10, height: 1.25),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildChatModule() {
-    return Column(
-      children: [
-        // Module Title Header (Wrapped in Expanded to prevent overflow)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Consultation Chat',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47)),
-                    ),
-                    Text(
-                      'Chatting with: ${widget.peerName}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF0F4C47)),
-                onPressed: () => _fetchChatMessages(),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-        // Consultation Notice Banner (matching screenshot 1)
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F4C47),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Consultation Session Notice: Real-time encrypted communication active. Share reports, ask queries, or send messages during this live call.',
-                  style: TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Messages List
-        Expanded(
-          child: _isLoadingChat
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F4C47)))
-              : _chatMessages.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.chat_bubble_outline_rounded, size: 36, color: Colors.grey.shade400),
-                          const SizedBox(height: 8),
-                          const Text('No messages yet. Send a message or share files below.', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: _chatScrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: _chatMessages.length,
-                      itemBuilder: (context, index) {
-                        final msg = _chatMessages[index];
-                        final isMe = (widget.isDoctor && msg.senderType == 'doctor') ||
-                            (!widget.isDoctor && msg.senderType != 'doctor');
-                        return _buildChatBubble(msg, isMe);
-                      },
-                    ),
-        ),
-
-        // Attachment Preview Tag if picked
-        if (_chatAttachmentPath != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            color: const Color(0xFFE6F7F2),
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          // Module Title Header (Compact and cannot overflow)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(Icons.attach_file, size: 16, color: Color(0xFF0F4C47)),
-                const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    _chatAttachmentName ?? 'Attachment ready',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF0F4C47)),
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Consultation Chat',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47)),
+                      ),
+                      Text(
+                        'Chatting with: ${widget.peerName}',
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _chatAttachmentPath = null;
-                      _chatAttachmentName = null;
-                    });
-                  },
-                  child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFF0F4C47)),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _fetchChatMessages(),
                 ),
               ],
             ),
           ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
 
-        // Chat Input Bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+          // Messages List (Notice banner is placed inside the scrollable list so it never causes Column overflow)
+          Expanded(
+            child: _isLoadingChat
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F4C47)))
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification is UserScrollNotification &&
+                          notification.direction != ScrollDirection.idle) {
+                        FocusScope.of(context).unfocus();
+                      }
+                      return false;
+                    },
+                    child: _chatMessages.isEmpty
+                        ? SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildNoticeBanner(),
+                                const SizedBox(height: 16),
+                                Icon(Icons.chat_bubble_outline_rounded, size: 30, color: Colors.grey.shade400),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'No messages yet. Send a message or share files below.',
+                                  style: TextStyle(color: Colors.grey, fontSize: 11),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _chatScrollController,
+                            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            itemCount: _chatMessages.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == 0) {
+                                return _buildNoticeBanner();
+                              }
+                              final msg = _chatMessages[index - 1];
+                              final isMe = (widget.isDoctor && msg.senderType == 'doctor') ||
+                                  (!widget.isDoctor && msg.senderType != 'doctor');
+                              return GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () => FocusScope.of(context).unfocus(),
+                                child: _buildChatBubble(msg, isMe),
+                              );
+                            },
+                          ),
+                  ),
           ),
-          child: Row(
-            children: [
-              // Attachment Button
-              IconButton(
-                icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF64748B)),
-                onPressed: _handlePickChatAttachment,
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _chatMsgController,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _handleSendChatMessage(),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Type a message...',
-                    hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+
+          // Attachment Preview Tag if picked
+          if (_chatAttachmentPath != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              color: const Color(0xFFE6F7F2),
+              child: Row(
+                children: [
+                  const Icon(Icons.attach_file, size: 14, color: Color(0xFF0F4C47)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _chatAttachmentName ?? 'Attachment ready',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF0F4C47)),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _chatAttachmentPath = null;
+                        _chatAttachmentName = null;
+                      });
+                    },
+                    child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+
+          // Chat Input Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Row(
+              children: [
+                // Attachment Button
+                IconButton(
+                  icon: const Icon(Icons.attach_file_rounded, color: Color(0xFF64748B), size: 19),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                  onPressed: _handlePickChatAttachment,
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _chatMsgController,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _handleSendChatMessage(),
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Type a message...',
+                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      isDense: true,
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              // Send Button
-              GestureDetector(
-                onTap: _handleSendChatMessage,
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF0F4C47),
-                    shape: BoxShape.circle,
+                const SizedBox(width: 6),
+                // Send Button
+                GestureDetector(
+                  onTap: _handleSendChatMessage,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF0F4C47),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _isSendingChat
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.send_rounded, color: Colors.white, size: 16),
                   ),
-                  child: _isSendingChat
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1989,37 +2107,116 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           ),
 
           // Autocomplete Suggestions
-          if (_filteredSuggestions.isNotEmpty || _medSearchController.text.trim().isNotEmpty) ...[
+          if (_storeProductSuggestions.isNotEmpty || _filteredSuggestions.isNotEmpty || _medSearchController.text.trim().isNotEmpty) ...[
             Container(
-              margin: const EdgeInsets.only(top: 4),
-              constraints: const BoxConstraints(maxHeight: 140),
+              margin: const EdgeInsets.only(top: 6),
+              constraints: const BoxConstraints(maxHeight: 220),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2)),
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 6, offset: const Offset(0, 3)),
                 ],
               ),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  if (_medSearchController.text.trim().isNotEmpty && !_suggestedMeds.contains(_medSearchController.text.trim()))
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.add_circle_outline, size: 18, color: Color(0xFF0F4C47)),
-                      title: Text('Add "${_medSearchController.text.trim()}"', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      onTap: () => _addMedication(_medSearchController.text.trim()),
-                    ),
-                  ..._filteredSuggestions.map(
-                    (med) => ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.medication_outlined, size: 18, color: Color(0xFF64748B)),
-                      title: Text(med, style: const TextStyle(fontSize: 12)),
-                      onTap: () => _addMedication(med),
-                    ),
-                  ),
-                ],
+              child: Material(
+                color: Colors.transparent,
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  children: [
+                    if (_isSearchingProducts)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+                      ),
+
+                    // Store Products (with real product ID)
+                    if (_storeProductSuggestions.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        child: Text(
+                          'STORE PRODUCTS (AVAILABLE IN APP)',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47), letterSpacing: 0.4),
+                        ),
+                      ),
+                      ..._storeProductSuggestions.map((prod) => ListTile(
+                            dense: true,
+                            leading: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: prod.image.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: prod.image.startsWith('http')
+                                          ? Image.network(
+                                              prod.image,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(Icons.medication, size: 18, color: Color(0xFF0F4C47)),
+                                            )
+                                          : Image.asset(
+                                              prod.image,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(Icons.medication, size: 18, color: Color(0xFF0F4C47)),
+                                            ),
+                                    )
+                                  : const Icon(Icons.medication, size: 18, color: Color(0xFF0F4C47)),
+                            ),
+                            title: Text(
+                              prod.name,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF0F172A)),
+                            ),
+                            subtitle: Text(
+                              '₹${prod.price.toStringAsFixed(0)}${prod.brand.isNotEmpty ? ' • ${prod.brand}' : ''}',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600),
+                            ),
+                            trailing: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F4C47),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text('Add Rx', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                            onTap: () => _addStoreProduct(prod),
+                          )),
+                      const Divider(height: 12, color: Color(0xFFE2E8F0)),
+                    ],
+
+                    // Custom Medicine Option
+                    if (_medSearchController.text.trim().isNotEmpty)
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.edit_note, size: 20, color: Color(0xFFD97706)),
+                        title: Text('Use Custom: "${_medSearchController.text.trim()}"', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF1E293B))),
+                        subtitle: const Text('Will show as custom prescription (not linked to store)', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                        onTap: () => _addMedication(_medSearchController.text.trim()),
+                      ),
+
+                    // Standard Suggested Medicines
+                    if (_filteredSuggestions.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        child: Text(
+                          'COMMON MEDICINES',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                        ),
+                      ),
+                      ..._filteredSuggestions.map(
+                        (med) => ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.medication_outlined, size: 18, color: Color(0xFF64748B)),
+                          title: Text(med, style: const TextStyle(fontSize: 12)),
+                          onTap: () => _addMedication(med),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -2068,13 +2265,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               children: _rxMedications.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final med = entry.value;
+                final isStoreProduct = med['productId'] != null && med['productId'].toString().isNotEmpty;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: isStoreProduct ? const Color(0xFF10B981).withValues(alpha: 0.3) : const Color(0xFFE2E8F0)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2083,9 +2281,32 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
-                            child: Text(
-                              med['name'] ?? '',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F4C47)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  med['name'] ?? '',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F4C47)),
+                                ),
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isStoreProduct ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    isStoreProduct
+                                        ? 'In Store${med['price'] != null ? ' • ₹${med['price']}' : ''}'
+                                        : 'Custom Medicine (Not in store)',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: isStoreProduct ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           IconButton(
@@ -2235,26 +2456,28 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           child: _isLoadingPrescriptions
               ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F4C47)))
               : _prescriptions.isEmpty
-                  ? Center(
-                      child: Container(
-                        margin: const EdgeInsets.all(20),
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.receipt_long_rounded, size: 36, color: Colors.grey.shade400),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'No prescriptions recorded yet for this session.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                            ),
-                          ],
+                  ? SingleChildScrollView(
+                      child: Center(
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.receipt_long_rounded, size: 36, color: Colors.grey.shade400),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'No prescriptions recorded yet for this session.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     )
@@ -2303,24 +2526,169 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                                 Text('Diagnosis: ${rx['diagnosis']}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                               ],
                               const SizedBox(height: 8),
-                              ...meds.map((m) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.circle, size: 6, color: Color(0xFF0F4C47)),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            '${m['name']} - ${m['dosage'] ?? ''} (${m['frequency'] ?? ''}, ${m['duration'] ?? ''})',
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                              ...meds.map((m) {
+                                final inStore = PrescriptionProductHelper.isMedicationInStore(m);
+                                final prodId = PrescriptionProductHelper.getProductId(m);
+                                final bool isInCart = prodId != null && _appState.cart.any((c) => c.product.id == prodId);
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: inStore ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: inStore ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        inStore ? Icons.local_pharmacy_rounded : Icons.medication_outlined,
+                                        size: 16,
+                                        color: inStore ? const Color(0xFF059669) : const Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${m['name'] ?? 'Medication'}',
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                                            ),
+                                            Text(
+                                              '${m['dosage'] ?? ''} • ${m['frequency'] ?? ''} • ${m['duration'] ?? ''}',
+                                              style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      if (inStore) ...[
+                                        if (!widget.isDoctor) ...[
+                                          InkWell(
+                                            onTap: () async {
+                                              if (isInCart) {
+                                                Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen()));
+                                                return;
+                                              }
+                                              final prod = await PrescriptionProductHelper.getProductFromMed(m);
+                                              if (prod != null) {
+                                                _appState.addToCart(prod, qty: 1);
+                                                if (mounted) {
+                                                  setState(() {});
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('${prod.name} added to cart!'),
+                                                      action: SnackBarAction(
+                                                        label: 'View Cart',
+                                                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen())),
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: isInCart ? const Color(0xFFE0F2FE) : const Color(0xFF0F4C47),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    isInCart ? Icons.shopping_cart : Icons.add_shopping_cart,
+                                                    size: 12,
+                                                    color: isInCart ? const Color(0xFF0284C7) : Colors.white,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    isInCart ? 'In Cart' : 'Add to Cart',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: isInCart ? const Color(0xFF0284C7) : Colors.white,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ] else ...[
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFD1FAE5),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text('In Store', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF065F46))),
+                                          ),
+                                        ],
+                                      ] else ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                                          ),
+                                          child: const Text(
+                                            'Not in store',
+                                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
                                           ),
                                         ),
                                       ],
-                                    ),
-                                  )),
+                                    ],
+                                  ),
+                                );
+                              }),
                               if (rx['generalInstructions'] != null && rx['generalInstructions'].toString().isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text('Instructions: ${rx['generalInstructions']}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                              ],
+                              if (!widget.isDoctor && meds.any((m) => PrescriptionProductHelper.isMedicationInStore(m))) ...[
+                                const SizedBox(height: 10),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0F4C47),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    icon: const Icon(Icons.shopping_bag_outlined, size: 16),
+                                    label: const Text('Order Available Medicines', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                    onPressed: () async {
+                                      int addedCount = 0;
+                                      for (final m in meds) {
+                                        if (PrescriptionProductHelper.isMedicationInStore(m)) {
+                                          final p = await PrescriptionProductHelper.getProductFromMed(m);
+                                          if (p != null) {
+                                            _appState.addToCart(p, qty: 1);
+                                            addedCount++;
+                                          }
+                                        }
+                                      }
+                                      if (mounted) {
+                                        setState(() {});
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('$addedCount medicine(s) added to cart!'),
+                                            action: SnackBarAction(
+                                              label: 'View Cart',
+                                              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen())),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
                               ],
                             ],
                           ),
@@ -2616,33 +2984,36 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           child: _isLoadingHistory
               ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F4C47)))
               : _historyAppointments.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFF1F5F9),
-                                shape: BoxShape.circle,
+                  ? SingleChildScrollView(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFF1F5F9),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.history_rounded, size: 32, color: Colors.grey.shade400),
                               ),
-                              child: Icon(Icons.history_rounded, size: 36, color: Colors.grey.shade400),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No past completed consultations found',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF334155), fontSize: 13),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Completed visits between you and ${widget.peerName} will appear here.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                            ),
-                          ],
+                              const SizedBox(height: 10),
+                              const Text(
+                                'No past completed consultations found',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF334155), fontSize: 13),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Completed visits between you and ${widget.peerName} will appear here.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     )

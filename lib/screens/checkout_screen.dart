@@ -745,14 +745,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     Widget? leadingWidget,
   }) {
     final isSel = _selectedPaymentMethod == code;
-    return Container(
-      decoration: BoxDecoration(
-        color: isEnabled ? Colors.white : Colors.grey[50],
+    return Material(
+      color: isEnabled ? Colors.white : Colors.grey[50],
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
+        side: BorderSide(
           color: isSel ? AppColors.primary : AppColors.border.withOpacity(0.5),
         ),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           ListTile(

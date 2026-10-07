@@ -91,6 +91,23 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         [];
   }
 
+  List<DoctorUpcomingLeave> get _doctorLeaves {
+    return _docState.rawApiDoctor?.upcomingLeaves ??
+        widget.doctor.rawApiDoctor?.upcomingLeaves ??
+        _docState.upcomingLeaves;
+  }
+
+  DoctorUpcomingLeave? _getLeaveForDate(DateTime date) {
+    final leaves = _doctorLeaves;
+    if (leaves.isEmpty) return null;
+    final dStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    for (final l in leaves) {
+      if (l.date.trim() == dStr) return l;
+    }
+    return null;
+  }
+
   bool get isOnlineConsultation =>
       _selectedConsultationType == 'video' || _selectedConsultationType == 'audio';
 
@@ -535,7 +552,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
 
     setState(() {
       _isLoadingSlots = false;
-      if (filtered.isNotEmpty) {
+      if (_getLeaveForDate(_selectedDate) != null) {
+        _selectedSchedule = null;
+      } else if (filtered.isNotEmpty) {
         final bool isCurrentValid = _selectedSchedule != null &&
             _selectedSchedule!.dayOfWeek.toLowerCase().trim() == dayName &&
             _scheduleMatchesType(_selectedSchedule!, _selectedConsultationType) &&
@@ -571,6 +590,19 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   void _handleContinueToPayment() {
+    final leaveOnDate = _getLeaveForDate(_selectedDate);
+    if (leaveOnDate != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(leaveOnDate.reason != null && leaveOnDate.reason!.isNotEmpty
+              ? 'Doctor is on leave on this date: ${leaveOnDate.reason}'
+              : 'Doctor is on leave on this date. Please choose another date.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (_selectedSchedule == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -997,7 +1029,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
             _buildSlotsLoadingState()
           else if (_errorMessage != null)
             _buildSlotsErrorState()
-          else if (filteredSchedules.isEmpty)
+          else if (_getLeaveForDate(_selectedDate) != null) ...[
+            _buildDoctorLeaveNoticeCard(_getLeaveForDate(_selectedDate)!),
+          ] else if (filteredSchedules.isEmpty)
             _buildSlotsEmptyState(dayName, availableDaysSet)
           else ...[
             if (morningSchedules.isNotEmpty)
@@ -1042,32 +1076,44 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
           const SizedBox(height: 28),
 
           // 9. Continue to Payment Button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: (_selectedSchedule == null || _isLoadingSlots)
-                  ? null
-                  : _handleContinueToPayment,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0F4C47),
-                disabledBackgroundColor: Colors.grey.shade300,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 2,
+          Builder(builder: (context) {
+            final isDateOnLeave = _getLeaveForDate(_selectedDate) != null;
+            final canProceed = _selectedSchedule != null && !_isLoadingSlots && !isDateOnLeave;
+            return SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: !canProceed ? null : _handleContinueToPayment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F4C47),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 2,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      isDateOnLeave
+                          ? 'Doctor on Leave on Selected Date'
+                          : 'Continue to Payment',
+                      style: TextStyle(
+                        color: !canProceed ? Colors.grey.shade600 : Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      isDateOnLeave ? Icons.beach_access_rounded : Icons.arrow_forward_rounded,
+                      color: !canProceed ? Colors.grey.shade600 : Colors.white,
+                      size: 18,
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Text(
-                    'Continue to Payment',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18),
-                ],
-              ),
-            ),
-          ),
+            );
+          }),
           const SizedBox(height: 24),
         ],
       ),
@@ -1510,7 +1556,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                       date.month == _selectedDate.month &&
                       date.day == _selectedDate.day;
                   final isToday = dayDiff == 0;
-                  final hasSlotsOnDay = isWithin15Days && availableDaysSet.contains(_getDayOfWeek(date));
+                  final leaveItem = _getLeaveForDate(date);
+                  final isOnLeave = leaveItem != null;
+                  final hasSlotsOnDay = !isOnLeave && isWithin15Days && availableDaysSet.contains(_getDayOfWeek(date));
                   final dayLabel = isToday ? 'Today' : weekdays[date.weekday - 1];
 
                   return Expanded(
@@ -1531,24 +1579,39 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                         margin: const EdgeInsets.symmetric(horizontal: 2.0),
                         padding: const EdgeInsets.symmetric(vertical: 7),
                         decoration: BoxDecoration(
+                          gradient: isSel
+                              ? LinearGradient(
+                                  colors: isOnLeave
+                                      ? [const Color(0xFFEA580C), const Color(0xFFF59E0B)]
+                                      : [const Color(0xFF0F4C47), const Color(0xFF135A54)],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                )
+                              : null,
                           color: isSel
-                              ? const Color(0xFF0F4C47)
-                              : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC)),
+                              ? null
+                              : (isOnLeave
+                                  ? const Color(0xFFFFFBEB)
+                                  : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC))),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: isSel
-                                ? const Color(0xFF0F4C47)
-                                : (isWithin15Days
-                                    ? (hasSlotsOnDay
-                                        ? const Color(0xFF0F4C47).withValues(alpha: 0.3)
-                                        : const Color(0xFFE2E8F0))
-                                    : const Color(0xFFF1F5F9)),
+                                ? (isOnLeave ? const Color(0xFFEA580C) : const Color(0xFF0F4C47))
+                                : (isOnLeave
+                                    ? const Color(0xFFFDE68A)
+                                    : (isWithin15Days
+                                        ? (hasSlotsOnDay
+                                            ? const Color(0xFF0F4C47).withValues(alpha: 0.3)
+                                            : const Color(0xFFE2E8F0))
+                                        : const Color(0xFFF1F5F9))),
                             width: isSel ? 1.5 : 1,
                           ),
                           boxShadow: isSel
                               ? [
                                   BoxShadow(
-                                    color: const Color(0xFF0F4C47).withValues(alpha: 0.25),
+                                    color: isOnLeave
+                                        ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                                        : const Color(0xFF0F4C47).withValues(alpha: 0.25),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   ),
@@ -1566,7 +1629,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                                     ? Colors.grey.shade400
                                     : (isSel
                                         ? Colors.white70
-                                        : (hasSlotsOnDay ? AppColors.textDark : AppColors.textLight)),
+                                        : (isOnLeave
+                                            ? const Color(0xFFB45309)
+                                            : (hasSlotsOnDay ? AppColors.textDark : AppColors.textLight))),
                                 fontSize: 9.5,
                                 fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
                               ),
@@ -1581,22 +1646,43 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                                     ? Colors.grey.shade300
                                     : (isSel
                                         ? Colors.white
-                                        : (hasSlotsOnDay ? AppColors.textDark : Colors.grey.shade400)),
+                                        : (isOnLeave
+                                            ? const Color(0xFFD97706)
+                                            : (hasSlotsOnDay ? AppColors.textDark : Colors.grey.shade400))),
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Container(
-                              width: 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: (isWithin15Days && hasSlotsOnDay)
-                                    ? (isSel ? Colors.white : const Color(0xFF10B981))
-                                    : Colors.transparent,
+                            if (isOnLeave)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0.5),
+                                decoration: BoxDecoration(
+                                  color: isSel
+                                      ? Colors.white.withValues(alpha: 0.25)
+                                      : const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  'Leave',
+                                  style: TextStyle(
+                                    fontSize: 7.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSel ? Colors.white : const Color(0xFFB45309),
+                                  ),
+                                ),
+                              )
+                            else
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: (isWithin15Days && hasSlotsOnDay)
+                                      ? (isSel ? Colors.white : const Color(0xFF10B981))
+                                      : Colors.transparent,
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -1627,53 +1713,171 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
           }),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Row(
+        Builder(builder: (context) {
+          final selLeave = _getLeaveForDate(_selectedDate);
+          final isSelOnLeave = selLeave != null;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelOnLeave ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelOnLeave ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isSelOnLeave ? Icons.beach_access_rounded : Icons.event_available_outlined,
+                  size: 14,
+                  color: isSelOnLeave ? const Color(0xFFD97706) : const Color(0xFF0F4C47),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${_getDayOfWeek(_selectedDate).toUpperCase()} • ${_getFormattedDate(_selectedDate)}',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: isSelOnLeave ? const Color(0xFF92400E) : const Color(0xFF0F4C47),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelOnLeave
+                            ? const Color(0xFFD97706)
+                            : (availableDaysSet.contains(_getDayOfWeek(_selectedDate))
+                                ? const Color(0xFF10B981)
+                                : Colors.grey.shade400),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isSelOnLeave
+                          ? 'Doctor On Leave'
+                          : (availableDaysSet.contains(_getDayOfWeek(_selectedDate)) ? 'Slots Open' : 'No Slots'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: isSelOnLeave
+                            ? const Color(0xFFD97706)
+                            : (availableDaysSet.contains(_getDayOfWeek(_selectedDate))
+                                ? const Color(0xFF10B981)
+                                : AppColors.textLight),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDoctorLeaveNoticeCard(DoctorUpcomingLeave leave) {
+    final dayName = _getDayOfWeek(_selectedDate);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.event_available_outlined, size: 14, color: Color(0xFF0F4C47)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '${_getDayOfWeek(_selectedDate).toUpperCase()} • ${_getFormattedDate(_selectedDate)}',
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0F4C47)),
-                  overflow: TextOverflow.ellipsis,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.beach_access_rounded,
+                  color: Color(0xFFD97706),
+                  size: 24,
                 ),
               ),
-              Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: availableDaysSet.contains(_getDayOfWeek(_selectedDate))
-                          ? const Color(0xFF10B981)
-                          : Colors.grey.shade400,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Doctor is on Leave / Holiday',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Color(0xFF92400E),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    availableDaysSet.contains(_getDayOfWeek(_selectedDate)) ? 'Slots Open' : 'No Slots',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: availableDaysSet.contains(_getDayOfWeek(_selectedDate))
-                          ? const Color(0xFF10B981)
-                          : AppColors.textLight,
+                    const SizedBox(height: 2),
+                    Text(
+                      'Date: ${dayName[0].toUpperCase()}${dayName.substring(1)} • ${_getFormattedDate(_selectedDate)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFB45309),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (leave.reason != null && leave.reason!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFD97706)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Reason: ${leave.reason}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF78350F),
+                      ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          const Text(
+            'All consultation slots are blocked on this date. Please choose another date from the calendar to book your consultation.',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Color(0xFF78350F),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

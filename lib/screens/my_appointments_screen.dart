@@ -298,13 +298,35 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
         appointmentId: apt.id,
         token: token,
       );
-      if (activeRes.videoCall != null) {
+      if (activeRes.videoCall != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
         callId = activeRes.videoCall?.id;
-        if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
+        if (callId != null && callId.isNotEmpty) {
           await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
         }
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Doctor has not started the meeting yet. Please wait for doctor to initiate.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
       }
     } catch (_) {}
+
+    if (callId == null || callId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Doctor has not started the meeting yet. Please wait for doctor to initiate.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
 
     if (!mounted) return;
 

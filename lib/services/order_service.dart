@@ -177,4 +177,38 @@ class OrderService {
       );
     }
   }
+
+  /// Cancel Order
+  /// Endpoint: PATCH https://backend.chikitsakart.com/api/orders/:orderId/cancel
+  static Future<CancelOrderApiResponse> cancelOrder({
+    required String orderId,
+    required String reason,
+    String? token,
+  }) async {
+    final Uri url = Uri.parse('$orderDetailBaseUrl/$orderId/cancel');
+    final Map<String, dynamic> payload = {
+      'reason': reason.trim(),
+    };
+
+    try {
+      final response = await http
+          .patch(
+            url,
+            headers: _buildHeaders(token),
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return CancelOrderApiResponse.fromJson(body);
+    } catch (e) {
+      return CancelOrderApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to cancel order',
+        ),
+      );
+    }
+  }
 }

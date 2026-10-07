@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../constants/order_status.dart';
 import '../models/order_model.dart';
+import '../widgets/cancel_order_dialog.dart';
 import 'dashboard_screen.dart';
 import 'product_detail_screen.dart';
 
@@ -85,6 +86,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         : (widget.order?.orderNo ?? widget.order?.id ?? widget.orderId ?? 'ORDER');
 
     final orderStatus = (_apiOrderDetail?.order.orderStatus ?? widget.order?.status ?? 'placed').toLowerCase();
+    final String targetOrderId = _apiOrderDetail?.order.id ?? widget.order?.id ?? widget.orderId ?? '';
+    final parsedStatus = OrderStatusHelper.parse(orderStatus);
+    final canCancel = parsedStatus != OrderStatusType.cancelled &&
+        parsedStatus != OrderStatusType.delivered &&
+        parsedStatus != OrderStatusType.returned &&
+        parsedStatus != OrderStatusType.rto;
 
     final deliveryName = _apiOrderDetail?.order.deliveryName?.isNotEmpty == true
         ? _apiOrderDetail!.order.deliveryName!
@@ -806,6 +813,55 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                 ],
               ),
             ),
+      bottomNavigationBar: canCancel
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          showCancelOrderDialog(
+                            context: context,
+                            orderId: targetOrderId,
+                            orderNo: orderNo,
+                            onCancelled: () => _fetchOrderDetail(),
+                          );
+                        },
+                        icon: const Icon(Icons.cancel_outlined, color: Colors.red, size: 18),
+                        label: const Text(
+                          'Cancel Order',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.red.shade400),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
     );
   }
 

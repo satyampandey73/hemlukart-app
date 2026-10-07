@@ -1358,9 +1358,7 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
 
   Widget _buildHorizontalProductCard(Product prod) {
     final isWish = _appState.wishlistProductIds.contains(prod.id);
-    final discountPct =
-        (((prod.originalPrice - prod.price) / prod.originalPrice) * 100)
-            .toInt();
+    final discountPct = prod.effectiveDiscountPercent;
 
     return GestureDetector(
       onTap: () {

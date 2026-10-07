@@ -45,68 +45,113 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 style: TextStyle(fontSize: 16, color: AppColors.textLight),
               ),
               const SizedBox(height: 32),
-              // Custom Toggle
+              // Custom Toggle for Patient vs Healthcare Provider
               Container(
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => isPatient = true),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          decoration: BoxDecoration(
-                            color: isPatient
-                                ? AppColors.primary
-                                : Colors.transparent,
-                            borderRadius: const BorderRadius.horizontal(
-                              left: Radius.circular(7),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!isPatient) {
+                              setState(() => isPatient = true);
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 4,
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Patient',
-                            style: TextStyle(
+                            decoration: BoxDecoration(
                               color: isPatient
-                                  ? Colors.white
-                                  : AppColors.textLight,
-                              fontWeight: FontWeight.w600,
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: isPatient
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withValues(alpha: 0.25),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Patient',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: isPatient
+                                    ? Colors.white
+                                    : AppColors.textDark,
+                                fontWeight: isPatient
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => isPatient = false),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          decoration: BoxDecoration(
-                            color: !isPatient
-                                ? AppColors.primary
-                                : Colors.transparent,
-                            borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(7),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (isPatient) {
+                              setState(() => isPatient = false);
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 4,
                             ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Healthcare Provider',
-                            style: TextStyle(
+                            decoration: BoxDecoration(
                               color: !isPatient
-                                  ? Colors.white
-                                  : AppColors.textLight,
-                              fontWeight: FontWeight.w600,
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: !isPatient
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withValues(alpha: 0.25),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Healthcare Provider',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: !isPatient
+                                    ? Colors.white
+                                    : AppColors.textDark,
+                                fontWeight: !isPatient
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 32),

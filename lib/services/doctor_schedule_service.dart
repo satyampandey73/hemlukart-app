@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/doctor_schedule_model.dart';
+import '../models/doctor_leave_model.dart';
 import 'api_helper.dart';
 
 class DoctorScheduleService {
@@ -294,4 +295,155 @@ class DoctorScheduleService {
       );
     }
   }
+
+  /// API: GET https://backend.chikitsakart.com/api/schedules/leaves
+  /// Fetches all applied leaves / holidays for the authenticated doctor.
+  static Future<DoctorLeavesApiResponse> getDoctorLeaves({
+    required String token,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/leaves');
+    try {
+      final response = await http
+          .get(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return DoctorLeavesApiResponse.fromJson(body);
+      } else {
+        return DoctorLeavesApiResponse(
+          success: false,
+          data: [],
+          message: body['message']?.toString() ??
+              'Failed to fetch leaves (Status: ${response.statusCode})',
+        );
+      }
+    } catch (e) {
+      return DoctorLeavesApiResponse(
+        success: false,
+        data: [],
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to fetch doctor leaves',
+        ),
+      );
+    }
+  }
+
+  /// API: POST https://backend.chikitsakart.com/api/schedules/leaves
+  /// Applies a new leave/holiday block for the authenticated doctor.
+  /// Body: { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "reason": "..." }
+  static Future<DoctorCreateLeaveApiResponse> createDoctorLeave({
+    required String token,
+    required String startDate,
+    required String endDate,
+    required String reason,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/leaves');
+    try {
+      final payload = {
+        'startDate': startDate.trim(),
+        'endDate': endDate.trim(),
+        'reason': reason.trim(),
+      };
+
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return DoctorCreateLeaveApiResponse.fromJson(body);
+      } else {
+        return DoctorCreateLeaveApiResponse(
+          success: false,
+          message: body['message']?.toString() ??
+              'Failed to apply leave (Status: ${response.statusCode})',
+          data: [],
+        );
+      }
+    } catch (e) {
+      return DoctorCreateLeaveApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to apply leave',
+        ),
+        data: [],
+      );
+    }
+  }
+
+  /// API: DELETE https://backend.chikitsakart.com/api/schedules/leaves/:id
+  /// Removes an applied leave/holiday block by ID.
+  static Future<DoctorScheduleMutationResponse> deleteDoctorLeave({
+    required String token,
+    required String leaveId,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/leaves/${leaveId.trim()}');
+    try {
+      final response = await http
+          .delete(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 204) {
+        String msg = 'Leave removed successfully';
+        try {
+          if (response.body.isNotEmpty) {
+            final Map<String, dynamic> body = jsonDecode(response.body);
+            if (body['message'] != null) msg = body['message'].toString();
+          }
+        } catch (_) {}
+        return DoctorScheduleMutationResponse(
+          success: true,
+          message: msg,
+        );
+      } else {
+        String msg = 'Failed to remove leave (Status: ${response.statusCode})';
+        try {
+          if (response.body.isNotEmpty) {
+            final Map<String, dynamic> body = jsonDecode(response.body);
+            if (body['message'] != null) msg = body['message'].toString();
+          }
+        } catch (_) {}
+        return DoctorScheduleMutationResponse(
+          success: false,
+          message: msg,
+        );
+      }
+    } catch (e) {
+      return DoctorScheduleMutationResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to remove leave',
+        ),
+      );
+    }
+  }
 }
+

@@ -625,3 +625,25 @@ class SingleOrderDetailApiResponse {
     );
   }
 }
+
+class CancelOrderApiResponse {
+  final bool success;
+  final String message;
+  final CheckoutOrderDetails? data;
+
+  CancelOrderApiResponse({
+    required this.success,
+    required this.message,
+    this.data,
+  });
+
+  factory CancelOrderApiResponse.fromJson(Map<String, dynamic> json) {
+    return CancelOrderApiResponse(
+      success: json['success'] == true,
+      message: json['message']?.toString() ?? '',
+      data: json['data'] != null && json['data'] is Map<String, dynamic>
+          ? CheckoutOrderDetails.fromJson(json['data'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hemlukart_app/constants/app_state.dart';
 import 'package:hemlukart_app/models/product_model.dart';
 import 'package:hemlukart_app/services/product_service.dart';
 
@@ -90,6 +91,71 @@ void main() {
     expect(product.originalPrice, 8.0);
     expect(product.image, contains("cloudinary.com"));
     expect(product.isOutOfStock, false);
+  });
+
+  test('Product correctly handles percentage discount for consumer (60%) and doctor (70%)', () {
+    final sampleJson = {
+      "id": "prod-1001",
+      "productCode": "PRD-001",
+      "productName": "Herbal Wellness Oil",
+      "brandName": "NatureCare",
+      "categoryId": "cat-1",
+      "categoryName": "Ayurveda",
+      "categorySlug": "ayurveda",
+      "subCategory": "",
+      "prescriptionRequired": false,
+      "hsnSacCode": "HSN",
+      "taxRate": "12.00",
+      "gmpCertified": true,
+      "manufacturerCountry": "India",
+      "createdByRole": "admin",
+      "isActive": true,
+      "isDeleted": false,
+      "skus": [
+        {
+          "id": "sku-1001",
+          "productId": "prod-1001",
+          "skuCode": "SKU-001",
+          "skuName": "100ml Bottle",
+          "description": [],
+          "variants": [],
+          "images": [],
+          "unitOfMeasure": "ml",
+          "typeOfPacking": "Bottle",
+          "packSize": 100,
+          "mrp": "1000.00",
+          "sellerDiscount": "0.00",
+          "consumerDiscount": "60.00",
+          "consumerActive": true,
+          "doctorDiscount": "70.00",
+          "doctorActive": true,
+          "stockQuantity": 10,
+          "isActive": true,
+          "isDeleted": false
+        }
+      ]
+    };
+
+    final apiProd = ApiProductModel.fromJson(sampleJson);
+    final product = apiProd.toProduct();
+
+    // Consumer role test (default)
+    AppState().setDoctorSessionForTest(null);
+    expect(product.originalPrice, 1000.0);
+    expect(product.consumerDiscount, 60.0);
+    expect(product.doctorDiscount, 70.0);
+    expect(product.price, 400.0);
+    expect(product.effectiveDiscountPercent, 60);
+    expect(product.roleDiscountLabel, '60% OFF');
+
+    // Doctor role test
+    AppState().setDoctorSessionForTest('mock-doctor-token');
+    expect(product.price, 300.0);
+    expect(product.effectiveDiscountPercent, 70);
+    expect(product.roleDiscountLabel, 'Dr. 70% OFF');
+
+    // Reset back
+    AppState().setDoctorSessionForTest(null);
   });
 
   test('ProductsApiResponse deserializes root payload', () {

@@ -474,6 +474,34 @@ class DoctorConsultationFee {
   }
 }
 
+class DoctorUpcomingLeave {
+  final String id;
+  final String date;
+  final String? reason;
+
+  DoctorUpcomingLeave({
+    required this.id,
+    required this.date,
+    this.reason,
+  });
+
+  factory DoctorUpcomingLeave.fromJson(Map<String, dynamic> json) {
+    return DoctorUpcomingLeave(
+      id: json['id']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
+      reason: json['reason']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'date': date,
+      'reason': reason,
+    };
+  }
+}
+
 class ApiDoctor {
   final String id;
   final String? mobile;
@@ -514,6 +542,7 @@ class ApiDoctor {
   final String? createdByRole;
   final List<DoctorSchedule>? schedules;
   final List<DoctorConsultationFee>? consultationFees;
+  final List<DoctorUpcomingLeave>? upcomingLeaves;
 
   ApiDoctor({
     required this.id,
@@ -555,6 +584,7 @@ class ApiDoctor {
     this.createdByRole,
     this.schedules,
     this.consultationFees,
+    this.upcomingLeaves,
   });
 
   factory ApiDoctor.fromJson(Map<String, dynamic> json) {
@@ -635,6 +665,11 @@ class ApiDoctor {
               .map((e) => DoctorConsultationFee.fromJson(e as Map<String, dynamic>))
               .toList()
           : null,
+      upcomingLeaves: json['upcomingLeaves'] != null && json['upcomingLeaves'] is List
+          ? (json['upcomingLeaves'] as List)
+              .map((e) => DoctorUpcomingLeave.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : null,
     );
   }
 
@@ -678,6 +713,7 @@ class ApiDoctor {
     String? createdByRole,
     List<DoctorSchedule>? schedules,
     List<DoctorConsultationFee>? consultationFees,
+    List<DoctorUpcomingLeave>? upcomingLeaves,
   }) {
     return ApiDoctor(
       id: id ?? this.id,
@@ -721,6 +757,7 @@ class ApiDoctor {
       createdByRole: createdByRole ?? this.createdByRole,
       schedules: schedules ?? this.schedules,
       consultationFees: consultationFees ?? this.consultationFees,
+      upcomingLeaves: upcomingLeaves ?? this.upcomingLeaves,
     );
   }
 }

@@ -327,8 +327,9 @@ class ApiProductModel {
     final bool doctorActiveVal = primarySku?.doctorActive ?? true;
     final bool consumerActiveVal = primarySku?.consumerActive ?? true;
 
-    // Calculated price after discount
-    final double calculatedPrice = (mrpVal - discountVal).clamp(0.0, mrpVal);
+    // Calculated price after discount (percentage)
+    final double discountAmount = (mrpVal * discountVal / 100.0);
+    final double calculatedPrice = (mrpVal - discountAmount).clamp(0.0, mrpVal);
     final double finalPrice = calculatedPrice > 0 ? calculatedPrice : mrpVal;
 
     final String brand = brandName.trim().isEmpty ? 'Wellness' : brandName.trim();
@@ -368,7 +369,8 @@ class ApiProductModel {
         final double skuMrp = double.tryParse(sku.mrp) ?? mrpVal;
         final double skuDisc = double.tryParse(sku.consumerDiscount) ?? 0.0;
         final double skuDocDisc = double.tryParse(sku.doctorDiscount) ?? 0.0;
-        final double skuPrice = (skuMrp - skuDisc).clamp(0.0, skuMrp);
+        final double skuDiscAmount = (skuMrp * skuDisc / 100.0);
+        final double skuPrice = (skuMrp - skuDiscAmount).clamp(0.0, skuMrp);
 
         String packText = '';
         final String packing = sku.typeOfPacking.trim();

@@ -35,6 +35,7 @@ import '../services/clinic_service.dart';
 import 'registration_screen.dart';
 import 'partner_hub_dialog.dart';
 import 'contact_support_screen.dart';
+import '../widgets/today_appointment_banner_card.dart';
 
 // harsh.s@btplsoft.com
 class NewHomeScreen extends StatefulWidget {
@@ -123,6 +124,13 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     if (!_appState.isDoctorLoggedIn) {
       _fetchHomeDoctors();
       _fetchHomeClinics();
+    }
+    if (_appState.isLoggedIn) {
+      if (_appState.isDoctorLoggedIn) {
+        _appState.fetchDoctorAppointments();
+      } else {
+        _appState.fetchMyAppointments(limit: 50);
+      }
     }
   }
 
@@ -586,6 +594,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
         _fetchHomeDoctors(),
         _fetchHomeClinics(),
       ],
+      if (_appState.isLoggedIn) ...[
+        if (_appState.isDoctorLoggedIn)
+          _appState.fetchDoctorAppointments()
+        else
+          _appState.fetchMyAppointments(limit: 50),
+      ],
     ]);
   }
 
@@ -870,7 +884,33 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             ),
           ),
 
-          // const SizedBox(height: 16),
+          // Today's Appointment Banner Card (Single active/in-progress appointment for today)
+          if (_appState.isLoggedIn) ...[
+            Builder(
+              builder: (context) {
+                final apts = _appState.isDoctorLoggedIn
+                    ? _appState.doctorAppointments
+                    : _appState.myAppointments;
+                final activeTodayApt =
+                    TodayAppointmentBannerCard.getNextActiveTodayAppointment(apts);
+                if (activeTodayApt == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: TodayAppointmentBannerCard(
+                    appointment: activeTodayApt,
+                    isDoctor: _appState.isDoctorLoggedIn,
+                    onRefresh: () {
+                      if (_appState.isDoctorLoggedIn) {
+                        _appState.fetchDoctorAppointments();
+                      } else {
+                        _appState.fetchMyAppointments(limit: 50);
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
 
           // Banner Carousel (Auto-sliding images)
           Builder(

@@ -549,9 +549,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     children: _variants.map((v) {
                       final isSelected = v.packSize.toLowerCase() ==
                           _selectedVariant.packSize.toLowerCase();
-                      final int disc = v.originalPrice > v.price
-                          ? (((v.originalPrice - v.price) / v.originalPrice) * 100).round()
-                          : 0;
+                      final int disc = v.effectiveDiscountPercent;
                       final displayPack = formatPackText(v.packSize);
 
                       return InkWell(
@@ -669,14 +667,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                         vertical: 1.5,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFDCFCE7),
+                                        color: _appState.isDoctorLoggedIn
+                                            ? const Color(0xFF0D9488).withValues(alpha: 0.12)
+                                            : const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
-                                        '$disc% OFF',
-                                        style: const TextStyle(
+                                        _appState.isDoctorLoggedIn
+                                            ? 'Dr. $disc% OFF'
+                                            : '$disc% OFF',
+                                        style: TextStyle(
                                           fontSize: 9.5,
-                                          color: Color(0xFF16A34A),
+                                          color: _appState.isDoctorLoggedIn
+                                              ? const Color(0xFF0D9488)
+                                              : const Color(0xFF16A34A),
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),

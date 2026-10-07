@@ -221,8 +221,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       }
 
       // Discount %
-      final discountPct =
-          ((prod.originalPrice - prod.price) / prod.originalPrice) * 100;
+      final discountPct = prod.effectiveDiscountPercent;
       if (discountPct < _selectedDiscountMin) return false;
 
       // Prescription Required
@@ -243,8 +242,8 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       } else if (_sortBy == 'Rating: High to Low') {
         return b.rating.compareTo(a.rating);
       } else if (_sortBy == 'Discount: High to Low') {
-        final discA = ((a.originalPrice - a.price) / a.originalPrice);
-        final discB = ((b.originalPrice - b.price) / b.originalPrice);
+        final discA = a.effectiveDiscountPercent;
+        final discB = b.effectiveDiscountPercent;
         return discB.compareTo(discA);
       }
       return 0; // Relevance default
@@ -1470,10 +1469,7 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
       builder: (context, _) {
         final prod = _activeProd;
         final isWish = widget.appState.wishlistProductIds.contains(prod.id);
-        final discountPct = prod.originalPrice > 0
-            ? (((prod.originalPrice - prod.price) / prod.originalPrice) * 100)
-                .toInt()
-            : 0;
+        final discountPct = prod.effectiveDiscountPercent;
 
         return GestureDetector(
           onTap: () => Navigator.push(
@@ -1570,9 +1566,16 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 4, vertical: 2),
                             decoration: BoxDecoration(
-                                color: Colors.green[700],
+                                color: widget.appState.isDoctorLoggedIn
+                                    ? const Color(0xFF0D9488)
+                                    : Colors.green[700],
                                 borderRadius: BorderRadius.circular(4)),
-                            child: Text('$discountPct% OFF',
+                            child: Text(
+                                widget.appState.isDoctorLoggedIn
+                                    ? (prod.roleDiscountLabel.isNotEmpty
+                                        ? prod.roleDiscountLabel
+                                        : 'Dr. $discountPct% OFF')
+                                    : '$discountPct% OFF',
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 8,
@@ -1738,10 +1741,7 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
       builder: (context, _) {
         final prod = _activeProd;
         final isWish = widget.appState.wishlistProductIds.contains(prod.id);
-        final discountPct = prod.originalPrice > 0
-            ? (((prod.originalPrice - prod.price) / prod.originalPrice) * 100)
-                .toInt()
-            : 0;
+        final discountPct = prod.effectiveDiscountPercent;
 
         return GestureDetector(
           onTap: () => Navigator.push(
@@ -1900,9 +1900,15 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
                                   if (discountPct > 0) ...[
                                     const SizedBox(width: 6),
                                     Text(
-                                      '$discountPct% OFF',
-                                      style: const TextStyle(
-                                          color: Colors.green,
+                                      widget.appState.isDoctorLoggedIn
+                                          ? (prod.roleDiscountLabel.isNotEmpty
+                                              ? prod.roleDiscountLabel
+                                              : 'Dr. $discountPct% OFF')
+                                          : '$discountPct% OFF',
+                                      style: TextStyle(
+                                          color: widget.appState.isDoctorLoggedIn
+                                              ? const Color(0xFF0D9488)
+                                              : Colors.green,
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold),
                                     ),

@@ -161,18 +161,13 @@ void showVariantSelectorBottomSheet({
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: variants.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
                   final variant = variants[index];
                   final isSelected =
                       variant.packSize.toLowerCase() ==
                       selectedVariant.packSize.toLowerCase();
-                  final discountPct = variant.originalPrice > variant.price
-                      ? (((variant.originalPrice - variant.price) /
-                                  variant.originalPrice) *
-                              100)
-                          .round()
-                      : 0;
+                  final discountPct = variant.effectiveDiscountPercent;
 
                   return InkWell(
                     onTap: () {
@@ -277,15 +272,21 @@ void showVariantSelectorBottomSheet({
                                           vertical: 1,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.green.shade50,
+                                          color: AppState().isDoctorLoggedIn
+                                              ? const Color(0xFF0D9488).withValues(alpha: 0.1)
+                                              : Colors.green.shade50,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
                                         child: Text(
-                                          '$discountPct% OFF',
+                                          AppState().isDoctorLoggedIn
+                                              ? 'Dr. $discountPct% OFF'
+                                              : '$discountPct% OFF',
                                           style: TextStyle(
                                             fontSize: 9,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.green.shade700,
+                                            color: AppState().isDoctorLoggedIn
+                                                ? const Color(0xFF0D9488)
+                                                : Colors.green.shade700,
                                           ),
                                         ),
                                       ),

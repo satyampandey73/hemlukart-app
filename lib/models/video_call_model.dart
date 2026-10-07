@@ -4,8 +4,11 @@ class VideoCallSessionModel {
   final String? doctorId;
   final String? userId;
   final String status;
+  final String? initiatedBy;
+  final String? roomId;
   final String? startedAt;
   final String? endedAt;
+  final bool canRejoin;
 
   VideoCallSessionModel({
     required this.id,
@@ -13,8 +16,11 @@ class VideoCallSessionModel {
     this.doctorId,
     this.userId,
     required this.status,
+    this.initiatedBy,
+    this.roomId,
     this.startedAt,
     this.endedAt,
+    this.canRejoin = true,
   });
 
   factory VideoCallSessionModel.fromJson(Map<String, dynamic> json) {
@@ -38,14 +44,21 @@ class VideoCallSessionModel {
       data = json;
     }
 
+    final canRejoin = json['canRejoin'] as bool? ??
+        data['canRejoin'] as bool? ??
+        true;
+
     return VideoCallSessionModel(
       id: data['id']?.toString() ?? data['_id']?.toString() ?? '',
       appointmentId: data['appointmentId']?.toString() ?? data['roomId']?.toString() ?? '',
       doctorId: data['doctorId']?.toString(),
       userId: data['userId']?.toString() ?? data['patientId']?.toString(),
       status: data['status']?.toString() ?? 'active',
+      initiatedBy: data['initiatedBy']?.toString(),
+      roomId: data['roomId']?.toString(),
       startedAt: data['startedAt']?.toString(),
       endedAt: data['endedAt']?.toString(),
+      canRejoin: canRejoin,
     );
   }
 }
@@ -73,8 +86,12 @@ class StartVideoCallResponse {
       call = VideoCallSessionModel.fromJson(json);
     }
 
+    final bool isSuccess = json['success'] as bool? ??
+        (json['status'] == 'success') ||
+        (call != null);
+
     return StartVideoCallResponse(
-      success: json['success'] as bool? ?? (json['status'] == 'success') ?? (call != null),
+      success: isSuccess,
       message: json['message'] as String?,
       videoCall: call,
     );
@@ -86,12 +103,14 @@ class ActiveVideoCallResponse {
   final bool exists;
   final String? message;
   final VideoCallSessionModel? videoCall;
+  final bool canRejoin;
 
   ActiveVideoCallResponse({
     required this.success,
     required this.exists,
     this.message,
     this.videoCall,
+    this.canRejoin = true,
   });
 
   factory ActiveVideoCallResponse.fromJson(Map<String, dynamic> json) {
@@ -109,12 +128,14 @@ class ActiveVideoCallResponse {
     }
 
     final bool hasCall = call != null || json['exists'] == true || json['isActive'] == true;
+    final bool canRejoinVal = json['canRejoin'] as bool? ?? true;
 
     return ActiveVideoCallResponse(
       success: json['success'] as bool? ?? hasCall,
       exists: hasCall,
       message: json['message'] as String?,
       videoCall: call,
+      canRejoin: canRejoinVal,
     );
   }
 }

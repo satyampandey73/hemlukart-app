@@ -41,6 +41,23 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
         [];
   }
 
+  List<DoctorUpcomingLeave> get _doctorLeaves {
+    return _apiDoctorDetails?.upcomingLeaves ??
+        _docState.rawApiDoctor?.upcomingLeaves ??
+        _docState.upcomingLeaves;
+  }
+
+  DoctorUpcomingLeave? _getLeaveForDate(DateTime date) {
+    final leaves = _doctorLeaves;
+    if (leaves.isEmpty) return null;
+    final dStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    for (final l in leaves) {
+      if (l.date.trim() == dStr) return l;
+    }
+    return null;
+  }
+
   String _dayNameFromDate(DateTime date) {
     const days = [
       'monday',
@@ -166,6 +183,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     final now = DateTime.now();
     for (int i = 0; i < 15; i++) {
       final date = now.add(Duration(days: i));
+      if (_getLeaveForDate(date) != null) continue;
       final dayName = _dayNameFromDate(date);
       final daySchedules = scheds
           .where((s) => s.dayOfWeek.toLowerCase().trim() == dayName && s.isAvailable)
@@ -211,27 +229,32 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
   }
 
   void _initInitialSchedule() {
-    final dayName = _dayNameFromDate(_selectedSlotDate);
-    final daySchedules = _doctorSchedules
-        .where((s) => s.dayOfWeek.toLowerCase().trim() == dayName && s.isAvailable)
-        .toList();
-    if (daySchedules.isNotEmpty) {
-      try {
-        _selectedSchedule = daySchedules.firstWhere(
-          (s) =>
-              !_isSlotBooked(s, _selectedSlotDate) &&
-              !_isSlotTimePassed(s, _selectedSlotDate),
-        );
-        return;
-      } catch (_) {
-        _selectedSchedule = null;
+    if (_getLeaveForDate(_selectedSlotDate) != null) {
+      _selectedSchedule = null;
+    } else {
+      final dayName = _dayNameFromDate(_selectedSlotDate);
+      final daySchedules = _doctorSchedules
+          .where((s) => s.dayOfWeek.toLowerCase().trim() == dayName && s.isAvailable)
+          .toList();
+      if (daySchedules.isNotEmpty) {
+        try {
+          _selectedSchedule = daySchedules.firstWhere(
+            (s) =>
+                !_isSlotBooked(s, _selectedSlotDate) &&
+                !_isSlotTimePassed(s, _selectedSlotDate),
+          );
+          return;
+        } catch (_) {
+          _selectedSchedule = null;
+        }
       }
     }
 
-    // Auto-select first upcoming date within 15 days that has an available unpassed slot
+    // Auto-select first upcoming date within 15 days that has an available unpassed slot and not on leave
     final now = DateTime.now();
     for (int i = 0; i < 15; i++) {
       final candidateDate = now.add(Duration(days: i));
+      if (_getLeaveForDate(candidateDate) != null) continue;
       final cDayName = _dayNameFromDate(candidateDate);
       final cSchedules = _doctorSchedules
           .where((s) => s.dayOfWeek.toLowerCase().trim() == cDayName && s.isAvailable)
@@ -548,7 +571,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                       const SizedBox(width: 10),
                       if (!_appState.isDoctorLoggedIn)
                         ElevatedButton(
-                          onPressed: !_hasAvailableSlotInWeek
+                          onPressed: (!_hasAvailableSlotInWeek || _getLeaveForDate(_selectedSlotDate) != null)
                               ? null
                               : () async {
                                   final currentContext = context;
@@ -586,11 +609,13 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              !_hasAvailableSlotInWeek
-                                  ? 'No Slots Available'
-                                  : 'Book Appointment',
+                              _getLeaveForDate(_selectedSlotDate) != null
+                                  ? 'Doctor On Leave'
+                                  : (!_hasAvailableSlotInWeek
+                                      ? 'No Slots Available'
+                                      : 'Book Appointment'),
                               style: TextStyle(
-                                color: !_hasAvailableSlotInWeek
+                                color: (!_hasAvailableSlotInWeek || _getLeaveForDate(_selectedSlotDate) != null)
                                     ? Colors.grey.shade600
                                     : Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -1206,6 +1231,10 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
 
   void _updateSelectedScheduleForDate(DateTime date, List<DoctorSchedule> allSchedules) {
+    if (_getLeaveForDate(date) != null) {
+      _selectedSchedule = null;
+      return;
+    }
     final dName = _dayNameFromDate(date);
     final newDaySchedules = allSchedules
         .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
@@ -1448,7 +1477,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                     final dayScheds = allSchedules
                         .where((s) => s.dayOfWeek.toLowerCase().trim() == dName && s.isAvailable)
                         .toList();
-                    final hasAvailableSlots = isWithin15Days && dayScheds.any(
+                    final leaveItem = _getLeaveForDate(date);
+                    final isOnLeave = leaveItem != null;
+                    final hasAvailableSlots = !isOnLeave && isWithin15Days && dayScheds.any(
                       (s) => !_isSlotTimePassed(s, date) && !_isSlotBooked(s, date),
                     );
                     final dayLabel = isToday ? 'Today' : weekdays[date.weekday - 1];
@@ -1470,29 +1501,37 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           decoration: BoxDecoration(
                             gradient: isSel
                                 ? LinearGradient(
-                                    colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.85)],
+                                    colors: isOnLeave
+                                        ? [const Color(0xFFEA580C), const Color(0xFFF59E0B)]
+                                        : [AppColors.primary, AppColors.primary.withValues(alpha: 0.85)],
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                   )
                                 : null,
                             color: isSel
                                 ? null
-                                : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC)),
+                                : (isOnLeave
+                                    ? const Color(0xFFFFFBEB)
+                                    : (isWithin15Days ? Colors.white : const Color(0xFFF8FAFC))),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isSel
-                                  ? AppColors.primary
-                                  : (isWithin15Days
-                                      ? (hasAvailableSlots
-                                          ? AppColors.primary.withValues(alpha: 0.35)
-                                          : const Color(0xFFE2E8F0))
-                                      : const Color(0xFFF1F5F9)),
+                                  ? (isOnLeave ? const Color(0xFFEA580C) : AppColors.primary)
+                                  : (isOnLeave
+                                      ? const Color(0xFFFDE68A)
+                                      : (isWithin15Days
+                                          ? (hasAvailableSlots
+                                              ? AppColors.primary.withValues(alpha: 0.35)
+                                              : const Color(0xFFE2E8F0))
+                                          : const Color(0xFFF1F5F9))),
                               width: isSel ? 1.5 : 1,
                             ),
                             boxShadow: isSel
                                 ? [
                                     BoxShadow(
-                                      color: AppColors.primary.withValues(alpha: 0.28),
+                                      color: isOnLeave
+                                          ? const Color(0xFFF59E0B).withValues(alpha: 0.35)
+                                          : AppColors.primary.withValues(alpha: 0.28),
                                       blurRadius: 6,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1510,7 +1549,9 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                       ? Colors.grey.shade400
                                       : (isSel
                                           ? Colors.white70
-                                          : (hasAvailableSlots ? AppColors.textDark : AppColors.textLight)),
+                                          : (isOnLeave
+                                              ? const Color(0xFFB45309)
+                                              : (hasAvailableSlots ? AppColors.textDark : AppColors.textLight))),
                                   fontSize: 9.5,
                                   fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
                                 ),
@@ -1525,22 +1566,43 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                                       ? Colors.grey.shade300
                                       : (isSel
                                           ? Colors.white
-                                          : (hasAvailableSlots ? AppColors.textDark : Colors.grey.shade400)),
+                                          : (isOnLeave
+                                              ? const Color(0xFFD97706)
+                                              : (hasAvailableSlots ? AppColors.textDark : Colors.grey.shade400))),
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               const SizedBox(height: 2),
-                              Container(
-                                width: 5,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: (isWithin15Days && hasAvailableSlots)
-                                      ? (isSel ? Colors.white : const Color(0xFF10B981))
-                                      : Colors.transparent,
+                              if (isOnLeave)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0.5),
+                                  decoration: BoxDecoration(
+                                    color: isSel
+                                        ? Colors.white.withValues(alpha: 0.25)
+                                        : const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    'Leave',
+                                    style: TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSel ? Colors.white : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 5,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: (isWithin15Days && hasAvailableSlots)
+                                        ? (isSel ? Colors.white : const Color(0xFF10B981))
+                                        : Colors.transparent,
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -1573,46 +1635,164 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
           const SizedBox(height: 12),
 
           // Selected date summary banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.event_available, size: 16, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}, ${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textDark),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+          Builder(builder: (context) {
+            final currentDateLeave = _getLeaveForDate(_selectedSlotDate);
+            final isCurrentDateOnLeave = currentDateLeave != null;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isCurrentDateOnLeave ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isCurrentDateOnLeave ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: totalDaySlots > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isCurrentDateOnLeave ? Icons.beach_access_rounded : Icons.event_available,
+                    size: 16,
+                    color: isCurrentDateOnLeave ? const Color(0xFFD97706) : AppColors.primary,
                   ),
-                  child: Text(
-                    totalDaySlots > 0 ? '$totalDaySlots Slots Open' : 'No Slots',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: totalDaySlots > 0 ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}, ${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: isCurrentDateOnLeave ? const Color(0xFF92400E) : AppColors.textDark,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isCurrentDateOnLeave
+                          ? const Color(0xFFFEF3C7)
+                          : (totalDaySlots > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isCurrentDateOnLeave
+                          ? 'Doctor On Leave'
+                          : (totalDaySlots > 0 ? '$totalDaySlots Slots Open' : 'No Slots'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isCurrentDateOnLeave
+                            ? const Color(0xFFD97706)
+                            : (totalDaySlots > 0 ? const Color(0xFF16A34A) : const Color(0xFFD97706)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
           const SizedBox(height: 14),
 
-          // Slots or Empty state
-          if (daySchedules.isEmpty) ...[
+          // Leave Notice or Slots or Empty state
+          if (_getLeaveForDate(_selectedSlotDate) != null) ...[
+            Builder(builder: (context) {
+              final leave = _getLeaveForDate(_selectedSlotDate)!;
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.beach_access_rounded,
+                            color: Color(0xFFD97706),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Doctor on Leave / Holiday',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Color(0xFF92400E),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Date: ${selectedDayName[0].toUpperCase()}${selectedDayName.substring(1)}, ${_selectedSlotDate.day} ${months[_selectedSlotDate.month - 1]} ${_selectedSlotDate.year}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFFB45309),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (leave.reason != null && leave.reason!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFD97706)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Reason: ${leave.reason}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF78350F),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    const Text(
+                      'During applied leave dates, all consultation slots are blocked. Please select another date from the calendar to book your appointment.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF78350F),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ] else if (daySchedules.isEmpty) ...[
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10.0),
               child: Container(
@@ -1704,63 +1884,67 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
 
           if (!_appState.isDoctorLoggedIn) ...[
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: !_hasAvailableSlotInWeek
-                    ? null
-                    : () async {
-                        final currentContext = context;
-                        if (await LoginScreen.checkAndNavigate(currentContext)) {
-                          if (!mounted) return;
-                          if (currentContext.mounted) {
-                            Navigator.push(
-                              currentContext,
-                              MaterialPageRoute(
-                                builder: (_) => BookAppointmentScreen(
-                                  doctor: _docState,
-                                  initialDate: _selectedSlotDate,
-                                  initialSlotTime: _selectedSchedule?.startTime,
-                                  initialSchedule: _selectedSchedule,
+            Builder(builder: (context) {
+              final isCurrentDateOnLeave = _getLeaveForDate(_selectedSlotDate) != null;
+              final canBook = _hasAvailableSlotInWeek && !isCurrentDateOnLeave;
+              return SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: !canBook
+                      ? null
+                      : () async {
+                          final currentContext = context;
+                          if (await LoginScreen.checkAndNavigate(currentContext)) {
+                            if (!mounted) return;
+                            if (currentContext.mounted) {
+                              Navigator.push(
+                                currentContext,
+                                MaterialPageRoute(
+                                  builder: (_) => BookAppointmentScreen(
+                                    doctor: _docState,
+                                    initialDate: _selectedSlotDate,
+                                    initialSlotTime: _selectedSchedule?.startTime,
+                                    initialSchedule: _selectedSchedule,
+                                  ),
                                 ),
-                              ),
-                            );
+                              );
+                            }
                           }
-                        }
-                      },
-                icon: Icon(
-                  Icons.calendar_today_rounded,
-                  size: 16,
-                  color: !_hasAvailableSlotInWeek
-                      ? Colors.grey.shade500
-                      : Colors.white,
-                ),
-                label: Text(
-                  !_hasAvailableSlotInWeek
-                      ? 'No Slots Available This Week'
-                      : (_selectedSchedule != null
-                          ? 'Book Slot (${_formatTime12h(_selectedSchedule!.startTime)} • ₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')})'
-                          : 'Book Appointment with this Doctor'),
-                  style: TextStyle(
-                    color: !_hasAvailableSlotInWeek
-                        ? Colors.grey.shade600
-                        : Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                        },
+                  icon: Icon(
+                    isCurrentDateOnLeave
+                        ? Icons.beach_access_rounded
+                        : Icons.calendar_today_rounded,
+                    size: 16,
+                    color: !canBook ? Colors.grey.shade500 : Colors.white,
+                  ),
+                  label: Text(
+                    isCurrentDateOnLeave
+                        ? 'Doctor on Leave on Selected Date'
+                        : (!_hasAvailableSlotInWeek
+                            ? 'No Slots Available This Week'
+                            : (_selectedSchedule != null
+                                ? 'Book Slot (${_formatTime12h(_selectedSchedule!.startTime)} • ₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')})'
+                                : 'Book Appointment with this Doctor')),
+                    style: TextStyle(
+                      color: !canBook ? Colors.grey.shade600 : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledForegroundColor: Colors.grey.shade600,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  disabledForegroundColor: Colors.grey.shade600,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-            ),
+              );
+            }),
           ],
         ],
       ),

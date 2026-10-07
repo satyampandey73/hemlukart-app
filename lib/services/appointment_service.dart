@@ -96,6 +96,91 @@ class AppointmentService {
     return '09:00';
   }
 
+  /// Parses a date string (ISO, YYYY-MM-DD, DD-MM-YYYY) into a DateTime.
+  /// Falls back to today if null/empty or parsing fails.
+  static DateTime parseAppointmentDate(String? dateStr) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (dateStr == null || dateStr.trim().isEmpty) {
+      return today;
+    }
+    final d = dateStr.trim();
+    try {
+      if (d.contains('T')) {
+        final parsed = DateTime.parse(d);
+        final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed.toLocal();
+        return DateTime(ist.year, ist.month, ist.day);
+      }
+      if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(d)) {
+        final parts = d.split('-');
+        return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+      }
+      if (d.contains('/') || d.contains('-')) {
+        final sep = d.contains('/') ? '/' : '-';
+        final parts = d.split(sep);
+        if (parts.length == 3) {
+          if (parts[0].length == 4) {
+            return DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+          } else if (parts[2].length == 4) {
+            return DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          }
+        }
+      }
+    } catch (_) {}
+    return today;
+  }
+
+  /// Parses a time string (12-hour "1:10 PM", 24-hour "13:10", or from ISO date string) into (hour, minute).
+  /// Falls back to (10, 0) if null/empty or parsing fails.
+  static ({int hour, int minute}) parseAppointmentHourMinute({
+    String? timeStr,
+    String? dateStr,
+  }) {
+    if (timeStr != null && timeStr.trim().isNotEmpty) {
+      final clean = timeStr.trim();
+      final isPm = clean.toUpperCase().contains('PM');
+      final isAm = clean.toUpperCase().contains('AM');
+      final digitsAndColon = clean.replaceAll(RegExp(r'[^\d:]'), '');
+      final parts = digitsAndColon.split(':');
+      if (parts.isNotEmpty) {
+        int? h = int.tryParse(parts[0]);
+        int m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        if (h != null) {
+          if (isPm && h < 12) h += 12;
+          if (isAm && h == 12) h = 0;
+          return (hour: h, minute: m);
+        }
+      }
+    }
+
+    if (dateStr != null && dateStr.contains('T')) {
+      try {
+        final parsed = DateTime.parse(dateStr);
+        final ist = parsed.isUtc ? parsed.add(const Duration(hours: 5, minutes: 30)) : parsed.toLocal();
+        if (ist.hour != 0 || ist.minute != 0) {
+          return (hour: ist.hour, minute: ist.minute);
+        }
+      } catch (_) {}
+    }
+
+    return (hour: 10, minute: 0);
+  }
+
+  /// Converts an IST date and time (hour, minute) into a UTC ISO 8601 string.
+  /// (e.g. 2026-10-04 at 13:15 IST -> "2026-10-04T07:45:00.000Z")
+  /// This ensures that when the backend stores it in UTC, displaying it back in IST (+05:30)
+  /// produces the exact intended meeting time rather than adding 5:30 twice.
+  static String formatIstToUtcIso({
+    required DateTime date,
+    required int hour,
+    required int minute,
+  }) {
+    final istDateTime = DateTime.utc(date.year, date.month, date.day, hour, minute);
+    final utcDateTime = istDateTime.subtract(const Duration(hours: 5, minutes: 30));
+    return utcDateTime.toIso8601String();
+  }
+
+
   /// API: GET https://backend.chikitsakart.com/api/appointments/doctor/{doctorId}?limit=100
   /// Fetches all active appointments for a doctor so booked slots can be identified accurately.
   static Future<MyAppointmentsApiResponse> getDoctorAppointmentsByDoctorId({
@@ -560,6 +645,7 @@ class AppointmentService {
   static Future<SingleAppointmentApiResponse> rescheduleDoctorAppointment({
     required String appointmentId,
     required String newDate,
+    String? appointmentTime,
     String? reason,
     required String token,
   }) async {
@@ -582,6 +668,8 @@ class AppointmentService {
 
     final Map<String, dynamic> bodyData = {
       'newDate': newDate.trim(),
+      if (appointmentTime != null && appointmentTime.trim().isNotEmpty)
+        'appointmentTime': appointmentTime.trim(),
       if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
     };
 

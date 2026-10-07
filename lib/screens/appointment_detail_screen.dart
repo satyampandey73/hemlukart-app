@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_colors.dart';
@@ -8,6 +9,10 @@ import '../services/video_call_service.dart';
 import 'chat_screen.dart';
 import 'video_call_screen.dart';
 import '../services/eprescription_service.dart';
+import '../services/product_service.dart';
+import '../services/prescription_product_helper.dart';
+import 'eprescription_detail_screen.dart';
+import 'cart_screen.dart';
 
 class AppointmentDetailScreen extends StatefulWidget {
   final String appointmentId;
@@ -243,8 +248,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
   void _showRescheduleDialog() {
     if (_detail == null) return;
-    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
-    TimeOfDay selectedTime = const TimeOfDay(hour: 10, minute: 0);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parsedDate = AppointmentService.parseAppointmentDate(_detail!.appointmentDate);
+    DateTime selectedDate = parsedDate.isBefore(today) ? today : parsedDate;
+    final timeParsed = AppointmentService.parseAppointmentHourMinute(
+      timeStr: _detail!.appointmentTime,
+      dateStr: _detail!.appointmentDate,
+    );
+    TimeOfDay selectedTime = TimeOfDay(hour: timeParsed.hour, minute: timeParsed.minute);
     final TextEditingController reasonController = TextEditingController();
     String selectedReason = 'Conflicting schedule';
     final List<String> commonReasons = [
@@ -262,8 +274,10 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           builder: (context, setDialogState) {
             String formattedDate =
                 '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+            final h12 = selectedTime.hourOfPeriod == 0 ? 12 : selectedTime.hourOfPeriod;
+            final period = selectedTime.period == DayPeriod.pm ? 'PM' : 'AM';
             String formattedTime =
-                '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+                '${h12.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $period';
 
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -292,9 +306,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                       onTap: () async {
                         final picked = await showDatePicker(
                           context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          initialDate: selectedDate.isBefore(today) ? today : selectedDate,
+                          firstDate: today,
+                          lastDate: today.add(const Duration(days: 365)),
                         );
                         if (picked != null) {
                           setDialogState(() => selectedDate = picked);
@@ -415,13 +429,23 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                         ? (reasonController.text.trim().isEmpty ? 'Conflicting schedule' : reasonController.text.trim())
                         : selectedReason;
 
-                    // Build ISO 8601 datetime string
-                    final newDateTimeStr =
-                        '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}'
-                        'T${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}:00.000Z';
+                    final newDateTimeStr = AppointmentService.formatIstToUtcIso(
+                      date: selectedDate,
+                      hour: selectedTime.hour,
+                      minute: selectedTime.minute,
+                    );
+
+                    final h12 = selectedTime.hourOfPeriod == 0 ? 12 : selectedTime.hourOfPeriod;
+                    final period = selectedTime.period == DayPeriod.pm ? 'PM' : 'AM';
+                    final formattedApptTime =
+                        '${h12.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $period';
 
                     Navigator.pop(context);
-                    _handleRescheduleAppointment(newDate: newDateTimeStr, reason: reason);
+                    _handleRescheduleAppointment(
+                      newDate: newDateTimeStr,
+                      appointmentTime: formattedApptTime,
+                      reason: reason,
+                    );
                   },
                   child: const Text('Confirm Reschedule', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
@@ -433,7 +457,11 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     );
   }
 
-  Future<void> _handleRescheduleAppointment({required String newDate, required String reason}) async {
+  Future<void> _handleRescheduleAppointment({
+    required String newDate,
+    String? appointmentTime,
+    required String reason,
+  }) async {
     if (_detail == null) return;
     final token = _appState.doctorToken;
     if (token == null || token.isEmpty) {
@@ -449,6 +477,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
       final response = await AppointmentService.rescheduleDoctorAppointment(
         appointmentId: _detail!.id,
         newDate: newDate,
+        appointmentTime: appointmentTime,
         reason: reason,
         token: token,
       );
@@ -504,6 +533,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           _detail = response.appointment;
           _isLoading = false;
         });
+        if (_issuedPrescription == null) {
+          _loadPrescriptionForAppointment();
+        }
       } else {
         if (_detail == null) {
           setState(() {
@@ -521,6 +553,27 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadPrescriptionForAppointment() async {
+    if (_isDoctorView) return; // Doctor should not see prescription card in appointment details
+    try {
+      final token = _appState.authToken;
+      final res = await EPrescriptionService.getPatientPrescriptions(token: token, limit: 50);
+      if (!mounted) return;
+      if (res['success'] == true && res['prescriptions'] is List) {
+        final list = List<Map<String, dynamic>>.from(res['prescriptions']);
+        final match = list.firstWhere(
+          (p) => (p['appointmentId'] ?? '').toString() == widget.appointmentId,
+          orElse: () => {},
+        );
+        if (match.isNotEmpty) {
+          setState(() {
+            _issuedPrescription = match;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Color _getStatusColor(String status) {
@@ -744,7 +797,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     backgroundImage: detail.displayDoctorPhoto.isNotEmpty
                         ? NetworkImage(detail.displayDoctorPhoto) as ImageProvider
                         : const AssetImage('assets/doctor_profile.png'),
-                    onBackgroundImageError: (_, __) {},
+                    onBackgroundImageError: (e, s) {},
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -884,7 +937,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               ),
             ],
 
-            if (_issuedPrescription != null) ...[
+            if (!_isDoctorView && _issuedPrescription != null) ...[
               const SizedBox(height: 16),
               _buildPrescriptionCard(_issuedPrescription!),
             ],
@@ -975,13 +1028,35 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                   String? callId;
                                   try {
                                     final activeRes = await VideoCallService.getActiveVideoCall(appointmentId: detail.id, token: token);
-                                    if (activeRes.videoCall != null) {
+                                    if (activeRes.videoCall != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
                                       callId = activeRes.videoCall?.id;
-                                      if (callId != null && activeRes.videoCall!.status.toLowerCase() != 'ended') {
+                                      if (callId != null && callId.isNotEmpty) {
                                         await VideoCallService.joinVideoCall(videoCallId: callId, token: token);
                                       }
+                                    } else {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Doctor has not started the meeting yet. Please wait for doctor to initiate.'),
+                                          backgroundColor: Colors.orange,
+                                          duration: Duration(seconds: 3),
+                                        ),
+                                      );
+                                      return;
                                     }
                                   } catch (_) {}
+
+                                  if (callId == null || callId.isEmpty) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Doctor has not started the meeting yet. Please wait for doctor to initiate.'),
+                                        backgroundColor: Colors.orange,
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                    return;
+                                  }
 
                                   if (!mounted) return;
                                   await Navigator.push(
@@ -1529,13 +1604,19 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           const SizedBox(height: 8),
           ...medsList.map((m) {
             final Map item = m is Map ? m : {};
+            final String? prodId = PrescriptionProductHelper.extractProductId(item);
+            final bool isInStore = prodId != null && prodId.isNotEmpty;
+            final bool isItemInCart = isInStore && _appState.cart.any((c) => c.product.id == prodId);
+
             return Container(
-              margin: const EdgeInsets.only(bottom: 6),
+              margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(
+                  color: isInStore ? const Color(0xFF86EFAC) : const Color(0xFFE2E8F0),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1585,6 +1666,108 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                       style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  // Store Availability & Add to Cart button / Not in store badge
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (isInStore) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_circle_outline, size: 11, color: Color(0xFF16A34A)),
+                              const SizedBox(width: 3),
+                              Text(
+                                item['productPrice'] != null ? 'In Store • ₹${item['productPrice']}' : 'In Store',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF16A34A)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isItemInCart) ...[
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const CartScreen()),
+                            ),
+                            icon: const Icon(Icons.shopping_bag_outlined, size: 12, color: AppColors.primary),
+                            label: const Text('View Cart', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              visualDensity: VisualDensity.compact,
+                              side: const BorderSide(color: AppColors.primary),
+                            ),
+                          ),
+                        ] else ...[
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final prod = await PrescriptionProductHelper.getOrFetchProduct(
+                                productId: prodId,
+                                fallbackName: item['name']?.toString(),
+                                fallbackPrice: double.tryParse(item['productPrice']?.toString() ?? '150'),
+                                fallbackImage: item['productImage']?.toString(),
+                                fallbackDosageForm: item['dosageForm']?.toString(),
+                              );
+                              if (prod != null) {
+                                await _appState.addToCart(prod, qty: 1);
+                                if (!mounted) return;
+                                setState(() {});
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('${prod.name} added to cart!'),
+                                    backgroundColor: const Color(0xFF0F5B4C),
+                                    action: SnackBarAction(
+                                      label: 'VIEW CART',
+                                      textColor: Colors.amber,
+                                      onPressed: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const CartScreen()),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.add_shopping_cart, size: 12, color: Colors.white),
+                            label: const Text('Add to Cart', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F5B4C),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.storefront_outlined, size: 11, color: Color(0xFF64748B)),
+                              SizedBox(width: 4),
+                              Text(
+                                'Not in store',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Text('Custom medicine', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             );
@@ -1620,47 +1803,133 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               ],
             ),
           ],
+          const SizedBox(height: 12),
+          // Action buttons: View Full Rx & Order all available medicines
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EPrescriptionDetailScreen(
+                          prescriptionData: rx,
+                          isDoctorView: _isDoctorView,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.receipt_long_rounded, size: 14, color: AppColors.primary),
+                  label: const Text('View Full Rx', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.primary),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              if (medsList.any((m) => PrescriptionProductHelper.isMedicationInStore(m))) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      int count = 0;
+                      for (final m in medsList) {
+                        final pid = PrescriptionProductHelper.extractProductId(m);
+                        if (pid != null && pid.isNotEmpty) {
+                          final prod = await PrescriptionProductHelper.getOrFetchProduct(
+                            productId: pid,
+                            fallbackName: (m['name'] ?? '').toString(),
+                            fallbackPrice: double.tryParse(m['productPrice']?.toString() ?? '150'),
+                            fallbackImage: m['productImage']?.toString(),
+                          );
+                          if (prod != null) {
+                            await _appState.addToCart(prod, qty: 1);
+                            count++;
+                          }
+                        }
+                      }
+                      if (!mounted) return;
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('$count medicine(s) added to cart!'),
+                          backgroundColor: const Color(0xFF0F5B4C),
+                        ),
+                      );
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen()));
+                    },
+                    icon: const Icon(Icons.shopping_bag_outlined, size: 14, color: Colors.white),
+                    label: const Text('Order Online', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F5B4C),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );
   }
 
   void _showPrescriptionDialog({String? patientName, String? appointmentId, String? userId}) {
-    final rxDiagnosisCtrl = TextEditingController(text: 'Hypertension Stage 2');
-    final rxFindingsCtrl = TextEditingController(text: 'BP: 160/100 mmHg, No other complications');
-    final rxLabCtrl = TextEditingController(text: 'Blood pressure monitoring daily\nLipid Profile after 1 month');
-    final rxDietCtrl = TextEditingController(text: 'Low salt diet\nAvoid processed foods');
-    final rxGeneralCtrl = TextEditingController(text: 'Monitor BP twice daily\nExercise 30 minutes daily');
-    final rxFollowUpCtrl = TextEditingController(text: '2026-08-25');
+    final rxDiagnosisCtrl = TextEditingController(text: 'General Health Consultation');
+    final rxFindingsCtrl = TextEditingController(text: 'Routine checkup, symptoms noted');
+    final rxLabCtrl = TextEditingController();
+    final rxDietCtrl = TextEditingController();
+    final rxGeneralCtrl = TextEditingController();
+    final rxFollowUpCtrl = TextEditingController();
 
     int validityDays = 30;
     int refillsAllowed = 2;
 
+    Map<String, dynamic> makeMedItem({
+      String name = '',
+      String strength = '500mg',
+      String dosageForm = 'Tablet',
+      String dosage = '1 tab',
+      String frequency = 'Twice daily',
+      String duration = '7 days',
+      String timing = 'After meals',
+      String instructions = 'Take with water',
+      String quantity = '14',
+      bool refillable = false,
+      String? productId,
+      Product? product,
+    }) {
+      return {
+        "name": TextEditingController(text: name),
+        "strength": TextEditingController(text: strength),
+        "dosageForm": dosageForm,
+        "dosage": TextEditingController(text: dosage),
+        "frequency": frequency,
+        "duration": TextEditingController(text: duration),
+        "timing": timing,
+        "instructions": TextEditingController(text: instructions),
+        "quantity": TextEditingController(text: quantity),
+        "refillable": refillable,
+        "productId": productId,
+        "selectedProduct": product,
+        "searchCtrl": TextEditingController(text: name),
+        "searchResults": <Product>[],
+        "isSearching": false,
+        "showSuggestions": false,
+        "debounceTimer": null as Timer?,
+      };
+    }
+
     List<Map<String, dynamic>> medications = [
-      {
-        "name": TextEditingController(text: "Amlodipine"),
-        "strength": TextEditingController(text: "5mg"),
-        "dosageForm": "Tablet",
-        "dosage": TextEditingController(text: "1 tablet"),
-        "frequency": "Once daily",
-        "duration": TextEditingController(text: "30 days"),
-        "timing": "After breakfast",
-        "instructions": TextEditingController(text: "Take with water, avoid grapefruit"),
-        "quantity": TextEditingController(text: "30"),
-        "refillable": true,
-      },
-      {
-        "name": TextEditingController(text: "Losartan"),
-        "strength": TextEditingController(text: "50mg"),
-        "dosageForm": "Tablet",
-        "dosage": TextEditingController(text: "1 tablet"),
-        "frequency": "Once daily",
-        "duration": TextEditingController(text: "30 days"),
-        "timing": "Evening",
-        "instructions": TextEditingController(text: "Take with water"),
-        "quantity": TextEditingController(text: "30"),
-        "refillable": true,
-      },
+      makeMedItem(
+        name: "Ashwagandha",
+        strength: "500mg",
+        dosage: "1 tablet",
+        instructions: "Take with warm milk or water",
+        quantity: "30",
+        refillable: true,
+      ),
     ];
 
     bool isLoading = false;
@@ -1671,82 +1940,278 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setStateModal) {
+          void onMedSearchChanged(Map<String, dynamic> med, String query) {
+            (med['debounceTimer'] as Timer?)?.cancel();
+            if (query.trim().isEmpty) {
+              setStateModal(() {
+                med['searchResults'] = <Product>[];
+                med['isSearching'] = false;
+                med['showSuggestions'] = false;
+              });
+              return;
+            }
+
+            setStateModal(() {
+              med['isSearching'] = true;
+              med['showSuggestions'] = true;
+            });
+
+            med['debounceTimer'] = Timer(const Duration(milliseconds: 300), () async {
+              try {
+                final res = await ProductService.getProducts(search: query.trim(), limit: 8);
+                if (res.success) {
+                  final prods = res.products.map((p) => p.toProduct()).toList();
+                  setStateModal(() {
+                    med['searchResults'] = prods;
+                    med['isSearching'] = false;
+                  });
+                } else {
+                  setStateModal(() {
+                    med['searchResults'] = <Product>[];
+                    med['isSearching'] = false;
+                  });
+                }
+              } catch (_) {
+                setStateModal(() {
+                  med['searchResults'] = <Product>[];
+                  med['isSearching'] = false;
+                });
+              }
+            });
+          }
+
+          void selectProduct(Map<String, dynamic> med, Product prod) {
+            PrescriptionProductHelper.cacheProduct(prod);
+            setStateModal(() {
+              med['productId'] = prod.id;
+              med['selectedProduct'] = prod;
+              (med['name'] as TextEditingController).text = prod.name;
+              (med['searchCtrl'] as TextEditingController).text = prod.name;
+              med['showSuggestions'] = false;
+              med['searchResults'] = <Product>[];
+              if (prod.potency.isNotEmpty && prod.potency != 'Standard') {
+                (med['strength'] as TextEditingController).text = prod.potency;
+              }
+            });
+          }
+
+          void selectCustomMedicine(Map<String, dynamic> med, String customName) {
+            setStateModal(() {
+              med['productId'] = null;
+              med['selectedProduct'] = null;
+              (med['name'] as TextEditingController).text = customName.trim();
+              (med['searchCtrl'] as TextEditingController).text = customName.trim();
+              med['showSuggestions'] = false;
+              med['searchResults'] = <Product>[];
+            });
+          }
+
+          void unlinkProduct(Map<String, dynamic> med) {
+            setStateModal(() {
+              med['productId'] = null;
+              med['selectedProduct'] = null;
+              (med['searchCtrl'] as TextEditingController).clear();
+              med['showSuggestions'] = false;
+              med['searchResults'] = <Product>[];
+            });
+          }
+
           return Container(
-            height: MediaQuery.of(context).size.height * 0.88,
+            height: MediaQuery.of(context).size.height * 0.92,
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Row(
+                // Top Handle & Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFCBD5E1),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Icon(Icons.description, color: AppColors.primary),
-                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'Create Digital E-Prescription',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textDark,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE6F7F5),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.receipt_long_rounded,
+                                    color: Color(0xFF0F766E),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Issue E-Prescription',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        'Digital prescription for patient',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () {
+                              for (final m in medications) {
+                                (m['debounceTimer'] as Timer?)?.cancel();
+                              }
+                              Navigator.pop(ctx);
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
                               ),
-                              overflow: TextOverflow.ellipsis,
+                              child: const Icon(Icons.close, size: 18, color: Color(0xFF64748B)),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const Divider(),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+                // Scrollable Content
                 Expanded(
                   child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (patientName != null && patientName.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.person, size: 16, color: AppColors.primary),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'Patient: $patientName',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                        // Patient Summary Banner
+                        if (patientName != null && patientName.isNotEmpty) ...[
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFBBF7D0)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFDCFCE7),
+                                    shape: BoxShape.circle,
                                   ),
-                                ],
-                              ),
+                                  child: const Icon(Icons.person, size: 16, color: Color(0xFF15803D)),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        patientName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: Color(0xFF14532D),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (appointmentId != null && appointmentId.isNotEmpty)
+                                        Text(
+                                          'Consultation #$appointmentId',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF15803D),
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // ── SECTION 1: CLINICAL ASSESSMENT ────────────────
+                        Row(
+                          children: [
+                            const Icon(Icons.health_and_safety_outlined, size: 16, color: Color(0xFF0F766E)),
+                            const SizedBox(width: 6),
+                            const Expanded(
+                              child: Text(
+                                '1. Clinical Assessment',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F766E),
+                                  letterSpacing: 0.3,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
 
                         // Diagnosis
                         TextField(
                           controller: rxDiagnosisCtrl,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Diagnosis *',
-                            hintText: 'e.g., Hypertension Stage 2',
-                            border: OutlineInputBorder(),
+                            hintText: 'e.g., Acid Peptic Disorder, Joint Pain, Hypertension',
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1754,296 +2219,904 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                         // Clinical Findings
                         TextField(
                           controller: rxFindingsCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Clinical Findings',
-                            hintText: 'e.g., BP: 160/100 mmHg',
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: 'Clinical Findings / Symptoms',
+                            hintText: 'e.g., BP 120/80 mmHg, pulse normal, symptoms duration 5 days',
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-
-                        // Medications Header
+                        const SizedBox(height: 18),
+                        // ── SECTION 2: MEDICATIONS ─────────────────────────
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            const Icon(Icons.medication_outlined, size: 16, color: Color(0xFF0F766E)),
+                            const SizedBox(width: 6),
                             const Expanded(
                               child: Text(
-                                'Prescribed Medications',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                '2. Medications (Rx)',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F766E),
+                                  letterSpacing: 0.3,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            TextButton.icon(
-                              onPressed: () {
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () {
                                 setStateModal(() {
-                                  medications.add({
-                                    "name": TextEditingController(),
-                                    "strength": TextEditingController(text: "500mg"),
-                                    "dosageForm": "Tablet",
-                                    "dosage": TextEditingController(text: "1 tablet"),
-                                    "frequency": "Twice daily",
-                                    "duration": TextEditingController(text: "7 days"),
-                                    "timing": "After meals",
-                                    "instructions": TextEditingController(),
-                                    "quantity": TextEditingController(text: "14"),
-                                    "refillable": false,
-                                  });
+                                  medications.add(makeMedItem());
                                 });
                               },
-                              icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Add Medicine'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE6F7F5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add, size: 14, color: Color(0xFF0F766E)),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'Add Medicine',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF0F766E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 12),
 
+                        // Medication Cards
                         ...medications.asMap().entries.map((entry) {
                           int index = entry.key;
                           Map<String, dynamic> med = entry.value;
+                          final bool hasLinkedProduct = med['productId'] != null && med['productId'].toString().isNotEmpty;
+                          final Product? selProduct = med['selectedProduct'] as Product?;
+                          final bool showSug = med['showSuggestions'] == true;
+                          final List<Product> results = (med['searchResults'] as List<Product>?) ?? [];
+                          final bool isSearching = med['isSearching'] == true;
+                          final String searchTxt = (med['searchCtrl'] as TextEditingController).text.trim();
+
                           return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
+                            margin: const EdgeInsets.only(bottom: 16),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: hasLinkedProduct ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
+                                width: hasLinkedProduct ? 1.5 : 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                // Card Top: Pill Index + Status + Remove
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Medication #${index + 1}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.primary),
+                                    Expanded(
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF0F766E),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'Med #${index + 1}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          if (hasLinkedProduct)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFDCFCE7),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.check_circle, size: 11, color: Color(0xFF15803D)),
+                                                  SizedBox(width: 3),
+                                                  Text(
+                                                    'STORE PRODUCT',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF15803D),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          else
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF1F5F9),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text(
+                                                'CUSTOM ITEM',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF64748B),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                     if (medications.length > 1)
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
-                                        onPressed: () {
+                                      InkWell(
+                                        onTap: () {
                                           setStateModal(() {
+                                            (med['debounceTimer'] as Timer?)?.cancel();
                                             medications.removeAt(index);
                                           });
                                         },
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.shade50,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(Icons.delete_outline, color: Colors.red, size: 16),
+                                        ),
                                       ),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 12),
+
+                                // Product search & Store linking
+                                if (hasLinkedProduct) ...[
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Image.network(
+                                            selProduct?.image ?? '',
+                                            width: 40,
+                                            height: 40,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) => Image.asset('assets/p1.png', width: 40, height: 40, fit: BoxFit.cover),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                selProduct?.name ?? (med['name'] as TextEditingController).text,
+                                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              if (selProduct != null)
+                                                Text(
+                                                  '₹${selProduct.price} • ${selProduct.brand}',
+                                                  style: const TextStyle(fontSize: 11, color: Color(0xFF047857), fontWeight: FontWeight.w500),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => unlinkProduct(med),
+                                          style: TextButton.styleFrom(
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                                          ),
+                                          child: const Text('Change', style: TextStyle(color: Color(0xFFDC2626), fontSize: 11, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ] else ...[
+                                  TextField(
+                                    controller: med['searchCtrl'] as TextEditingController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Search Product in Store Catalog',
+                                      hintText: 'e.g. Ashwagandha, Triphala, Brahmi...',
+                                      prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF0F766E)),
+                                      suffixIcon: isSearching
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: Padding(
+                                                padding: EdgeInsets.all(12),
+                                                child: CircularProgressIndicator(color: Color(0xFF0F766E), strokeWidth: 2),
+                                              ),
+                                            )
+                                          : (searchTxt.isNotEmpty
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.clear, size: 16),
+                                                  onPressed: () {
+                                                    setStateModal(() {
+                                                      (med['searchCtrl'] as TextEditingController).clear();
+                                                      med['searchResults'] = <Product>[];
+                                                      med['showSuggestions'] = false;
+                                                    });
+                                                  },
+                                                )
+                                              : null),
+                                      isDense: true,
+                                      filled: true,
+                                      fillColor: const Color(0xFFF8FAFC),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                    ),
+                                    onChanged: (val) => onMedSearchChanged(med, val),
+                                  ),
+
+                                  // Dropdown Suggestions
+                                  if (showSug && searchTxt.isNotEmpty) ...[
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 4),
+                                      constraints: const BoxConstraints(maxHeight: 200),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                                        boxShadow: [
+                                          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 6, offset: const Offset(0, 2)),
+                                        ],
+                                      ),
+                                      child: ListView(
+                                        shrinkWrap: true,
+                                        padding: EdgeInsets.zero,
+                                        children: [
+                                          ListTile(
+                                            dense: true,
+                                            leading: const Icon(Icons.edit_note, size: 20, color: Color(0xFF64748B)),
+                                            title: Text(
+                                              'Use Custom: "$searchTxt"',
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                            ),
+                                            subtitle: const Text('Not in store (patient sees "Not in store")', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                            onTap: () => selectCustomMedicine(med, searchTxt),
+                                          ),
+                                          const Divider(height: 1),
+
+                                          if (results.isEmpty && !isSearching)
+                                            const Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: Text('No store products matching this name.', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                                            ),
+
+                                          ...results.map((prod) {
+                                            return ListTile(
+                                              dense: true,
+                                              leading: ClipRRect(
+                                                borderRadius: BorderRadius.circular(4),
+                                                child: Image.network(
+                                                  prod.image,
+                                                  width: 34,
+                                                  height: 34,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (c, e, s) => Image.asset('assets/p1.png', width: 34, height: 34, fit: BoxFit.cover),
+                                                ),
+                                              ),
+                                              title: Text(prod.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                              subtitle: Text('${prod.brand} • ₹${prod.price}', style: const TextStyle(fontSize: 10, color: Color(0xFF16A34A), fontWeight: FontWeight.w600)),
+                                              trailing: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(4)),
+                                                child: const Text('Link', style: TextStyle(fontSize: 10, color: Color(0xFF16A34A), fontWeight: FontWeight.bold)),
+                                              ),
+                                              onTap: () => selectProduct(med, prod),
+                                            );
+                                          }),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 10),
+                                ],
+
+                                // Medicine Name
                                 TextField(
                                   controller: med['name'] as TextEditingController,
-                                  decoration: const InputDecoration(labelText: 'Medicine Name *', isDense: true, border: OutlineInputBorder()),
+                                  decoration: InputDecoration(
+                                    labelText: 'Medicine Name *',
+                                    hintText: 'e.g. Ashwagandha Churna',
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                    suffixIcon: hasLinkedProduct
+                                        ? const Tooltip(
+                                            message: 'Linked to store product',
+                                            child: Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 18),
+                                          )
+                                        : const Tooltip(
+                                            message: 'Custom medicine',
+                                            child: Icon(Icons.info_outline, color: Color(0xFF64748B), size: 18),
+                                          ),
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
-                                TextField(
-                                  controller: med['strength'] as TextEditingController,
-                                  decoration: const InputDecoration(labelText: 'Strength (e.g. 5mg, 500mg)', isDense: true, border: OutlineInputBorder()),
+
+                                // Row 1: Strength + Dosage Form
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: med['strength'] as TextEditingController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Strength',
+                                          hintText: '500mg, 10ml',
+                                          isDense: true,
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: med['dosageForm'] as String,
+                                        isExpanded: true,
+                                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                                        decoration: InputDecoration(
+                                          labelText: 'Dosage Form',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        items: ['Tablet', 'Capsule', 'Syrup', 'Churna', 'Vati', 'Oil', 'Powder', 'Drops', 'Ointment', 'Injection'].map((f) {
+                                          return DropdownMenuItem(
+                                            value: f,
+                                            child: Text(f, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                          );
+                                        }).toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setStateModal(() => med['dosageForm'] = val);
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
-                                DropdownButtonFormField<String>(
-                                  initialValue: med['dosageForm'] as String,
-                                  decoration: const InputDecoration(labelText: 'Dosage Form', isDense: true, border: OutlineInputBorder()),
-                                  items: ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Ointment', 'Drops'].map((f) {
-                                    return DropdownMenuItem(value: f, child: Text(f, style: const TextStyle(fontSize: 12)));
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setStateModal(() => med['dosageForm'] = val);
-                                  },
+
+                                // Row 2: Dosage + Frequency
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: med['dosage'] as TextEditingController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Dosage',
+                                          hintText: '1 tab, 5ml',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: med['frequency'] as String,
+                                        isExpanded: true,
+                                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                                        decoration: InputDecoration(
+                                          labelText: 'Frequency',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        items: ['Once daily', 'Twice daily', 'Thrice daily', 'Four times daily', 'As needed'].map((f) {
+                                          return DropdownMenuItem(
+                                            value: f,
+                                            child: Text(f, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                          );
+                                        }).toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setStateModal(() => med['frequency'] = val);
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
-                                DropdownButtonFormField<String>(
-                                  initialValue: med['frequency'] as String,
-                                  decoration: const InputDecoration(labelText: 'Frequency', isDense: true, border: OutlineInputBorder()),
-                                  items: ['Once daily', 'Twice daily', 'Thrice daily', 'Four times daily', 'As needed'].map((f) {
-                                    return DropdownMenuItem(value: f, child: Text(f, style: const TextStyle(fontSize: 12)));
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setStateModal(() => med['frequency'] = val);
-                                  },
+
+                                // Row 3: Timing + Duration
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: med['timing'] as String,
+                                        isExpanded: true,
+                                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                                        decoration: InputDecoration(
+                                          labelText: 'Timing',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        items: ['After meals', 'Before meals', 'After breakfast', 'At bedtime', 'Morning & Evening'].map((t) {
+                                          return DropdownMenuItem(
+                                            value: t,
+                                            child: Text(t, style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                          );
+                                        }).toList(),
+                                        onChanged: (val) {
+                                          if (val != null) setStateModal(() => med['timing'] = val);
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: med['duration'] as TextEditingController,
+                                        decoration: InputDecoration(
+                                          labelText: 'Duration',
+                                          hintText: '7 days, 1 month',
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
-                                DropdownButtonFormField<String>(
-                                  initialValue: med['timing'] as String,
-                                  decoration: const InputDecoration(labelText: 'Timing', isDense: true, border: OutlineInputBorder()),
-                                  items: ['After breakfast', 'Before meals', 'After meals', 'Evening', 'At bedtime'].map((t) {
-                                    return DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 12)));
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) setStateModal(() => med['timing'] = val);
-                                  },
+
+                                // Row 4: Quantity + Refillable
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: med['quantity'] as TextEditingController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: 'Quantity (units)',
+                                          hintText: '30',
+                                          isDense: true,
+                                          filled: true,
+                                          fillColor: const Color(0xFFF8FAFC),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () => setStateModal(() => med['refillable'] = !(med['refillable'] == true)),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF8FAFC),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                                          ),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                med['refillable'] == true ? Icons.check_box : Icons.check_box_outline_blank,
+                                                size: 18,
+                                                color: med['refillable'] == true ? const Color(0xFF0F766E) : const Color(0xFF94A3B8),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              const Flexible(
+                                                child: Text(
+                                                  'Refillable',
+                                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 8),
-                                TextField(
-                                  controller: med['duration'] as TextEditingController,
-                                  decoration: const InputDecoration(labelText: 'Duration (e.g. 30 days)', isDense: true, border: OutlineInputBorder()),
-                                ),
-                                const SizedBox(height: 8),
+
+                                // Instructions
                                 TextField(
                                   controller: med['instructions'] as TextEditingController,
-                                  decoration: const InputDecoration(labelText: 'Instructions', hintText: 'e.g. Take with water, avoid grapefruit', isDense: true, border: OutlineInputBorder()),
+                                  decoration: InputDecoration(
+                                    labelText: 'Patient Instructions',
+                                    hintText: 'e.g. Take with warm water or milk after food',
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: const Color(0xFFF8FAFC),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
                                 ),
                               ],
                             ),
                           );
                         }),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+
+                        // ── SECTION 3: ADVICE & FOLLOW-UP ─────────────────
+                        Row(
+                          children: [
+                            const Icon(Icons.assignment_outlined, size: 16, color: Color(0xFF0F766E)),
+                            const SizedBox(width: 6),
+                            const Expanded(
+                              child: Text(
+                                '3. Advice & Follow-Up',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F766E),
+                                  letterSpacing: 0.3,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
                         // Lab Tests
                         TextField(
                           controller: rxLabCtrl,
-                          maxLines: 2,
-                          decoration: const InputDecoration(
+                          maxLines: 1,
+                          decoration: InputDecoration(
                             labelText: 'Lab Tests / Investigations',
-                            hintText: 'Blood pressure monitoring daily',
-                            border: OutlineInputBorder(),
+                            hintText: 'e.g., Blood sugar fasting, Lipid profile, CBC',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
 
-                        // Dietary & General Advice
+                        // Dietary Instructions
                         TextField(
                           controller: rxDietCtrl,
-                          decoration: const InputDecoration(
+                          maxLines: 1,
+                          decoration: InputDecoration(
                             labelText: 'Dietary Instructions',
-                            hintText: 'Low salt diet, avoid processed foods',
-                            border: OutlineInputBorder(),
+                            hintText: 'e.g., Low salt & low oil diet, drink 3L water daily',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
+
+                        // General Advice
                         TextField(
                           controller: rxGeneralCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'General Advice / Instructions',
-                            hintText: 'Monitor BP twice daily, exercise 30 mins',
-                            border: OutlineInputBorder(),
+                          maxLines: 1,
+                          decoration: InputDecoration(
+                            labelText: 'General Advice & Lifestyle Instructions',
+                            hintText: 'e.g., Daily 30 min brisk walk, avoid late night eating',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            filled: true,
+                            fillColor: const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.5),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
 
-                        // Follow-up Date & Refills
-                        TextField(
-                          controller: rxFollowUpCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Follow-Up Date',
-                            hintText: 'YYYY-MM-DD',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int>(
-                          initialValue: refillsAllowed,
-                          decoration: const InputDecoration(labelText: 'Refills Allowed', border: OutlineInputBorder()),
-                          items: [0, 1, 2, 3, 5].map((r) {
-                            return DropdownMenuItem(value: r, child: Text('$r Refills'));
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) setStateModal(() => refillsAllowed = val);
-                          },
+                        // Follow-up Date + Refills Row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: rxFollowUpCtrl,
+                                readOnly: false,
+                                decoration: InputDecoration(
+                                  labelText: 'Follow-Up Date',
+                                  hintText: 'YYYY-MM-DD',
+                                  filled: true,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                  suffixIcon: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    icon: const Icon(Icons.calendar_month, size: 18, color: Color(0xFF0F766E)),
+                                    onPressed: () async {
+                                      final now = DateTime.now();
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: now.add(const Duration(days: 7)),
+                                        firstDate: now,
+                                        lastDate: now.add(const Duration(days: 365)),
+                                      );
+                                      if (picked != null) {
+                                        rxFollowUpCtrl.text =
+                                            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                initialValue: refillsAllowed,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down, size: 20),
+                                decoration: InputDecoration(
+                                  labelText: 'Refills Allowed',
+                                  filled: true,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                items: [0, 1, 2, 3, 5].map((r) {
+                                  return DropdownMenuItem(
+                                    value: r,
+                                    child: Text('$r Refill${r == 1 ? "" : "s"}', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis, maxLines: 1),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setStateModal(() => refillsAllowed = val);
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 20),
                       ],
                     ),
                   ),
                 ),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: isLoading
-                        ? null
-                        : () async {
-                            if (rxDiagnosisCtrl.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please enter a diagnosis.')),
-                              );
-                              return;
-                            }
 
-                            if (appointmentId == null || userId == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Missing appointment ID or User ID.')),
-                              );
-                              return;
-                            }
+                // Sticky Bottom Action Bar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                  ),
+                  child: Row(
+                    children: [
+                      OutlinedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () {
+                                for (final m in medications) {
+                                  (m['debounceTimer'] as Timer?)?.cancel();
+                                }
+                                Navigator.pop(ctx);
+                              },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 12)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: isLoading
+                              ? null
+                              : () async {
+                                  if (rxDiagnosisCtrl.text.trim().isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please enter a diagnosis.')),
+                                    );
+                                    return;
+                                  }
 
-                            setStateModal(() => isLoading = true);
+                                  if (appointmentId == null || userId == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Missing appointment ID or User ID.')),
+                                    );
+                                    return;
+                                  }
 
-                            List<Map<String, dynamic>> medsPayload = medications.map((m) {
-                              final nameCtrl = m['name'] as TextEditingController;
-                              final strCtrl = m['strength'] as TextEditingController;
-                              final dosCtrl = m['dosage'] as TextEditingController;
-                              final durCtrl = m['duration'] as TextEditingController;
-                              final instCtrl = m['instructions'] as TextEditingController;
-                              final qtyCtrl = m['quantity'] as TextEditingController;
+                                  setStateModal(() => isLoading = true);
 
-                              return {
-                                "name": nameCtrl.text.isEmpty ? "Medication" : nameCtrl.text.trim(),
-                                "strength": strCtrl.text.trim(),
-                                "dosageForm": m['dosageForm'],
-                                "dosage": dosCtrl.text.trim(),
-                                "frequency": m['frequency'],
-                                "duration": durCtrl.text.trim(),
-                                "timing": m['timing'],
-                                "instructions": instCtrl.text.trim(),
-                                "quantity": int.tryParse(qtyCtrl.text.trim()) ?? 30,
-                                "refillable": m['refillable'] ?? true,
-                              };
-                            }).toList();
+                                  List<Map<String, dynamic>> medsPayload = medications.map((m) {
+                                    final nameCtrl = m['name'] as TextEditingController;
+                                    final strCtrl = m['strength'] as TextEditingController;
+                                    final dosCtrl = m['dosage'] as TextEditingController;
+                                    final durCtrl = m['duration'] as TextEditingController;
+                                    final instCtrl = m['instructions'] as TextEditingController;
+                                    final qtyCtrl = m['quantity'] as TextEditingController;
+                                    final String? prodId = m['productId'];
+                                    final Product? selProd = m['selectedProduct'];
 
-                            final res = await EPrescriptionService.createPrescription(
-                              appointmentId: appointmentId,
-                              userId: userId,
-                              diagnosis: rxDiagnosisCtrl.text.trim(),
-                              clinicalFindings: rxFindingsCtrl.text.trim(),
-                              medications: medsPayload,
-                              labTests: rxLabCtrl.text.trim(),
-                              dietaryInstructions: rxDietCtrl.text.trim(),
-                              generalInstructions: rxGeneralCtrl.text.trim(),
-                              followUpDate: rxFollowUpCtrl.text.trim(),
-                              validityDays: validityDays,
-                              refillsAllowed: refillsAllowed,
-                              token: _appState.doctorToken,
-                            );
+                                    final payload = {
+                                      "name": nameCtrl.text.isEmpty ? "Medication" : nameCtrl.text.trim(),
+                                      "strength": strCtrl.text.trim(),
+                                      "dosageForm": m['dosageForm'],
+                                      "dosage": dosCtrl.text.trim(),
+                                      "frequency": m['frequency'],
+                                      "duration": durCtrl.text.trim(),
+                                      "timing": m['timing'],
+                                      "instructions": instCtrl.text.trim(),
+                                      "quantity": int.tryParse(qtyCtrl.text.trim()) ?? 30,
+                                      "refillable": m['refillable'] ?? true,
+                                    };
+                                    if (prodId != null && prodId.isNotEmpty) {
+                                      payload["productId"] = prodId;
+                                    }
+                                    if (selProd != null) {
+                                      payload["productPrice"] = selProd.price;
+                                      payload["productImage"] = selProd.image;
+                                      payload["productBrand"] = selProd.brand;
+                                    }
+                                    return payload;
+                                  }).toList();
 
-                            setStateModal(() => isLoading = false);
+                                  final res = await EPrescriptionService.createPrescription(
+                                    appointmentId: appointmentId,
+                                    userId: userId,
+                                    diagnosis: rxDiagnosisCtrl.text.trim(),
+                                    clinicalFindings: rxFindingsCtrl.text.trim(),
+                                    medications: medsPayload,
+                                    labTests: rxLabCtrl.text.trim(),
+                                    dietaryInstructions: rxDietCtrl.text.trim(),
+                                    generalInstructions: rxGeneralCtrl.text.trim(),
+                                    followUpDate: rxFollowUpCtrl.text.trim(),
+                                    validityDays: validityDays,
+                                    refillsAllowed: refillsAllowed,
+                                    token: _appState.doctorToken,
+                                  );
 
-                            if (!mounted) return;
-                            if (res['success']) {
-                              final Map<String, dynamic> rxObj = (res['data'] is Map && res['data']['prescription'] is Map)
-                                  ? res['data']['prescription'] as Map<String, dynamic>
-                                  : (res['data'] is Map ? res['data'] as Map<String, dynamic> : {});
+                                  setStateModal(() => isLoading = false);
 
-                              setState(() {
-                                _issuedPrescription = rxObj;
-                              });
+                                  if (!mounted || !ctx.mounted) return;
+                                  if (res['success']) {
+                                    final Map<String, dynamic> rxObj = (res['data'] is Map && res['data']['prescription'] is Map)
+                                        ? res['data']['prescription'] as Map<String, dynamic>
+                                        : (res['data'] is Map ? res['data'] as Map<String, dynamic> : {});
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('E-Prescription ${rxObj['prescriptionNumber'] ?? ""} created successfully!'),
-                                  backgroundColor: const Color(0xFF16A34A),
-                                ),
-                              );
-                              Navigator.pop(ctx);
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error: ${res['message']}'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          },
-                    icon: isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.send_rounded, color: Colors.white),
-                    label: Text(
-                      isLoading ? 'Syncing to Server...' : 'Issue E-Prescription',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
+                                    // Only update _issuedPrescription if this is patient view (doctor does not see prescription card here)
+                                    if (!_isDoctorView) {
+                                      setState(() {
+                                        _issuedPrescription = rxObj;
+                                      });
+                                    }
+
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text('E-Prescription ${rxObj['prescriptionNumber'] ?? ""} issued successfully!'),
+                                        backgroundColor: const Color(0xFF16A34A),
+                                      ),
+                                    );
+                                    for (final m in medications) {
+                                      (m['debounceTimer'] as Timer?)?.cancel();
+                                    }
+                                    Navigator.pop(ctx);
+                                  } else {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error: ${res['message']}'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                },
+                          icon: isLoading
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                          label: Text(
+                            isLoading ? 'Signing & Issuing...' : 'Issue E-Prescription',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../constants/order_status.dart';
 import 'order_tracking_screen.dart';
+import '../widgets/cancel_order_dialog.dart';
 import 'product_detail_screen.dart';
 import 'medicine_listing_screen.dart';
 import 'login_screen.dart';
@@ -388,6 +389,10 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
     final statusColor = OrderStatusHelper.getColor(parsedStatus);
     final statusIcon = OrderStatusHelper.getIcon(parsedStatus);
     final statusLabel = OrderStatusHelper.getLabel(parsedStatus);
+    final canCancel = parsedStatus != OrderStatusType.cancelled &&
+        parsedStatus != OrderStatusType.delivered &&
+        parsedStatus != OrderStatusType.returned &&
+        parsedStatus != OrderStatusType.rto;
 
     final orderDisplayNo = order.orderNo != null && order.orderNo!.isNotEmpty
         ? order.orderNo!
@@ -672,28 +677,60 @@ class _MyOrdersScreenState extends State<MyOrdersScreen>
             ),
             child: Row(
               children: [
-                // Reorder Button
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _handleReorder(order),
-                    icon: const Icon(Icons.refresh, size: 15, color: AppColors.primary),
-                    label: const Text(
-                      'Reorder',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
+                if (canCancel) ...[
+                  // Cancel Order Button
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        showCancelOrderDialog(
+                          context: context,
+                          orderId: order.id,
+                          orderNo: order.orderNo,
+                          onCancelled: () => _refreshOrders(),
+                        );
+                      },
+                      icon: const Icon(Icons.cancel_outlined, size: 15, color: Colors.red),
+                      label: const Text(
+                        'Cancel Order',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                        ),
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.red.shade300),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ] else ...[
+                  // Reorder Button
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _handleReorder(order),
+                      icon: const Icon(Icons.refresh, size: 15, color: AppColors.primary),
+                      label: const Text(
+                        'Reorder',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 12),
                 // Track Order Button
                 Expanded(

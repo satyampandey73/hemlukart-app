@@ -5,6 +5,7 @@ import '../models/clinic_model.dart';
 import '../models/doctor_schedule_model.dart';
 import '../services/clinic_service.dart';
 import '../services/doctor_schedule_service.dart';
+import 'doctor_leaves_screen.dart';
 
 class DoctorManageSchedulesScreen extends StatefulWidget {
   const DoctorManageSchedulesScreen({super.key});
@@ -812,6 +813,18 @@ class _DoctorManageSchedulesScreenState
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.beach_access_rounded, color: Colors.white),
+            tooltip: 'Leaves & Holidays',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DoctorLeavesScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.white),
             tooltip: 'Refresh Schedules',
             onPressed: _fetchSchedules,
@@ -924,6 +937,28 @@ class _DoctorManageSchedulesScreenState
                         label: const Text('Replicate', style: TextStyle(fontSize: 12)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DoctorLeavesScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.beach_access_rounded, size: 16),
+                        label: const Text('Leaves', style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFCCFBF1),
                           foregroundColor: AppColors.primary,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

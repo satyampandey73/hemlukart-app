@@ -12,6 +12,7 @@ import 'eprescription_detail_screen.dart';
 import 'doctor_profile_settings_screen.dart';
 import 'patient_detail_screen.dart';
 import 'doctor_manage_schedules_screen.dart';
+import 'doctor_leaves_screen.dart';
 import 'doctor_my_clinics_screen.dart';
 import 'clinic_listing_screen.dart';
 import '../services/video_call_service.dart';
@@ -25,6 +26,7 @@ import 'product_catalog_screen.dart';
 import 'doctor_consultation_screen.dart';
 import 'doctor_eprescriptions_screen.dart';
 import 'chat_screen.dart';
+import '../widgets/today_appointment_banner_card.dart';
 
 class DoctorDashboardScreen extends StatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -392,6 +394,21 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 4),
+                  _buildDrawerItem(
+                    icon: Icons.beach_access_rounded,
+                    label: 'Leaves & Holidays',
+                    isSelected: false,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DoctorLeavesScreen(),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDrawerItem(
                     icon: Icons.apartment_rounded,
                     label: 'My Clinics',
@@ -734,6 +751,23 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Today's Appointment Banner Card (Single active/in-progress appointment for today)
+            Builder(
+              builder: (context) {
+                final activeTodayApt =
+                    TodayAppointmentBannerCard.getNextActiveTodayAppointment(allAppointments);
+                if (activeTodayApt == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TodayAppointmentBannerCard(
+                    appointment: activeTodayApt,
+                    isDoctor: true,
+                    onRefresh: _fetchDoctorDashboardData,
+                  ),
+                );
+              },
+            ),
+
             // Key Statistics Grid (Live API Data)
             Row(
               children: [
@@ -2103,7 +2137,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => EPrescriptionDetailScreen(prescriptionId: rxId),
+        builder: (_) => EPrescriptionDetailScreen(
+          prescriptionId: rxId,
+          isDoctorView: true,
+        ),
       ),
     );
   }
@@ -2199,7 +2236,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => EPrescriptionDetailScreen(prescriptionData: rx),
+                builder: (_) => EPrescriptionDetailScreen(
+                  prescriptionData: rx,
+                  isDoctorView: true,
+                ),
               ),
             );
           }
@@ -2707,6 +2747,16 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () async {
+                      if (!TodayAppointmentBannerCard.canJoinVideoCall(apt)) {
+                        final enableTime = TodayAppointmentBannerCard.getCallEnableTimeString(apt);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Doctor can start video call 10 minutes before scheduled time ($enableTime).'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
                       final token = AppState().doctorToken ?? AppState().activeChatToken;
                       if (token == null || token.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -2875,11 +2925,15 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     String time = '10:00 AM';
     String type = 'Video';
     String complaint = 'General Consult';
+    String? rawDate;
+    String? rawTime;
 
     if (item is UserAppointmentItem) {
       patientName = item.patientName.isNotEmpty ? item.patientName : 'Patient';
       id = item.id;
       status = item.status;
+      rawDate = item.appointmentDate;
+      rawTime = item.appointmentTime;
       time = item.formattedDateTime;
       type = item.consultationType;
       complaint = item.symptoms ?? 'General Consultation';
@@ -2887,8 +2941,8 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       patientName = item['patientName'] ?? 'Patient';
       id = item['id'] ?? '';
       status = item['status'] ?? 'Scheduled';
-      final rawDate = item['appointmentDate']?.toString();
-      final rawTime = (item['appointmentTime'] ?? item['time'])?.toString();
+      rawDate = item['appointmentDate']?.toString();
+      rawTime = (item['appointmentTime'] ?? item['time'])?.toString();
       time = UserAppointmentItem.formatDateTimeInIst(dateStr: rawDate, timeStr: rawTime);
       if (time.isEmpty) time = '10:00 AM';
       type = item['type'] ?? item['consultationType'] ?? 'Video';
@@ -3059,6 +3113,27 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                       ),
                     ),
 
+                  // Reschedule — visible for confirmed / in-progress consultations (hidden when completed)
+                  if (!isCompleted && isConfirmedOrActive)
+                    OutlinedButton.icon(
+                      onPressed: () => _showDoctorRescheduleDialog(
+                        appointmentId: id,
+                        patientName: patientName,
+                        initialDateStr: rawDate,
+                        initialTimeStr: rawTime,
+                      ),
+                      icon: const Icon(Icons.event_repeat, size: 14, color: Color(0xFF2563EB)),
+                      label: const Text('Reschedule',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF2563EB)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+
                   // Cancel — only for confirmed / in-progress
                   if (isConfirmedOrActive)
                     OutlinedButton.icon(
@@ -3192,9 +3267,21 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   }
 
   /// Shows a reschedule dialog directly from the dashboard card.
-  void _showDoctorRescheduleDialog({required String appointmentId, required String patientName}) {
-    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
-    TimeOfDay selectedTime = const TimeOfDay(hour: 10, minute: 0);
+  void _showDoctorRescheduleDialog({
+    required String appointmentId,
+    required String patientName,
+    String? initialDateStr,
+    String? initialTimeStr,
+  }) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parsedDate = AppointmentService.parseAppointmentDate(initialDateStr);
+    DateTime selectedDate = parsedDate.isBefore(today) ? today : parsedDate;
+    final timeParsed = AppointmentService.parseAppointmentHourMinute(
+      timeStr: initialTimeStr,
+      dateStr: initialDateStr,
+    );
+    TimeOfDay selectedTime = TimeOfDay(hour: timeParsed.hour, minute: timeParsed.minute);
     String selectedReason = 'Conflicting schedule';
     final List<String> reasons = [
       'Conflicting schedule',
@@ -3211,8 +3298,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
         builder: (context, setDialogState) {
           final dateStr =
               '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+          final h12 = selectedTime.hourOfPeriod == 0 ? 12 : selectedTime.hourOfPeriod;
+          final period = selectedTime.period == DayPeriod.pm ? 'PM' : 'AM';
           final timeStr =
-              '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+              '${h12.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $period';
 
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -3239,9 +3328,9 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                     onTap: () async {
                       final picked = await showDatePicker(
                         context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        initialDate: selectedDate.isBefore(today) ? today : selectedDate,
+                        firstDate: today,
+                        lastDate: today.add(const Duration(days: 365)),
                       );
                       if (picked != null) setDialogState(() => selectedDate = picked);
                     },
@@ -3259,7 +3348,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: selectedReason,
+                    initialValue: selectedReason,
                     decoration: InputDecoration(
                       labelText: 'Reason',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -3295,11 +3384,26 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                   final reason = selectedReason == 'Other'
                       ? (otherCtrl.text.trim().isEmpty ? 'Conflicting schedule' : otherCtrl.text.trim())
                       : selectedReason;
-                  final newDate =
-                      '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}'
-                      'T${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}:00.000Z';
+
+                  // Convert selected IST date & time to UTC ISO string (so +5:30 offset is not added twice)
+                  final newDate = AppointmentService.formatIstToUtcIso(
+                    date: selectedDate,
+                    hour: selectedTime.hour,
+                    minute: selectedTime.minute,
+                  );
+
+                  final h12 = selectedTime.hourOfPeriod == 0 ? 12 : selectedTime.hourOfPeriod;
+                  final period = selectedTime.period == DayPeriod.pm ? 'PM' : 'AM';
+                  final formattedApptTime =
+                      '${h12.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $period';
+
                   Navigator.pop(ctx);
-                  await _doRescheduleAppointment(appointmentId: appointmentId, newDate: newDate, reason: reason);
+                  await _doRescheduleAppointment(
+                    appointmentId: appointmentId,
+                    newDate: newDate,
+                    appointmentTime: formattedApptTime,
+                    reason: reason,
+                  );
                 },
                 child: const Text('Confirm', style: TextStyle(color: Colors.white)),
               ),
@@ -3313,6 +3417,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   Future<void> _doRescheduleAppointment({
     required String appointmentId,
     required String newDate,
+    String? appointmentTime,
     required String reason,
   }) async {
     final token = AppState().doctorToken;
@@ -3322,6 +3427,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       final res = await AppointmentService.rescheduleDoctorAppointment(
         appointmentId: appointmentId,
         newDate: newDate,
+        appointmentTime: appointmentTime,
         reason: reason,
         token: token,
       );

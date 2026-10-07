@@ -33,7 +33,7 @@ import '../services/chat_service.dart';
 class ProductVariant {
   final String id;
   final String packSize;
-  final double price;
+  final double _basePrice;
   final double originalPrice;
   final String? skuCode;
   final bool isOutOfStock;
@@ -45,7 +45,7 @@ class ProductVariant {
   const ProductVariant({
     required this.id,
     required this.packSize,
-    required this.price,
+    required double price,
     required this.originalPrice,
     this.skuCode,
     this.isOutOfStock = false,
@@ -53,7 +53,45 @@ class ProductVariant {
     this.doctorActive,
     this.consumerDiscount,
     this.consumerActive,
-  });
+  }) : _basePrice = price;
+
+  double get basePrice => _basePrice;
+
+  /// Effective price evaluated dynamically based on active role (Doctor vs Patient)
+  double get price {
+    final bp = _basePrice;
+    if (AppState().isDoctorLoggedIn) {
+      if ((doctorActive ?? true) && (doctorDiscount ?? 0.0) > 0) {
+        final docDiscountAmount = (originalPrice * (doctorDiscount!) / 100.0);
+        final docP = (originalPrice - docDiscountAmount).clamp(0.0, originalPrice);
+        return docP > 0 ? docP : bp;
+      }
+      final docP = (originalPrice * 0.85).roundToDouble();
+      return (docP < bp) ? docP : bp;
+    }
+    if ((consumerActive ?? true) && (consumerDiscount ?? 0.0) > 0) {
+      final consumerDiscountAmount = (originalPrice * (consumerDiscount!) / 100.0);
+      final consumerP = (originalPrice - consumerDiscountAmount).clamp(0.0, originalPrice);
+      return consumerP > 0 ? consumerP : bp;
+    }
+    return bp;
+  }
+
+  /// Returns discount percentage for current user role
+  int get effectiveDiscountPercent {
+    if (AppState().isDoctorLoggedIn) {
+      if ((doctorActive ?? true) && (doctorDiscount ?? 0.0) > 0) {
+        return doctorDiscount!.round();
+      }
+    } else {
+      if ((consumerActive ?? true) && (consumerDiscount ?? 0.0) > 0) {
+        return consumerDiscount!.round();
+      }
+    }
+    if (originalPrice <= 0) return 0;
+    final disc = (originalPrice - price).clamp(0.0, originalPrice);
+    return ((disc / originalPrice) * 100).round();
+  }
 }
 
 class Product {
@@ -119,7 +157,8 @@ class Product {
     final bp = basePrice;
     if (AppState().isDoctorLoggedIn) {
       if (doctorActive && doctorDiscount > 0) {
-        final docP = (originalPrice - doctorDiscount).clamp(0.0, originalPrice);
+        final docDiscountAmount = (originalPrice * doctorDiscount / 100.0);
+        final docP = (originalPrice - docDiscountAmount).clamp(0.0, originalPrice);
         return docP > 0 ? docP : bp;
       }
       // If doctor is logged in and doctor discount not explicitly specified,
@@ -129,7 +168,8 @@ class Product {
     }
     // Patient role
     if (consumerActive && consumerDiscount > 0) {
-      final consumerP = (originalPrice - consumerDiscount).clamp(0.0, originalPrice);
+      final consumerDiscountAmount = (originalPrice * consumerDiscount / 100.0);
+      final consumerP = (originalPrice - consumerDiscountAmount).clamp(0.0, originalPrice);
       return consumerP > 0 ? consumerP : bp;
     }
     return bp;
@@ -139,19 +179,28 @@ class Product {
   double get effectiveDiscount {
     if (AppState().isDoctorLoggedIn) {
       if (doctorActive && doctorDiscount > 0) {
-        return doctorDiscount;
+        return (originalPrice * doctorDiscount / 100.0);
       }
       final calculated = (originalPrice - price).clamp(0.0, originalPrice);
       return calculated > 0 ? calculated : (originalPrice * 0.15).roundToDouble();
     }
     if (consumerActive && consumerDiscount > 0) {
-      return consumerDiscount;
+      return (originalPrice * consumerDiscount / 100.0);
     }
     return (originalPrice - price).clamp(0.0, originalPrice);
   }
 
   /// Returns discount percentage for current user role
   int get effectiveDiscountPercent {
+    if (AppState().isDoctorLoggedIn) {
+      if (doctorActive && doctorDiscount > 0) {
+        return doctorDiscount.round();
+      }
+    } else {
+      if (consumerActive && consumerDiscount > 0) {
+        return consumerDiscount.round();
+      }
+    }
     if (originalPrice <= 0) return 0;
     final disc = (originalPrice - price).clamp(0.0, originalPrice);
     return ((disc / originalPrice) * 100).round();
@@ -291,6 +340,19 @@ class Doctor {
   }
 
   List<DoctorSchedule> get schedules => rawApiDoctor?.schedules ?? [];
+
+  List<DoctorUpcomingLeave> get upcomingLeaves => rawApiDoctor?.upcomingLeaves ?? [];
+
+  DoctorUpcomingLeave? getLeaveForDate(DateTime date) {
+    final dateStr =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    for (final l in upcomingLeaves) {
+      if (l.date == dateStr) {
+        return l;
+      }
+    }
+    return null;
+  }
 
   bool get hasInPerson {
     if (rawApiDoctor == null) return true;
@@ -643,7 +705,8 @@ class AppState extends ChangeNotifier {
   bool get isLoggedIn => _isLoggedIn || isDoctorLoggedIn;
   String? get authToken => _authToken;
   String? get doctorToken => _doctorToken;
-  String? get activeToken => (_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken;
+  String? get activeToken =>
+      isDoctorLoggedIn ? _doctorToken : ((_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken);
   UserModel? get currentUser {
     if (_currentUser != null) return _currentUser;
     if (_currentDoctorProfile != null) {
@@ -672,6 +735,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
   bool get isDoctorLoggedIn => _doctorToken != null && _doctorToken!.isNotEmpty;
+
+  @visibleForTesting
+  void setDoctorSessionForTest(String? token) {
+    _doctorToken = token;
+  }
 
   Future<void> initSession() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1974,6 +2042,24 @@ class AppState extends ChangeNotifier {
 
   Future<SingleOrderDetailApiResponse> fetchOrderDetail(String orderId) async {
     return await OrderService.getOrderById(orderId: orderId, token: activeToken);
+  }
+
+  /// Cancels an order with a reason using the active doctor or patient token
+  Future<CancelOrderApiResponse> cancelOrder({
+    required String orderId,
+    required String reason,
+  }) async {
+    final token = isDoctorLoggedIn ? _doctorToken : activeToken;
+    final response = await OrderService.cancelOrder(
+      orderId: orderId,
+      reason: reason,
+      token: token,
+    );
+
+    if (response.success) {
+      await fetchMyOrders();
+    }
+    return response;
   }
 
   // Coupon Operations

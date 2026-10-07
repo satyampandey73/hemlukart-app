@@ -602,14 +602,20 @@ class _DoctorEPrescriptionsScreenState
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => EPrescriptionDetailScreen(prescriptionId: rxId),
+                builder: (_) => EPrescriptionDetailScreen(
+                  prescriptionId: rxId,
+                  isDoctorView: true,
+                ),
               ),
             );
           } else {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => EPrescriptionDetailScreen(prescriptionData: rx),
+                builder: (_) => EPrescriptionDetailScreen(
+                  prescriptionData: rx,
+                  isDoctorView: true,
+                ),
               ),
             );
           }
