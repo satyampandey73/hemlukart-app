@@ -484,6 +484,68 @@ class AppointmentService {
     }
   }
 
+  /// API: PATCH https://backend.chikitsakart.com/api/appointments/{id}/reschedule
+  /// User or patient Reschedule Appointment endpoint.
+  static Future<SingleAppointmentApiResponse> rescheduleAppointment({
+    required String appointmentId,
+    required String newAppointmentDate,
+    required String newAppointmentTime,
+    String? reason,
+    String? token,
+  }) async {
+    final cleanId = appointmentId.trim();
+    if (cleanId.isEmpty) {
+      return SingleAppointmentApiResponse(
+        success: false,
+        message: 'Appointment ID is required',
+      );
+    }
+
+    final Uri url = Uri.parse('$baseUrl/$cleanId/reschedule');
+
+    final Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+
+    final String formattedDate = formatToIstDate(newAppointmentDate);
+    final String formattedTime = formatToIstTime(newAppointmentTime);
+
+    final Map<String, dynamic> bodyData = {
+      'newAppointmentDate': formattedDate,
+      'newAppointmentTime': formattedTime,
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    };
+
+    try {
+      final response = await http
+          .patch(url, headers: headers, body: jsonEncode(bodyData))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return SingleAppointmentApiResponse.fromJson(body);
+      } else {
+        return SingleAppointmentApiResponse(
+          success: false,
+          message: body['message'] as String? ??
+              'Reschedule failed with status code: ${response.statusCode}',
+          rawJson: body,
+        );
+      }
+    } catch (e) {
+      return SingleAppointmentApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error rescheduling appointment',
+        ),
+      );
+    }
+  }
+
   /// API 6: GET https://backend.chikitsakart.com/api/appointments/doctor/my
   /// Fetches appointments for the authenticated doctor.
   static Future<MyAppointmentsApiResponse> getDoctorAppointments({

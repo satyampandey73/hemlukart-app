@@ -13,6 +13,8 @@ import '../services/product_service.dart';
 import '../services/prescription_product_helper.dart';
 import 'eprescription_detail_screen.dart';
 import 'cart_screen.dart';
+import '../services/prescription_window_helper.dart';
+import '../services/appointment_chat_helper.dart';
 
 class AppointmentDetailScreen extends StatefulWidget {
   final String appointmentId;
@@ -56,6 +58,10 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
       _isConfirming || _isCompleting || _isCancelling || _isRescheduling || _isStartingVideoCall;
 
   Map<String, dynamic>? _issuedPrescription;
+  bool? _refundEligible;
+  String? _refundMessage;
+  RescheduleInfo? _rescheduleInfo;
+  Timer? _rxCountdownTimer;
 
   @override
   void initState() {
@@ -68,17 +74,30 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         });
       }
     });
+    PrescriptionWindowHelper.init();
     if (widget.initialDetail != null) {
       _detail = widget.initialDetail;
       _isLoading = false;
     }
     _fetchDetail();
+    _rxCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _detail != null && PrescriptionWindowHelper.isConsultationCompleted(_detail!.status)) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _rxCountdownTimer?.cancel();
+    super.dispose();
   }
 
   void _showCancelDialog() {
     final TextEditingController reasonController = TextEditingController();
-    String selectedReason = 'Personal reason issue';
+    String selectedReason = 'Cannot make it to the appointment';
     final List<String> commonReasons = [
+      'Cannot make it to the appointment',
       'Personal reason issue',
       'Change of plans',
       'Feeling better / Not needed',
@@ -145,6 +164,28 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Colors.amber.shade900),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Cancellations at least 2 hours before the appointment are eligible for 100% refund. Cancellations within 2 hours are non-refundable.',
+                              style: TextStyle(fontSize: 11, color: Colors.amber.shade900, height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -160,7 +201,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   ),
                   onPressed: () async {
                     final reason = selectedReason == 'Other'
-                        ? (reasonController.text.trim().isEmpty ? 'Personal reason issue' : reasonController.text.trim())
+                        ? (reasonController.text.trim().isEmpty ? 'Cannot make it to the appointment' : reasonController.text.trim())
                         : selectedReason;
 
                     Navigator.pop(context);
@@ -212,16 +253,27 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
       setState(() {
         _isCancelling = false;
+        _refundEligible = response.refundEligible;
+        _refundMessage = response.refundMessage;
       });
 
-      if (response.success && response.appointment != null) {
-        setState(() {
-          _detail = response.appointment;
-        });
+      if (response.success) {
+        if (response.appointment != null) {
+          setState(() {
+            _detail = response.appointment;
+          });
+        }
+        final refundMsg = response.refundMessage;
+        final baseMsg = response.message ?? 'Appointment cancelled successfully';
+        final displayMsg = (refundMsg != null && refundMsg.isNotEmpty)
+            ? '$baseMsg\n$refundMsg'
+            : baseMsg;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(response.message ?? 'Appointment cancelled successfully'),
-            backgroundColor: Colors.green,
+            content: Text(displayMsg),
+            backgroundColor: response.refundEligible == false ? Colors.orange.shade800 : Colors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
       } else {
@@ -229,6 +281,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           SnackBar(
             content: Text(response.message ?? 'Failed to cancel appointment'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -258,12 +311,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     );
     TimeOfDay selectedTime = TimeOfDay(hour: timeParsed.hour, minute: timeParsed.minute);
     final TextEditingController reasonController = TextEditingController();
-    String selectedReason = 'Conflicting schedule';
+    String selectedReason = 'Personal emergency, need to reschedule';
     final List<String> commonReasons = [
+      'Personal emergency, need to reschedule',
       'Conflicting schedule',
-      'Emergency situation',
       'Doctor unavailable',
       'Patient request',
+      'Health condition changed',
       'Other',
     ];
 
@@ -286,7 +340,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   Icon(Icons.event_repeat, color: Color(0xFF2563EB)),
                   SizedBox(width: 8),
                   Expanded(
-                    child: Text('Reschedule', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    child: Text('Reschedule Appointment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -295,11 +349,47 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Select a new date and time for this appointment:',
-                      style: TextStyle(fontSize: 13, color: AppColors.textDark),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 16, color: Color(0xFF1D4ED8)),
+                              SizedBox(width: 6),
+                              Text(
+                                'Reschedule Policy',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            '• Maximum 2 reschedules allowed per booking.\n• Free rescheduling is only allowed up to 2 hours before the appointment.',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF1E40AF), height: 1.3),
+                          ),
+                          if (_detail?.rescheduleCount != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Reschedules used: ${_detail!.rescheduleCount}/2',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 14),
+                    const Text(
+                      'Select a new date and time:',
+                      style: TextStyle(fontSize: 13, color: AppColors.textDark, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 10),
 
                     // Date picker
                     InkWell(
@@ -426,8 +516,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   ),
                   onPressed: () {
                     final reason = selectedReason == 'Other'
-                        ? (reasonController.text.trim().isEmpty ? 'Conflicting schedule' : reasonController.text.trim())
+                        ? (reasonController.text.trim().isEmpty ? 'Personal emergency, need to reschedule' : reasonController.text.trim())
                         : selectedReason;
+
+                    final dateFormatted =
+                        '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+                    final time24 =
+                        '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
 
                     final newDateTimeStr = AppointmentService.formatIstToUtcIso(
                       date: selectedDate,
@@ -443,6 +538,8 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                     Navigator.pop(context);
                     _handleRescheduleAppointment(
                       newDate: newDateTimeStr,
+                      newAppointmentDate: dateFormatted,
+                      newAppointmentTime: time24,
                       appointmentTime: formattedApptTime,
                       reason: reason,
                     );
@@ -459,38 +556,63 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
   Future<void> _handleRescheduleAppointment({
     required String newDate,
+    required String newAppointmentDate,
+    required String newAppointmentTime,
     String? appointmentTime,
     required String reason,
   }) async {
     if (_detail == null) return;
-    final token = _appState.doctorToken;
-    if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Doctor session expired. Please log in again.'), backgroundColor: Colors.red),
-      );
-      return;
-    }
+    final bool isDoctor = _appState.isDoctorLoggedIn;
 
     setState(() => _isRescheduling = true);
 
     try {
-      final response = await AppointmentService.rescheduleDoctorAppointment(
-        appointmentId: _detail!.id,
-        newDate: newDate,
-        appointmentTime: appointmentTime,
-        reason: reason,
-        token: token,
-      );
+      SingleAppointmentApiResponse response;
+      if (isDoctor) {
+        final token = _appState.doctorToken;
+        if (token == null || token.isEmpty) {
+          setState(() => _isRescheduling = false);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Doctor session expired. Please log in again.'), backgroundColor: Colors.red),
+          );
+          return;
+        }
+        response = await AppointmentService.rescheduleDoctorAppointment(
+          appointmentId: _detail!.id,
+          newDate: newDate,
+          appointmentTime: appointmentTime,
+          reason: reason,
+          token: token,
+        );
+      } else {
+        response = await _appState.rescheduleAppointment(
+          appointmentId: _detail!.id,
+          newAppointmentDate: newAppointmentDate,
+          newAppointmentTime: newAppointmentTime,
+          reason: reason,
+        );
+      }
 
       if (!mounted) return;
       setState(() => _isRescheduling = false);
 
       if (response.success && response.appointment != null) {
-        setState(() => _detail = response.appointment);
+        setState(() {
+          _detail = response.appointment;
+          _rescheduleInfo = response.rescheduleInfo;
+        });
+        final infoMsg = response.rescheduleInfo?.message;
+        final baseMsg = response.message ?? 'Appointment rescheduled successfully';
+        final displayMsg = (infoMsg != null && infoMsg.isNotEmpty)
+            ? '$baseMsg\n$infoMsg'
+            : baseMsg;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(response.message ?? 'Appointment rescheduled successfully'),
+            content: Text(displayMsg),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
       } else {
@@ -498,6 +620,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           SnackBar(
             content: Text(response.message ?? 'Failed to reschedule appointment'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -556,21 +679,60 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   }
 
   Future<void> _loadPrescriptionForAppointment() async {
-    if (_isDoctorView) return; // Doctor should not see prescription card in appointment details
     try {
-      final token = _appState.authToken;
-      final res = await EPrescriptionService.getPatientPrescriptions(token: token, limit: 50);
-      if (!mounted) return;
-      if (res['success'] == true && res['prescriptions'] is List) {
-        final list = List<Map<String, dynamic>>.from(res['prescriptions']);
-        final match = list.firstWhere(
-          (p) => (p['appointmentId'] ?? '').toString() == widget.appointmentId,
-          orElse: () => {},
+      // 1. Direct fetch using prescriptionId from appointment detail
+      final pId = _detail?.prescriptionId;
+      if (pId != null && pId.isNotEmpty) {
+        final token = _appState.doctorToken ?? _appState.authToken;
+        final res = await EPrescriptionService.getPrescriptionById(
+          prescriptionId: pId,
+          token: token,
         );
-        if (match.isNotEmpty) {
+        if (!mounted) return;
+        if (res['success'] == true && res['prescription'] is Map) {
           setState(() {
-            _issuedPrescription = match;
+            _issuedPrescription = Map<String, dynamic>.from(res['prescription']);
           });
+          return;
+        }
+      }
+
+      // 2. Query doctor or patient prescriptions
+      if (_isDoctorView) {
+        final docToken = _appState.doctorToken;
+        if (docToken != null && docToken.isNotEmpty) {
+          final res = await EPrescriptionService.getDoctorPrescriptions(token: docToken, limit: 100);
+          if (!mounted) return;
+          if (res['success'] == true && res['prescriptions'] is List) {
+            final list = List<Map<String, dynamic>>.from(res['prescriptions']);
+            final match = list.firstWhere(
+              (p) => (p['appointmentId'] ?? '').toString() == widget.appointmentId ||
+                  (p['id'] ?? '').toString() == (pId ?? ''),
+              orElse: () => {},
+            );
+            if (match.isNotEmpty) {
+              setState(() {
+                _issuedPrescription = match;
+              });
+              return;
+            }
+          }
+        }
+      } else {
+        final token = _appState.authToken;
+        final res = await EPrescriptionService.getPatientPrescriptions(token: token, limit: 50);
+        if (!mounted) return;
+        if (res['success'] == true && res['prescriptions'] is List) {
+          final list = List<Map<String, dynamic>>.from(res['prescriptions']);
+          final match = list.firstWhere(
+            (p) => (p['appointmentId'] ?? '').toString() == widget.appointmentId,
+            orElse: () => {},
+          );
+          if (match.isNotEmpty) {
+            setState(() {
+              _issuedPrescription = match;
+            });
+          }
         }
       }
     } catch (_) {}
@@ -678,10 +840,25 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     final bool isCancelled = statusNorm == 'cancelled' || statusNorm == 'canceled' || statusNorm.contains('cancel');
 
     // Action permission flags
-    final bool canChat = !isCancelled && !isCompleted;
+    final bool isConsultationEnded = AppointmentChatHelper.isConsultationCompleted(detail.status);
+    final bool canChat = isDoctor
+        ? AppointmentChatHelper.canDoctorAccessChat(
+            status: detail.status,
+            appointmentDate: detail.appointmentDate,
+            appointmentTime: detail.appointmentTime,
+          )
+        : AppointmentChatHelper.canPatientAccessChat(
+            status: detail.status,
+            appointmentDate: detail.appointmentDate,
+            appointmentTime: detail.appointmentTime,
+            appointmentId: detail.id,
+          );
     final bool canComplete = isDoctor && !isCancelled && !isCompleted && !isPending;
-    final bool canPrescribe = isDoctor && !isCancelled && !isPending;
-    final bool canReschedule = isDoctor && !isCancelled && !isCompleted && !isInProgress;
+    final bool hasRx = detail.hasPrescription ||
+        (detail.prescriptionId != null && detail.prescriptionId!.isNotEmpty) ||
+        _issuedPrescription != null;
+    final bool canPrescribe = isDoctor && !isCancelled;
+    final bool canReschedule = !isCancelled && !isCompleted && !isInProgress;
     final bool canCancel = !isCancelled && !isCompleted;
 
     return RefreshIndicator(
@@ -782,10 +959,125 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   ),
                 ),
             ] else ...[
+              if (isCancelled) ...[
+                const SizedBox(height: 16),
+                _buildCard(
+                  title: 'Cancellation & Refund Details',
+                  icon: Icons.cancel_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (detail.cancelReason?.isNotEmpty == true) ...[
+                        Text(
+                          'Reason for Cancellation:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade700,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          detail.cancelReason!,
+                          style: const TextStyle(color: AppColors.textDark, fontSize: 13),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (_refundMessage != null && _refundMessage!.isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: (_refundEligible == true) ? Colors.green.shade50 : Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: (_refundEligible == true) ? Colors.green.shade300 : Colors.orange.shade300,
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                (_refundEligible == true) ? Icons.check_circle_outline : Icons.info_outline,
+                                size: 18,
+                                color: (_refundEligible == true) ? Colors.green.shade800 : Colors.orange.shade900,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      (_refundEligible == true) ? 'Refund Eligible (100%)' : 'Non-Refundable',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: (_refundEligible == true) ? Colors.green.shade900 : Colors.orange.shade900,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _refundMessage!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: (_refundEligible == true) ? Colors.green.shade800 : Colors.orange.shade800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
 
-            const SizedBox(height: 16),
+              if ((detail.rescheduleCount ?? 0) > 0) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event_repeat, size: 20, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _rescheduleInfo?.message ?? 'Rescheduled ${detail.rescheduleCount} time(s)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Color(0xFF1E40AF),
+                              ),
+                            ),
+                            if (detail.rescheduledAt?.isNotEmpty == true) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                'Last rescheduled: ${UserAppointmentItem.formatDateTimeInIst(dateStr: detail.rescheduledAt)}',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF3B82F6)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
-            // Doctor Info Card
+              const SizedBox(height: 16),
+
+              // Doctor Info Card
             _buildCard(
               title: 'Doctor Information',
               icon: Icons.medical_services_outlined,
@@ -937,7 +1229,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               ),
             ],
 
-            if (!_isDoctorView && _issuedPrescription != null) ...[
+            if (_issuedPrescription != null) ...[
               const SizedBox(height: 16),
               _buildPrescriptionCard(_issuedPrescription!),
             ],
@@ -1132,64 +1424,242 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   const SizedBox(height: 10),
                 ],
               ],
-              if (canChat) ...[
+              // Chat Now Button — completely removed once consultation completes
+              if (!isConsultationEnded) ...[
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isActionInProgress
-                        ? null
-                        : () {
-                            final String recipientName = isDoctor
-                                ? (detail.patientName.isNotEmpty ? detail.patientName : 'Patient')
-                                : (detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor');
-                            final String recipientSubtitle = isDoctor
-                                ? 'Patient (${detail.patientAge ?? "N/A"} Yrs)'
-                                : (detail.doctorSpecialty ?? 'Ayush Specialist');
+                  child: canChat
+                      ? ElevatedButton.icon(
+                          onPressed: _isActionInProgress
+                              ? null
+                              : () {
+                                  final String recipientName = isDoctor
+                                      ? (detail.patientName.isNotEmpty ? detail.patientName : 'Patient')
+                                      : (detail.doctorName != null && detail.doctorName!.isNotEmpty ? 'Dr. ${detail.doctorName}' : 'Doctor');
+                                  final String recipientSubtitle = isDoctor
+                                      ? 'Patient (${detail.patientAge ?? "N/A"} Yrs)'
+                                      : (detail.doctorSpecialty ?? 'Ayush Specialist');
 
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  appointmentId: detail.id,
-                                  recipientName: recipientName,
-                                  recipientSubtitle: recipientSubtitle,
-                                  recipientAvatar: detail.displayDoctorPhoto,
-                                ),
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(
+                                        appointmentId: detail.id,
+                                        recipientName: recipientName,
+                                        recipientSubtitle: recipientSubtitle,
+                                        recipientAvatar: detail.displayDoctorPhoto,
+                                        appointmentDate: detail.appointmentDate,
+                                        appointmentTime: detail.appointmentTime,
+                                        appointmentStatus: detail.status,
+                                      ),
+                                    ),
+                                  );
+                                },
+                          icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
+                          label: const Text('Chat Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: () {
+                            final msg = isDoctor
+                                ? 'Chat enables 10 minutes before scheduled meeting time for doctor to initiate.'
+                                : AppointmentChatHelper.getPatientChatDisabledReason(
+                                    status: detail.status,
+                                    appointmentDate: detail.appointmentDate,
+                                    appointmentTime: detail.appointmentTime,
+                                    appointmentId: detail.id,
+                                  );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                backgroundColor: Colors.orange,
+                                duration: const Duration(seconds: 3),
                               ),
                             );
                           },
-                    icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white),
-                    label: const Text('Chat Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
+                          icon: Icon(Icons.chat_bubble_outline_rounded, color: Colors.grey.shade500),
+                          label: Text(
+                            isDoctor
+                                ? 'Chat (Opens 10m before meeting)'
+                                : (AppointmentChatHelper.getSecondsUntilMeeting(
+                                          appointmentDate: detail.appointmentDate,
+                                          appointmentTime: detail.appointmentTime,
+                                        ) >
+                                        600
+                                    ? 'Chat (Opens 10m before meeting)'
+                                    : 'Doctor initiating chat...'),
+                            style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF1F5F9),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(color: Colors.grey.shade300),
+                            ),
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 10),
               ],
               if (canPrescribe) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isActionInProgress
-                        ? null
-                        : () => _showPrescriptionDialog(
-                              patientName: detail.patientName,
-                              appointmentId: detail.id,
-                              userId: detail.userId,
+                Builder(
+                  builder: (context) {
+                    final bool isRxWindowOpen = PrescriptionWindowHelper.isWindowOpen(
+                      appointmentId: detail.id,
+                      completedAt: detail.completedAt,
+                      status: detail.status,
+                    );
+                    final int? rxRemainingSec = PrescriptionWindowHelper.getRemainingSeconds(
+                      appointmentId: detail.id,
+                      completedAt: detail.completedAt,
+                      status: detail.status,
+                    );
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isCompleted) ...[
+                          if (isRxWindowOpen && rxRemainingSec != null && rxRemainingSec > 0)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFFDE68A)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.timer_outlined, size: 16, color: Color(0xFFD97706)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Consultation ended. You have ${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)} left to ${hasRx ? "edit" : "upload"} the prescription.',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.lock_clock_outlined, size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      hasRx
+                                          ? 'Prescription editing locked. Prescriptions can only be edited within 5 minutes of consultation end.'
+                                          : 'Prescription window expired. Prescriptions can only be issued within 5 minutes of consultation end.',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                    icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
-                    label: const Text('Write Prescription', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F5B4C),
-                      disabledBackgroundColor: const Color(0xFF0F5B4C).withValues(alpha: 0.6),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
+                        ],
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isActionInProgress
+                                ? null
+                                : () async {
+                                    if (isCompleted && !isRxWindowOpen) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(hasRx
+                                              ? 'Prescription editing is only allowed within 5 minutes after ending the consultation.'
+                                              : 'Prescription can only be issued within 5 minutes after ending the consultation.'),
+                                          backgroundColor: const Color(0xFFDC2626),
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    if (hasRx) {
+                                      String? rxId = detail.prescriptionId ??
+                                          _issuedPrescription?['id']?.toString() ??
+                                          _issuedPrescription?['_id']?.toString();
+                                      Map<String, dynamic>? rxData = _issuedPrescription;
+                                      if (rxData == null && rxId != null && rxId.isNotEmpty) {
+                                        final res = await EPrescriptionService.getPrescriptionById(
+                                          prescriptionId: rxId,
+                                          token: _appState.doctorToken ?? _appState.authToken,
+                                        );
+                                        if (res['success'] == true && res['prescription'] is Map) {
+                                          rxData = Map<String, dynamic>.from(res['prescription']);
+                                          if (mounted) setState(() => _issuedPrescription = rxData);
+                                        }
+                                      }
+                                      _showPrescriptionDialog(
+                                        patientName: detail.patientName,
+                                        appointmentId: detail.id,
+                                        userId: detail.userId,
+                                        existingPrescription: rxData,
+                                        prescriptionId: rxId,
+                                      );
+                                    } else {
+                                      _showPrescriptionDialog(
+                                        patientName: detail.patientName,
+                                        appointmentId: detail.id,
+                                        userId: detail.userId,
+                                      );
+                                    }
+                                  },
+                            icon: Icon(
+                              (isCompleted && !isRxWindowOpen)
+                                  ? (hasRx ? Icons.receipt_long_rounded : Icons.lock_clock_outlined)
+                                  : (hasRx ? Icons.edit_note_rounded : Icons.note_add_outlined),
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              (isCompleted && !isRxWindowOpen)
+                                  ? (hasRx ? 'View Prescription (Editing Expired)' : 'Prescription Expired (5m limit)')
+                                  : (hasRx
+                                      ? (isCompleted && rxRemainingSec != null && rxRemainingSec > 0
+                                          ? 'Edit Prescription (${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)})'
+                                          : 'Edit / Update Prescription')
+                                      : (isCompleted && rxRemainingSec != null && rxRemainingSec > 0
+                                          ? 'Write Prescription (${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)})'
+                                          : 'Write Prescription')),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: (isCompleted && !isRxWindowOpen)
+                                  ? const Color(0xFF64748B)
+                                  : (hasRx ? const Color(0xFF0F766E) : const Color(0xFF0F5B4C)),
+                              disabledBackgroundColor: const Color(0xFF0F5B4C).withValues(alpha: 0.6),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 10),
               ],
@@ -1277,6 +1747,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                             setState(() => _isCompleting = true);
                             try {
                               final res = await _appState.completeDoctorAppointment(detail.id);
+                              PrescriptionWindowHelper.recordConsultationCompleted(detail.id);
                               if (!mounted) return;
                               if (res.success && res.appointment != null) {
                                 setState(() => _detail = res.appointment);
@@ -1828,7 +2299,57 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                   ),
                 ),
               ),
-              if (medsList.any((m) => PrescriptionProductHelper.isMedicationInStore(m))) ...[
+              if (_isDoctorView) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final bool isCompleted = PrescriptionWindowHelper.isConsultationCompleted(_detail?.status);
+                      final bool isRxWindowOpen = PrescriptionWindowHelper.isWindowOpen(
+                        appointmentId: _detail?.id ?? '',
+                        completedAt: _detail?.completedAt,
+                        status: _detail?.status,
+                      );
+                      final bool isLocked = isCompleted && !isRxWindowOpen;
+
+                      return ElevatedButton.icon(
+                        onPressed: () {
+                          if (isLocked) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Prescription editing window has expired (allowed within 5 minutes of consultation end).'),
+                                backgroundColor: Color(0xFFDC2626),
+                              ),
+                            );
+                            return;
+                          }
+                          final rxId = _detail?.prescriptionId ?? rx['id']?.toString() ?? rx['_id']?.toString();
+                          _showPrescriptionDialog(
+                            patientName: _detail?.patientName,
+                            appointmentId: _detail?.id,
+                            userId: _detail?.userId,
+                            existingPrescription: rx,
+                            prescriptionId: rxId,
+                          );
+                        },
+                        icon: Icon(
+                          isLocked ? Icons.lock_clock_outlined : Icons.edit_note_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        label: Text(
+                          isLocked ? 'Editing Locked' : 'Edit Prescription',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isLocked ? const Color(0xFF64748B) : const Color(0xFF0F766E),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ] else if (medsList.any((m) => PrescriptionProductHelper.isMedicationInStore(m))) ...[
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
@@ -1875,16 +2396,49 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     );
   }
 
-  void _showPrescriptionDialog({String? patientName, String? appointmentId, String? userId}) {
-    final rxDiagnosisCtrl = TextEditingController(text: 'General Health Consultation');
-    final rxFindingsCtrl = TextEditingController(text: 'Routine checkup, symptoms noted');
-    final rxLabCtrl = TextEditingController();
-    final rxDietCtrl = TextEditingController();
-    final rxGeneralCtrl = TextEditingController();
-    final rxFollowUpCtrl = TextEditingController();
+  void _showPrescriptionDialog({
+    String? patientName,
+    String? appointmentId,
+    String? userId,
+    Map<String, dynamic>? existingPrescription,
+    String? prescriptionId,
+  }) {
+    final String effectiveRxId = (prescriptionId != null && prescriptionId.isNotEmpty)
+        ? prescriptionId
+        : (existingPrescription?['id']?.toString() ?? existingPrescription?['_id']?.toString() ?? '');
+    final bool isEditing = effectiveRxId.isNotEmpty;
 
-    int validityDays = 30;
-    int refillsAllowed = 2;
+    final rxDiagnosisCtrl = TextEditingController(
+      text: existingPrescription?['diagnosis']?.toString() ?? 'General Health Consultation',
+    );
+    final rxFindingsCtrl = TextEditingController(
+      text: existingPrescription?['clinicalFindings']?.toString() ??
+          existingPrescription?['findings']?.toString() ??
+          'Routine checkup, symptoms noted',
+    );
+    final rxLabCtrl = TextEditingController(
+      text: existingPrescription?['labTests']?.toString() ??
+          existingPrescription?['tests']?.toString() ??
+          '',
+    );
+    final rxDietCtrl = TextEditingController(
+      text: existingPrescription?['dietaryInstructions']?.toString() ?? '',
+    );
+    final rxGeneralCtrl = TextEditingController(
+      text: existingPrescription?['generalInstructions']?.toString() ??
+          existingPrescription?['instructions']?.toString() ??
+          '',
+    );
+    final rxFollowUpCtrl = TextEditingController(
+      text: existingPrescription?['followUpDate']?.toString() ?? '',
+    );
+
+    int validityDays = existingPrescription?['validityDays'] is int
+        ? existingPrescription!['validityDays'] as int
+        : (int.tryParse(existingPrescription?['validityDays']?.toString() ?? '') ?? 30);
+    int refillsAllowed = existingPrescription?['refillsAllowed'] is int
+        ? existingPrescription!['refillsAllowed'] as int
+        : (int.tryParse(existingPrescription?['refillsAllowed']?.toString() ?? '') ?? 2);
 
     Map<String, dynamic> makeMedItem({
       String name = '',
@@ -1921,16 +2475,40 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
       };
     }
 
-    List<Map<String, dynamic>> medications = [
-      makeMedItem(
-        name: "Ashwagandha",
-        strength: "500mg",
-        dosage: "1 tablet",
-        instructions: "Take with warm milk or water",
-        quantity: "30",
-        refillable: true,
-      ),
-    ];
+    List<Map<String, dynamic>> medications = [];
+    if (existingPrescription != null && existingPrescription['medications'] is List) {
+      final rawMeds = existingPrescription['medications'] as List;
+      for (final m in rawMeds) {
+        if (m is Map) {
+          final pId = PrescriptionProductHelper.extractProductId(m);
+          medications.add(makeMedItem(
+            name: m['name']?.toString() ?? '',
+            strength: m['strength']?.toString() ?? '500mg',
+            dosageForm: m['dosageForm']?.toString() ?? 'Tablet',
+            dosage: m['dosage']?.toString() ?? '1 tab',
+            frequency: m['frequency']?.toString() ?? 'Twice daily',
+            duration: m['duration']?.toString() ?? '7 days',
+            timing: m['timing']?.toString() ?? 'After meals',
+            instructions: m['instructions']?.toString() ?? '',
+            quantity: m['quantity']?.toString() ?? '14',
+            refillable: m['refillable'] == true,
+            productId: pId,
+          ));
+        }
+      }
+    }
+    if (medications.isEmpty) {
+      medications = [
+        makeMedItem(
+          name: "Ashwagandha",
+          strength: "500mg",
+          dosage: "1 tablet",
+          instructions: "Take with warm milk or water",
+          quantity: "30",
+          refillable: true,
+        ),
+      ];
+    }
 
     bool isLoading = false;
 
@@ -2060,13 +2638,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                const Expanded(
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Issue E-Prescription',
-                                        style: TextStyle(
+                                        isEditing ? 'Edit E-Prescription' : 'Issue E-Prescription',
+                                        style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
                                           color: Color(0xFF0F172A),
@@ -2074,8 +2652,8 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
-                                        'Digital prescription for patient',
-                                        style: TextStyle(
+                                        isEditing ? 'Update medicines and patient advice' : 'Digital prescription for patient',
+                                        style: const TextStyle(
                                           fontSize: 11,
                                           color: Color(0xFF64748B),
                                         ),
@@ -3051,20 +3629,34 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                     return payload;
                                   }).toList();
 
-                                  final res = await EPrescriptionService.createPrescription(
-                                    appointmentId: appointmentId,
-                                    userId: userId,
-                                    diagnosis: rxDiagnosisCtrl.text.trim(),
-                                    clinicalFindings: rxFindingsCtrl.text.trim(),
-                                    medications: medsPayload,
-                                    labTests: rxLabCtrl.text.trim(),
-                                    dietaryInstructions: rxDietCtrl.text.trim(),
-                                    generalInstructions: rxGeneralCtrl.text.trim(),
-                                    followUpDate: rxFollowUpCtrl.text.trim(),
-                                    validityDays: validityDays,
-                                    refillsAllowed: refillsAllowed,
-                                    token: _appState.doctorToken,
-                                  );
+                                  final res = isEditing && effectiveRxId.isNotEmpty
+                                      ? await EPrescriptionService.updatePrescription(
+                                          prescriptionId: effectiveRxId,
+                                          diagnosis: rxDiagnosisCtrl.text.trim(),
+                                          clinicalFindings: rxFindingsCtrl.text.trim(),
+                                          medications: medsPayload,
+                                          dietaryInstructions: rxDietCtrl.text.trim(),
+                                          generalInstructions: rxGeneralCtrl.text.trim(),
+                                          labTests: rxLabCtrl.text.trim(),
+                                          followUpDate: rxFollowUpCtrl.text.trim(),
+                                          validityDays: validityDays,
+                                          refillsAllowed: refillsAllowed,
+                                          token: _appState.doctorToken,
+                                        )
+                                      : await EPrescriptionService.createPrescription(
+                                          appointmentId: appointmentId,
+                                          userId: userId,
+                                          diagnosis: rxDiagnosisCtrl.text.trim(),
+                                          clinicalFindings: rxFindingsCtrl.text.trim(),
+                                          medications: medsPayload,
+                                          labTests: rxLabCtrl.text.trim(),
+                                          dietaryInstructions: rxDietCtrl.text.trim(),
+                                          generalInstructions: rxGeneralCtrl.text.trim(),
+                                          followUpDate: rxFollowUpCtrl.text.trim(),
+                                          validityDays: validityDays,
+                                          refillsAllowed: refillsAllowed,
+                                          token: _appState.doctorToken,
+                                        );
 
                                   setStateModal(() => isLoading = false);
 
@@ -3074,16 +3666,17 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                                         ? res['data']['prescription'] as Map<String, dynamic>
                                         : (res['data'] is Map ? res['data'] as Map<String, dynamic> : {});
 
-                                    // Only update _issuedPrescription if this is patient view (doctor does not see prescription card here)
-                                    if (!_isDoctorView) {
-                                      setState(() {
-                                        _issuedPrescription = rxObj;
-                                      });
-                                    }
+                                    final Map<String, dynamic> finalRx = rxObj.isNotEmpty ? rxObj : (res['prescription'] is Map ? res['prescription'] as Map<String, dynamic> : {});
+                                    setState(() {
+                                      _issuedPrescription = finalRx.isNotEmpty ? finalRx : _issuedPrescription;
+                                    });
+                                    _fetchDetail();
 
                                     ScaffoldMessenger.of(ctx).showSnackBar(
                                       SnackBar(
-                                        content: Text('E-Prescription ${rxObj['prescriptionNumber'] ?? ""} issued successfully!'),
+                                        content: Text(isEditing
+                                            ? 'E-Prescription updated successfully!'
+                                            : 'E-Prescription ${finalRx['prescriptionNumber'] ?? ""} issued successfully!'),
                                         backgroundColor: const Color(0xFF16A34A),
                                       ),
                                     );
@@ -3104,7 +3697,9 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                               : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                           label: Text(
-                            isLoading ? 'Signing & Issuing...' : 'Issue E-Prescription',
+                            isLoading
+                                ? (isEditing ? 'Updating...' : 'Signing & Issuing...')
+                                : (isEditing ? 'Update Prescription' : 'Issue E-Prescription'),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                             overflow: TextOverflow.ellipsis,
                           ),

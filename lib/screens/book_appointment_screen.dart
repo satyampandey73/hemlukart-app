@@ -2726,7 +2726,15 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
               activeColor: const Color(0xFF0F4C47),
               onChanged: (val) => setState(() => _saveCard = val ?? false),
             ),
-            const Text('Save card securely for future payments', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _saveCard = !_saveCard),
+                child: const Text(
+                  'Save card securely for future payments',
+                  style: TextStyle(fontSize: 12, color: AppColors.textLight),
+                ),
+              ),
+            ),
           ],
         ),
       ],

@@ -14,10 +14,15 @@ class PrescriptionProductHelper {
           med['product'] ??
           med['productDetails'] ??
           med['storeProductId'] ??
-          med['storeId'];
+          med['storeId'] ??
+          med['medicineId'] ??
+          med['medicine_id'] ??
+          med['itemId'] ??
+          med['item_id'] ??
+          med['item'];
 
       if (pid is Map) {
-        pid = pid['_id'] ?? pid['id'] ?? pid['productId'];
+        pid = pid['_id'] ?? pid['id'] ?? pid['productId'] ?? pid['product_id'];
       }
       if (pid != null) {
         final str = pid.toString().trim();
@@ -33,9 +38,12 @@ class PrescriptionProductHelper {
           med['isStoreProduct'] == true ||
           med['availableInStore'] == true ||
           med['storeAvailable'] == true) {
-        final alt = med['_id'] ?? med['id'] ?? med['name'];
+        final alt = med['_id'] ?? med['id'];
         if (alt != null && alt.toString().trim().isNotEmpty) {
-          return alt.toString().trim();
+          final strAlt = alt.toString().trim();
+          if (strAlt.toLowerCase() != 'null' && strAlt.toLowerCase() != 'undefined') {
+            return strAlt;
+          }
         }
       }
     }
@@ -49,20 +57,19 @@ class PrescriptionProductHelper {
   static bool isMedicationInStore(dynamic med) {
     if (med == null) return false;
     if (med is Map) {
+      // 1. If a valid product ID is present, it is definitely a store product
+      final pid = extractProductId(med);
+      if (pid != null && pid.isNotEmpty) {
+        return true;
+      }
+      // 2. Explicit flag check
       if (med['inStore'] == true ||
           med['isStoreProduct'] == true ||
           med['availableInStore'] == true ||
           med['storeAvailable'] == true) {
         return true;
       }
-      if (med['inStore'] == false ||
-          med['isStoreProduct'] == false ||
-          med['availableInStore'] == false ||
-          med['storeAvailable'] == false) {
-        return false;
-      }
-      final pid = extractProductId(med);
-      return pid != null && pid.isNotEmpty;
+      return false;
     }
     return false;
   }

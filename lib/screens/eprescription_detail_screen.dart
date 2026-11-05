@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../services/eprescription_service.dart';
 import '../services/prescription_product_helper.dart';
+import '../widgets/prescription_editor_modal.dart';
 import 'cart_screen.dart';
 
 class EPrescriptionDetailScreen extends StatefulWidget {
@@ -70,6 +71,30 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
         }
       });
     }
+  }
+
+  void _openEditPrescription() {
+    final rx = _rx ?? {};
+    final String targetId = widget.prescriptionId ??
+        rx['_id']?.toString() ??
+        rx['id']?.toString() ??
+        '';
+
+    showPrescriptionEditorModal(
+      context,
+      patientName: rx['patientName']?.toString(),
+      appointmentId: rx['appointmentId']?.toString(),
+      existingPrescription: rx,
+      prescriptionId: targetId,
+      onPrescriptionSaved: (updatedRx) {
+        setState(() {
+          _rx = updatedRx;
+        });
+        if (targetId.isNotEmpty) {
+          _fetchDetails(targetId);
+        }
+      },
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -294,6 +319,22 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
           ],
         ),
         actions: [
+          if (isDoctor)
+            Padding(
+              padding: const EdgeInsets.only(right: 6.0),
+              child: TextButton.icon(
+                onPressed: _openEditPrescription,
+                icon: const Icon(Icons.edit_note_rounded, size: 20, color: Color(0xFF0F766E)),
+                label: const Text(
+                  'Edit',
+                  style: TextStyle(
+                    color: Color(0xFF0F766E),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
           if (!isDoctor)
             IconButton(
               icon: Stack(
@@ -326,7 +367,7 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
           const SizedBox(width: 6),
         ],
       ),
-      bottomNavigationBar: (!isDoctor && inStoreMeds.isNotEmpty)
+      bottomNavigationBar: isDoctor
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -340,84 +381,118 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
                 ],
               ),
               child: SafeArea(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.storefront_rounded, size: 14, color: Color(0xFF0F766E)),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  '${inStoreMeds.length} in-store medicine${inStoreMeds.length == 1 ? "" : "s"}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF0F172A),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 1),
-                          Text(
-                            allInCart ? 'All items in your cart' : 'Ready for direct checkout',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: allInCart ? const Color(0xFF16A34A) : const Color(0xFF64748B),
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
+                child: ElevatedButton.icon(
+                  onPressed: _openEditPrescription,
+                  icon: const Icon(Icons.edit_note_rounded, color: Colors.white, size: 20),
+                  label: const Text(
+                    'Edit Prescription',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        if (allInCart) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const CartScreen()),
-                          );
-                        } else {
-                          _addAllInStoreToCart(inStoreMeds);
-                        }
-                      },
-                      icon: Icon(
-                        allInCart ? Icons.shopping_bag_outlined : Icons.add_shopping_cart_rounded,
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                      label: Text(
-                        allInCart ? 'Go to Cart' : 'Add All to Cart',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0F766E),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ],
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F766E),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
                 ),
               ),
             )
-          : null,
+          : (!isDoctor && inStoreMeds.isNotEmpty)
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, -3),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.storefront_rounded, size: 14, color: Color(0xFF0F766E)),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '${inStoreMeds.length} in-store medicine${inStoreMeds.length == 1 ? "" : "s"}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                allInCart ? 'All items in your cart' : 'Ready for direct checkout',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: allInCart ? const Color(0xFF16A34A) : const Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            if (allInCart) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const CartScreen()),
+                              );
+                            } else {
+                              _addAllInStoreToCart(inStoreMeds);
+                            }
+                          },
+                          icon: Icon(
+                            allInCart ? Icons.shopping_bag_outlined : Icons.add_shopping_cart_rounded,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            allInCart ? 'Go to Cart' : 'Add All to Cart',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F766E),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : null,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1067,6 +1142,7 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
   }
 
   Widget _medBadge(IconData icon, String text) {
+    if (text.trim().isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1079,12 +1155,16 @@ class _EPrescriptionDetailScreenState extends State<EPrescriptionDetailScreen> {
         children: [
           Icon(icon, size: 11, color: const Color(0xFF64748B)),
           const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF334155),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF334155),
+              ),
             ),
           ),
         ],

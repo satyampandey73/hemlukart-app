@@ -128,12 +128,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const AccountSettingsScreen(),
     ];
 
-    // Compute active items in cart for badge
-    int cartCount = 0;
-    for (var item in _appState.cart) {
-      cartCount += item.quantity;
-    }
-
     return Scaffold(
       body: SafeArea(
         child: IndexedStack(
@@ -179,7 +173,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.account_circle_outlined),
-                if (_appState.unreadChatCount > 0 || cartCount > 0)
+                if (_appState.unreadChatCount > 0)
                   Positioned(
                     right: -6,
                     top: -6,
@@ -195,9 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        _appState.unreadChatCount > 0
-                            ? '${_appState.unreadChatCount}'
-                            : '$cartCount',
+                        '${_appState.unreadChatCount}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 8,
@@ -212,7 +204,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.account_circle_rounded, color: AppColors.brandBlue),
-                if (_appState.unreadChatCount > 0 || cartCount > 0)
+                if (_appState.unreadChatCount > 0)
                   Positioned(
                     right: -6,
                     top: -6,
@@ -228,9 +220,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        _appState.unreadChatCount > 0
-                            ? '${_appState.unreadChatCount}'
-                            : '$cartCount',
+                        '${_appState.unreadChatCount}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 8,

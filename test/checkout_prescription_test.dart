@@ -53,7 +53,7 @@ void main() {
   });
 
   test('OrderService.uploadPrescriptionFile converts local device path to Cloudinary URL', () async {
-    const localDevicePath = '/data/user/0/com.example.hemlukart_app/cache/file_picker/1785584694203/Screenshot_2026-07-23-16-24-40-53_86c37949d9dbdf8b7705c7710b12afd5.jpg';
+    const localDevicePath = '/data/user/0/com.bhoomitechzone.chikitsakart/cache/file_picker/1785584694203/Screenshot_2026-07-23-16-24-40-53_86c37949d9dbdf8b7705c7710b12afd5.jpg';
     final resultUrl = await OrderService.uploadPrescriptionFile(localDevicePath);
 
     expect(resultUrl.startsWith('https://res.cloudinary.com/'), true);

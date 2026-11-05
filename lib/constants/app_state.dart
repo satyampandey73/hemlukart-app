@@ -2013,6 +2013,25 @@ class AppState extends ChangeNotifier {
     return response;
   }
 
+  Future<SingleAppointmentApiResponse> rescheduleAppointment({
+    required String appointmentId,
+    required String newAppointmentDate,
+    required String newAppointmentTime,
+    String? reason,
+  }) async {
+    final response = await AppointmentService.rescheduleAppointment(
+      appointmentId: appointmentId,
+      newAppointmentDate: newAppointmentDate,
+      newAppointmentTime: newAppointmentTime,
+      reason: reason,
+      token: _authToken,
+    );
+    if (response.success) {
+      fetchMyAppointments();
+    }
+    return response;
+  }
+
   // Order Operations
   Future<MyOrdersApiResponse> fetchMyOrders() async {
     final token = activeToken;

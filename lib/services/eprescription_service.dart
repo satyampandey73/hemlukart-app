@@ -182,6 +182,72 @@ class EPrescriptionService {
     }
   }
 
+  /// PUT /e-prescriptions/:prescriptionId
+  /// Updates full prescription or partial fields (medications, instructions, diagnosis, etc.)
+  static Future<Map<String, dynamic>> updatePrescription({
+    required String prescriptionId,
+    String? diagnosis,
+    String? clinicalFindings,
+    List<Map<String, dynamic>>? medications,
+    String? dietaryInstructions,
+    String? generalInstructions,
+    String? labTests,
+    String? followUpDate,
+    int? validityDays,
+    int? refillsAllowed,
+    String? token,
+  }) async {
+    final cleanId = prescriptionId.trim();
+    final Uri url = Uri.parse('$baseUrl/$cleanId');
+
+    final Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+
+    final Map<String, dynamic> bodyData = {};
+    if (diagnosis != null) bodyData['diagnosis'] = diagnosis.trim();
+    if (clinicalFindings != null) bodyData['clinicalFindings'] = clinicalFindings.trim();
+    if (medications != null) bodyData['medications'] = medications;
+    if (dietaryInstructions != null) bodyData['dietaryInstructions'] = dietaryInstructions.trim();
+    if (generalInstructions != null) bodyData['generalInstructions'] = generalInstructions.trim();
+    if (labTests != null) bodyData['labTests'] = labTests.trim();
+    if (followUpDate != null) bodyData['followUpDate'] = followUpDate.trim();
+    if (validityDays != null) bodyData['validityDays'] = validityDays;
+    if (refillsAllowed != null) bodyData['refillsAllowed'] = refillsAllowed;
+
+    try {
+      final response = await http
+          .put(url, headers: headers, body: jsonEncode(bodyData))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'success': true,
+          'message': body['message'] ?? 'Prescription updated successfully',
+          'prescription': body['prescription'] ?? body['data'] ?? body,
+          'data': body,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': body['message'] ?? 'Failed to update prescription (${response.statusCode})',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'message': ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to update prescription',
+        ),
+      };
+    }
+  }
+
   /// PATCH /e-prescriptions/:id/status
   /// Updates [status] ('sent_to_pharmacy' | 'dispensed') and optional [pharmacyNotes].
   static Future<Map<String, dynamic>> updatePrescriptionStatus({

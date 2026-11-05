@@ -16,6 +16,8 @@ import '../services/video_call_service.dart';
 import '../services/webrtc_call_manager.dart';
 import '../services/product_service.dart';
 import '../services/prescription_product_helper.dart';
+import '../services/prescription_window_helper.dart';
+import '../services/appointment_chat_helper.dart';
 import 'cart_screen.dart';
 
 class VideoCallScreen extends StatefulWidget {
@@ -319,6 +321,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           appointmentId: widget.appointmentId,
           token: token,
         );
+        PrescriptionWindowHelper.recordConsultationCompleted(widget.appointmentId);
         debugPrint('[VideoCallScreen] Marked appointment ${widget.appointmentId} as completed');
       } catch (e) {
         debugPrint('[VideoCallScreen] completeDoctorAppointment error: $e');
@@ -373,6 +376,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           appointmentId: widget.appointmentId,
           token: token,
         );
+        PrescriptionWindowHelper.recordConsultationCompleted(widget.appointmentId);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -529,6 +533,10 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       if (!mounted) return;
 
       if (res.success) {
+        AppointmentChatHelper.registerMessages(
+          appointmentId: widget.appointmentId,
+          messages: res.messages,
+        );
         // Preserve any pending optimistic messages that haven't arrived from server yet
         final pendingTempMessages = _chatMessages.where((m) => m.id.startsWith('temp_')).toList();
         final List<ChatMessageModel> mergedList = List.from(res.messages);
@@ -655,6 +663,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     setState(() => _isSendingChat = false);
 
     if (res.success) {
+      if (widget.isDoctor) {
+        AppointmentChatHelper.recordDoctorSentMessage(widget.appointmentId);
+      }
       if (res.data != null) {
         final idx = _chatMessages.indexWhere((m) => m.id == tempId);
         if (idx != -1) {

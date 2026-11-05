@@ -27,6 +27,8 @@ import 'doctor_consultation_screen.dart';
 import 'doctor_eprescriptions_screen.dart';
 import 'chat_screen.dart';
 import '../widgets/today_appointment_banner_card.dart';
+import '../services/prescription_window_helper.dart';
+import '../services/appointment_chat_helper.dart';
 
 class DoctorDashboardScreen extends StatefulWidget {
   const DoctorDashboardScreen({super.key});
@@ -44,11 +46,29 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
   List<UserAppointmentItem> _doctorAppointments = [];
   List<Map<String, dynamic>> _apiPrescriptions = [];
   ApiDoctor? _apiDoctorProfile;
+  Timer? _rxCountdownTimer;
 
   @override
   void initState() {
     super.initState();
+    PrescriptionWindowHelper.init();
     _fetchDoctorDashboardData();
+    _rxCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        final hasActiveCountdown = _doctorAppointments.any((a) {
+          final rem = PrescriptionWindowHelper.getRemainingSeconds(
+            appointmentId: a.id,
+            completedAt: a.completedAt,
+            updatedAt: a.updatedAt,
+            status: a.status,
+          );
+          return rem != null && rem > 0;
+        });
+        if (hasActiveCountdown) {
+          setState(() {});
+        }
+      }
+    });
   }
 
   Future<void> _fetchDoctorDashboardData() async {
@@ -171,6 +191,7 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
 
   @override
   void dispose() {
+    _rxCountdownTimer?.cancel();
     _searchController.dispose();
     _clinicalNotesController.dispose();
     _rxSearchController.dispose();
@@ -2927,6 +2948,10 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
     String complaint = 'General Consult';
     String? rawDate;
     String? rawTime;
+    String? completedAt;
+    String? updatedAt;
+
+    bool hasPrescription = false;
 
     if (item is UserAppointmentItem) {
       patientName = item.patientName.isNotEmpty ? item.patientName : 'Patient';
@@ -2934,19 +2959,35 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
       status = item.status;
       rawDate = item.appointmentDate;
       rawTime = item.appointmentTime;
+      completedAt = item.completedAt;
+      updatedAt = item.updatedAt;
       time = item.formattedDateTime;
       type = item.consultationType;
       complaint = item.symptoms ?? 'General Consultation';
+      final bool existsInRx = _apiPrescriptions.any((rx) =>
+          (rx['appointmentId'] ?? '').toString() == item.id ||
+          (item.prescriptionId != null && item.prescriptionId!.isNotEmpty && (rx['id'] ?? rx['_id'] ?? '').toString() == item.prescriptionId));
+      hasPrescription = item.hasPrescription || (item.prescriptionId != null && item.prescriptionId!.isNotEmpty) || existsInRx;
     } else if (item is Map) {
       patientName = item['patientName'] ?? 'Patient';
       id = item['id'] ?? '';
       status = item['status'] ?? 'Scheduled';
       rawDate = item['appointmentDate']?.toString();
       rawTime = (item['appointmentTime'] ?? item['time'])?.toString();
+      completedAt = (item['completedAt'] ?? item['endedAt'] ?? item['meetingEndedAt'])?.toString();
+      updatedAt = item['updatedAt']?.toString();
       time = UserAppointmentItem.formatDateTimeInIst(dateStr: rawDate, timeStr: rawTime);
       if (time.isEmpty) time = '10:00 AM';
       type = item['type'] ?? item['consultationType'] ?? 'Video';
       complaint = item['complaint'] ?? item['symptoms'] ?? 'General Consult';
+      final String rxPId = item['prescriptionId']?.toString() ?? '';
+      final bool existsInRx = _apiPrescriptions.any((rx) =>
+          (rx['appointmentId'] ?? '').toString() == id ||
+          (rxPId.isNotEmpty && (rx['id'] ?? rx['_id'] ?? '').toString() == rxPId));
+      hasPrescription = item['hasPrescription'] == true ||
+          item['hasPrescription']?.toString().toLowerCase() == 'true' ||
+          rxPId.isNotEmpty ||
+          existsInRx;
     }
 
     // isActive previously used for single-button — replaced by statusNorm checks below
@@ -3052,65 +3093,312 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
               Text('$time • ${type == 'video' ? '🎥 Video' : '🏥 In-Person'} • $complaint',
                   style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
               const SizedBox(height: 8),
-              // ── Action buttons row ──
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  // View Details — always visible
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      if (id.isNotEmpty) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AppointmentDetailScreen(
-                              appointmentId: id,
-                              isForDoctor: true,
-                            ),
-                          ),
-                        ).then((_) => _fetchDoctorDashboardData());
-                      }
-                    },
-                    icon: const Icon(Icons.visibility_outlined, size: 14),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      side: const BorderSide(color: AppColors.primary),
-                      foregroundColor: AppColors.primary,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    label: const Text('View Details',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
 
-                  // Chat — visible for confirmed / in-progress consultations (hidden when completed)
-                  if (!isCompleted && isConfirmedOrActive)
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChatScreen(
-                              appointmentId: id,
-                              recipientName: patientName.isNotEmpty ? patientName : 'Patient',
-                              recipientSubtitle: complaint,
-                              recipientAvatar: null,
+              // ── 5-Minute Prescription Window Indicator (Post-Consultation) ──
+              if (isCompleted) ...[
+                Builder(
+                  builder: (context) {
+                    final bool isRxWindowOpen = PrescriptionWindowHelper.isWindowOpen(
+                      appointmentId: id,
+                      completedAt: completedAt,
+                      updatedAt: updatedAt,
+                      status: status,
+                    );
+                    final int? rxRemainingSec = PrescriptionWindowHelper.getRemainingSeconds(
+                      appointmentId: id,
+                      completedAt: completedAt,
+                      updatedAt: updatedAt,
+                      status: status,
+                    );
+
+                    if (isRxWindowOpen && rxRemainingSec != null && rxRemainingSec > 0) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 14, color: Color(0xFFD97706)),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${hasPrescription ? "Edit" : "Issue"} prescription within: ${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF92400E),
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
-                      label: const Text('Chat',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ],
+                        ),
+                      );
+                    } else {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.lock_clock_outlined, size: 14, color: Color(0xFF64748B)),
+                            const SizedBox(width: 6),
+                            Text(
+                              hasPrescription
+                                  ? 'Prescription locked (5m edit window ended)'
+                                  : 'Prescription window expired (5m after meeting)',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+
+              // ── Action buttons row ──
+              Builder(
+                builder: (context) {
+                  final bool isRxWindowOpen = PrescriptionWindowHelper.isWindowOpen(
+                    appointmentId: id,
+                    completedAt: completedAt,
+                    updatedAt: updatedAt,
+                    status: status,
+                  );
+                  final int? rxRemainingSec = PrescriptionWindowHelper.getRemainingSeconds(
+                    appointmentId: id,
+                    completedAt: completedAt,
+                    updatedAt: updatedAt,
+                    status: status,
+                  );
+
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      // View Details — always visible
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          if (id.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AppointmentDetailScreen(
+                                  appointmentId: id,
+                                  isForDoctor: true,
+                                ),
+                              ),
+                            ).then((_) => _fetchDoctorDashboardData());
+                          }
+                        },
+                        icon: const Icon(Icons.visibility_outlined, size: 14),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          side: const BorderSide(color: AppColors.primary),
+                          foregroundColor: AppColors.primary,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        label: const Text('View Details',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
+
+                      // Prescription button: Edit if hasPrescription is true, Write if false
+                      if (hasPrescription) ...[
+                        if (!isCompleted || isRxWindowOpen)
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (id.isNotEmpty) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AppointmentDetailScreen(
+                                      appointmentId: id,
+                                      isForDoctor: true,
+                                    ),
+                                  ),
+                                ).then((_) => _fetchDoctorDashboardData());
+                              }
+                            },
+                            icon: const Icon(Icons.edit_note_rounded, size: 15, color: Colors.white),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F766E),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            label: Text(
+                              (isCompleted && rxRemainingSec != null && rxRemainingSec > 0)
+                                  ? 'Edit Prescription (${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)})'
+                                  : 'Edit Prescription',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (id.isNotEmpty) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AppointmentDetailScreen(
+                                      appointmentId: id,
+                                      isForDoctor: true,
+                                    ),
+                                  ),
+                                ).then((_) => _fetchDoctorDashboardData());
+                              }
+                            },
+                            icon: const Icon(Icons.receipt_long_rounded, size: 14, color: Colors.white),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF64748B),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            label: const Text('View Prescription (Locked)',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                      ] else if (!statusNorm.contains('cancel') && !statusNorm.contains('reject')) ...[
+                        if (!isCompleted || isRxWindowOpen)
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (id.isNotEmpty) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => AppointmentDetailScreen(
+                                      appointmentId: id,
+                                      isForDoctor: true,
+                                    ),
+                                  ),
+                                ).then((_) => _fetchDoctorDashboardData());
+                              }
+                            },
+                            icon: const Icon(Icons.note_add_outlined, size: 14, color: Colors.white),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0F5B4C),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            label: Text(
+                              (isCompleted && rxRemainingSec != null && rxRemainingSec > 0)
+                                  ? 'Write Prescription (${PrescriptionWindowHelper.formatRemainingTime(rxRemainingSec)})'
+                                  : 'Write Prescription',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          )
+                        else
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Prescription window expired. Prescriptions can only be issued within 5 minutes after ending the consultation.',
+                                  ),
+                                  backgroundColor: Color(0xFFDC2626),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.lock_clock_outlined, size: 14, color: Colors.white70),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF94A3B8),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            label: const Text('Prescription Expired (5m limit)',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                      ],
+
+                  // Chat — ONLY for non-completed consultations
+                  // Enables 10 minutes before scheduled meeting time for doctor to initiate
+                  if (!AppointmentChatHelper.isConsultationCompleted(status))
+                    Builder(
+                      builder: (context) {
+                        final bool canDoctorChat = AppointmentChatHelper.canDoctorAccessChat(
+                          status: status,
+                          appointmentDate: rawDate ?? '',
+                          appointmentTime: rawTime,
+                        );
+
+                        if (canDoctorChat) {
+                          return ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    appointmentId: id,
+                                    recipientName: patientName.isNotEmpty ? patientName : 'Patient',
+                                    recipientSubtitle: complaint,
+                                    recipientAvatar: null,
+                                    appointmentDate: rawDate,
+                                    appointmentTime: rawTime,
+                                    appointmentStatus: status,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.white),
+                            label: const Text('Chat',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          );
+                        } else {
+                          // More than 10 minutes before scheduled meeting time
+                          return ElevatedButton.icon(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Chat enables 10 minutes before scheduled meeting time for doctor to initiate.'),
+                                  backgroundColor: Colors.orange,
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                            },
+                            icon: Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Colors.grey.shade500),
+                            label: Text('Chat (Opens 10m before call)',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF1F5F9),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              minimumSize: Size.zero,
+                              elevation: 0,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: BorderSide(color: Colors.grey.shade300),
+                              ),
+                            ),
+                          );
+                        }
+                      },
                     ),
 
                   // Reschedule — visible for confirmed / in-progress consultations (hidden when completed)
@@ -3153,10 +3441,12 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
                       ),
                     ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
-        ),
+        ],
+      ),
+    ),
       ),
     );
   }

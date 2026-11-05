@@ -1063,14 +1063,18 @@ class _DoctorManageSchedulesScreenState
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '${_dayLabels[_selectedDay]} Schedule',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textDark,
+                      Expanded(
+                        child: Text(
+                          '${_dayLabels[_selectedDay]} Schedule',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: 8),
                       TextButton.icon(
                         onPressed: () => _addOrEditSession(),
                         icon: const Icon(Icons.add_rounded, size: 18),
@@ -1081,6 +1085,9 @@ class _DoctorManageSchedulesScreenState
                         ),
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
                     ],
@@ -1452,7 +1459,6 @@ class _SessionEditorModal extends StatefulWidget {
 }
 
 class _SessionEditorModalState extends State<_SessionEditorModal> {
-  late String _baseShift;
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   late int _slotDuration;
@@ -1471,10 +1477,15 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
   void initState() {
     super.initState();
     final item = widget.initialItem;
-    _baseShift = _detectBaseShift(item?.sessionName ?? 'morning');
     _startTime = _parseTime(item?.startTime ?? '09:00');
-    _endTime = _parseTime(item?.endTime ?? '13:00');
-    _slotDuration = item?.slotDuration ?? 30;
+    _slotDuration = item?.slotDuration ?? 15;
+    if (_slotDuration <= 0) _slotDuration = 15;
+
+    if (item != null) {
+      _endTime = _parseTime(item.endTime);
+    } else {
+      _endTime = const TimeOfDay(hour: 13, minute: 0);
+    }
 
     final rawType = (item?.consultationType ?? 'video').toLowerCase().trim();
     if (rawType == 'online') {
@@ -1552,8 +1563,8 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
   }
 
   List<int> get _durationOptions {
-    final set = <int>{15, 20, 30, 45, 60, _slotDuration};
-    final list = set.toList()..sort();
+    final set = <int>{10, 15, 20, 25, 30, 40, 45, 50, 60, _slotDuration};
+    final list = set.where((d) => d > 0).toList()..sort();
     return list;
   }
 
@@ -1562,54 +1573,33 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
     return set.toList();
   }
 
-  List<String> get _shiftOptions {
-    final set = <String>{'morning', 'afternoon', 'evening', 'night', _baseShift};
-    return set.toList();
-  }
-
-  String _detectBaseShift(String raw) {
-    final s = raw.toLowerCase().trim();
-    if (s.contains('afternoon')) return 'afternoon';
-    if (s.contains('evening')) return 'evening';
-    if (s.contains('night')) return 'night';
-    return 'morning';
+  String _shiftFromTime(TimeOfDay t) {
+    if (t.hour < 12) return 'morning';
+    if (t.hour < 17) return 'afternoon';
+    if (t.hour < 21) return 'evening';
+    return 'night';
   }
 
   String _determineSessionName() {
     // 1. If editing an existing session, preserve its sessionName so the backend updates the existing session!
-    if (widget.initialItem != null) {
-      final oldName = widget.initialItem!.sessionName.toLowerCase().trim();
-      final oldBase = _detectBaseShift(oldName);
-      // If user kept the same base shift (e.g. morning is still morning), preserve exact sessionName
-      if (_baseShift == oldBase) {
-        return widget.initialItem!.sessionName;
-      }
-      // If user explicitly changed the shift (e.g. from morning to afternoon)
-      final bool baseTaken = widget.existingDaySessions.any((s) =>
-          s.id != widget.initialItem!.id &&
-          s.sessionName.toLowerCase().trim() == _baseShift);
-      if (!baseTaken) {
-        return _baseShift;
-      }
-      final hh = _startTime.hour.toString().padLeft(2, '0');
-      final mm = _startTime.minute.toString().padLeft(2, '0');
-      return '${_baseShift}_$hh$mm';
+    if (widget.initialItem != null && widget.initialItem!.sessionName.isNotEmpty) {
+      return widget.initialItem!.sessionName;
     }
 
-    // 2. If adding a brand new session:
-    // If the base shift (e.g. "morning") is not yet used on this day, use plain "morning"
+    // 2. If adding a brand new session, automatically determine shift name from Start Time:
+    final baseShift = _shiftFromTime(_startTime);
     final bool isBaseShiftTaken = widget.existingDaySessions.any(
-      (s) => s.sessionName.toLowerCase().trim() == _baseShift,
+      (s) => s.sessionName.toLowerCase().trim() == baseShift,
     );
 
     if (!isBaseShiftTaken) {
-      return _baseShift; // e.g. "morning", "afternoon", "evening", "night"
+      return baseShift; // e.g. "morning", "afternoon", "evening", "night"
     }
 
     // If "morning" already exists, append start time to distinguish 2nd session
     final hh = _startTime.hour.toString().padLeft(2, '0');
     final mm = _startTime.minute.toString().padLeft(2, '0');
-    final candidate = '${_baseShift}_$hh$mm';
+    final candidate = '${baseShift}_$hh$mm';
 
     bool isTaken(String name) => widget.existingDaySessions.any(
       (s) => s.sessionName.toLowerCase().trim() == name.toLowerCase().trim(),
@@ -1631,6 +1621,13 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
     final endMin = _endTime.hour * 60 + _endTime.minute;
     if (endMin <= startMin) {
       setState(() => _modalError = 'End Time must be after Start Time');
+      return;
+    }
+
+    final diff = endMin - startMin;
+    if (diff < _slotDuration) {
+      setState(() => _modalError =
+          'Time range ($diff min) must be at least slot duration ($_slotDuration min)');
       return;
     }
 
@@ -1793,13 +1790,30 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
     return '$hour:$min $period';
   }
 
+  TimeOfDay _addMinutes(TimeOfDay time, int minutesToAdd) {
+    final totalMinutes = time.hour * 60 + time.minute + minutesToAdd;
+    final normalized = (totalMinutes % (24 * 60) + (24 * 60)) % (24 * 60);
+    return TimeOfDay(
+      hour: normalized ~/ 60,
+      minute: normalized % 60,
+    );
+  }
+
   Future<void> _pickStartTime() async {
     final picked = await showTimePicker(
       context: context,
       initialTime: _startTime,
     );
     if (picked != null) {
-      setState(() => _startTime = picked);
+      setState(() {
+        _startTime = picked;
+        final startMin = picked.hour * 60 + picked.minute;
+        final endMin = _endTime.hour * 60 + _endTime.minute;
+        if (endMin <= startMin) {
+          _endTime = _addMinutes(picked, 60);
+        }
+        _modalError = null;
+      });
     }
   }
 
@@ -1809,7 +1823,20 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
       initialTime: _endTime,
     );
     if (picked != null) {
-      setState(() => _endTime = picked);
+      final startMin = _startTime.hour * 60 + _startTime.minute;
+      final endMin = picked.hour * 60 + picked.minute;
+      final diff = endMin - startMin;
+      if (diff <= 0) {
+        setState(() {
+          _modalError =
+              'End Time must be after Start Time (${_formatTime12(_startTime)})';
+        });
+        return;
+      }
+      setState(() {
+        _endTime = picked;
+        _modalError = null;
+      });
     }
   }
 
@@ -1863,50 +1890,7 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
               ],
             ),
             const Divider(),
-            const SizedBox(height: 8),
-
-            // Session Name Dropdown
-            const Text('Session Name',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFCBD5E1)),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _shiftOptions.contains(_baseShift)
-                      ? _baseShift
-                      : _shiftOptions.first,
-                  isExpanded: true,
-                  items: _shiftOptions.map((s) {
-                    String label;
-                    if (s == 'morning') {
-                      label = '🌅 Morning Session';
-                    } else if (s == 'afternoon') {
-                      label = '☀️ Afternoon Session';
-                    } else if (s == 'evening') {
-                      label = '🌆 Evening Session';
-                    } else if (s == 'night') {
-                      label = '🌙 Night Session';
-                    } else {
-                      label = s.toUpperCase();
-                    }
-                    return DropdownMenuItem<String>(
-                      value: s,
-                      child: Text(label),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _baseShift = val);
-                  },
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
 
             // Start Time & End Time Pickers
             Row(
@@ -1985,7 +1969,51 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
               ],
             ),
 
-            const SizedBox(height: 14),
+            // Dynamic Slots Summary based on Start Time, End Time & Slot Duration
+            Builder(
+              builder: (context) {
+                final startMin = _startTime.hour * 60 + _startTime.minute;
+                final endMin = _endTime.hour * 60 + _endTime.minute;
+                final diff = endMin - startMin;
+                if (diff <= 0) return const SizedBox.shrink();
+
+                final numSlots = diff ~/ _slotDuration;
+                final hours = diff ~/ 60;
+                final mins = diff % 60;
+                final timeSpanStr = hours > 0
+                    ? (mins > 0 ? '${hours}h ${mins}m' : '${hours}h')
+                    : '${mins}m';
+
+                return Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded,
+                          size: 15, color: Color(0xFF16A34A)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '$timeSpanStr total • $numSlots ${numSlots == 1 ? "slot" : "slots"} ($_slotDuration min each)',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 10),
 
             // Slot Duration & Consultation Type
             Row(
@@ -2017,7 +2045,12 @@ class _SessionEditorModalState extends State<_SessionEditorModal> {
                                     ))
                                 .toList(),
                             onChanged: (val) {
-                              if (val != null) setState(() => _slotDuration = val);
+                              if (val != null) {
+                                setState(() {
+                                  _slotDuration = val;
+                                  _modalError = null;
+                                });
+                              }
                             },
                           ),
                         ),

@@ -86,6 +86,12 @@ class UserAppointmentItem {
   final DoctorPhotos? doctorPhoto;
   final String? appointmentTime;
   final String? clinicName;
+  final bool hasPrescription;
+  final String? prescriptionId;
+  final int? rescheduleCount;
+  final String? rescheduledAt;
+  final String? completedAt;
+  final String? updatedAt;
 
   UserAppointmentItem({
     required this.id,
@@ -110,6 +116,12 @@ class UserAppointmentItem {
     this.doctorSpecialty,
     this.doctorPhoto,
     this.clinicName,
+    this.hasPrescription = false,
+    this.prescriptionId,
+    this.rescheduleCount,
+    this.rescheduledAt,
+    this.completedAt,
+    this.updatedAt,
   });
 
   factory UserAppointmentItem.fromJson(Map<String, dynamic> json) {
@@ -142,6 +154,15 @@ class UserAppointmentItem {
           ? DoctorPhotos.fromJson(json['doctorPhoto'] as Map<String, dynamic>)
           : null,
       clinicName: json['clinicName'] as String?,
+      hasPrescription: json['hasPrescription'] == true ||
+          json['hasPrescription']?.toString().toLowerCase() == 'true',
+      prescriptionId: json['prescriptionId']?.toString(),
+      rescheduleCount: json['rescheduleCount'] is int
+          ? json['rescheduleCount'] as int
+          : int.tryParse(json['rescheduleCount']?.toString() ?? ''),
+      rescheduledAt: json['rescheduledAt']?.toString(),
+      completedAt: (json['completedAt'] ?? json['endedAt'] ?? json['meetingEndedAt'])?.toString(),
+      updatedAt: json['updatedAt']?.toString(),
     );
   }
 
@@ -169,6 +190,12 @@ class UserAppointmentItem {
       'doctorSpecialty': doctorSpecialty,
       'doctorPhoto': doctorPhoto?.toJson(),
       'clinicName': clinicName,
+      'hasPrescription': hasPrescription,
+      'prescriptionId': prescriptionId,
+      'rescheduleCount': rescheduleCount,
+      'rescheduledAt': rescheduledAt,
+      'completedAt': completedAt,
+      'updatedAt': updatedAt,
     };
   }
 
@@ -463,6 +490,10 @@ class AppointmentDetailModel {
   final String? userId;
   final String? userName;
   final String? userMobile;
+  final bool hasPrescription;
+  final String? prescriptionId;
+  final int? rescheduleCount;
+  final String? rescheduledAt;
 
   AppointmentDetailModel({
     required this.id,
@@ -495,6 +526,10 @@ class AppointmentDetailModel {
     this.userId,
     this.userName,
     this.userMobile,
+    this.hasPrescription = false,
+    this.prescriptionId,
+    this.rescheduleCount,
+    this.rescheduledAt,
   });
 
   factory AppointmentDetailModel.fromJson(Map<String, dynamic> json) {
@@ -528,7 +563,7 @@ class AppointmentDetailModel {
       paymentId: json['paymentId'] as String?,
       bookedAt: json['bookedAt'] as String?,
       confirmedAt: json['confirmedAt'] as String?,
-      completedAt: json['completedAt'] as String?,
+      completedAt: (json['completedAt'] ?? json['endedAt'] ?? json['meetingEndedAt'])?.toString(),
       cancelledAt: json['cancelledAt'] as String?,
       doctorId: json['doctorId'] as String?,
       doctorName: json['doctorName'] as String?,
@@ -540,6 +575,13 @@ class AppointmentDetailModel {
       userId: json['userId'] as String?,
       userName: json['userName'] as String?,
       userMobile: json['userMobile'] as String?,
+      hasPrescription: json['hasPrescription'] == true ||
+          json['hasPrescription']?.toString().toLowerCase() == 'true',
+      prescriptionId: json['prescriptionId']?.toString(),
+      rescheduleCount: json['rescheduleCount'] is int
+          ? json['rescheduleCount'] as int
+          : int.tryParse(json['rescheduleCount']?.toString() ?? ''),
+      rescheduledAt: json['rescheduledAt']?.toString(),
     );
   }
 
@@ -575,6 +617,10 @@ class AppointmentDetailModel {
       'userId': userId,
       'userName': userName,
       'userMobile': userMobile,
+      'hasPrescription': hasPrescription,
+      'prescriptionId': prescriptionId,
+      'rescheduleCount': rescheduleCount,
+      'rescheduledAt': rescheduledAt,
     };
   }
 
@@ -672,15 +718,55 @@ class AppointmentDetailModel {
   }
 }
 
+class RescheduleInfo {
+  final int rescheduleCount;
+  final int remainingReschedules;
+  final String? message;
+
+  RescheduleInfo({
+    required this.rescheduleCount,
+    required this.remainingReschedules,
+    this.message,
+  });
+
+  factory RescheduleInfo.fromJson(Map<String, dynamic> json) {
+    return RescheduleInfo(
+      rescheduleCount: json['rescheduleCount'] is int
+          ? json['rescheduleCount'] as int
+          : int.tryParse(json['rescheduleCount']?.toString() ?? '') ?? 0,
+      remainingReschedules: json['remainingReschedules'] is int
+          ? json['remainingReschedules'] as int
+          : int.tryParse(json['remainingReschedules']?.toString() ?? '') ?? 0,
+      message: json['message']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'rescheduleCount': rescheduleCount,
+      'remainingReschedules': remainingReschedules,
+      'message': message,
+    };
+  }
+}
+
 class SingleAppointmentApiResponse {
   final bool success;
   final AppointmentDetailModel? appointment;
   final String? message;
+  final bool? refundEligible;
+  final String? refundMessage;
+  final RescheduleInfo? rescheduleInfo;
+  final Map<String, dynamic>? rawJson;
 
   SingleAppointmentApiResponse({
     required this.success,
     this.appointment,
     this.message,
+    this.refundEligible,
+    this.refundMessage,
+    this.rescheduleInfo,
+    this.rawJson,
   });
 
   factory SingleAppointmentApiResponse.fromJson(Map<String, dynamic> json) {
@@ -690,6 +776,16 @@ class SingleAppointmentApiResponse {
           ? AppointmentDetailModel.fromJson(json['appointment'] as Map<String, dynamic>)
           : null,
       message: json['message'] as String?,
+      refundEligible: json['refundEligible'] is bool
+          ? json['refundEligible'] as bool
+          : (json['refundEligible']?.toString().toLowerCase() == 'true'
+              ? true
+              : (json['refundEligible'] != null ? false : null)),
+      refundMessage: json['refundMessage']?.toString(),
+      rescheduleInfo: json['rescheduleInfo'] != null && json['rescheduleInfo'] is Map<String, dynamic>
+          ? RescheduleInfo.fromJson(json['rescheduleInfo'] as Map<String, dynamic>)
+          : null,
+      rawJson: json,
     );
   }
 }

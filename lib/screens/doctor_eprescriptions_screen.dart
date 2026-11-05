@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../services/eprescription_service.dart';
+import '../services/prescription_window_helper.dart';
+import '../widgets/prescription_editor_modal.dart';
 import 'eprescription_detail_screen.dart';
 
 class DoctorEPrescriptionsScreen extends StatefulWidget {
@@ -607,7 +609,7 @@ class _DoctorEPrescriptionsScreenState
                   isDoctorView: true,
                 ),
               ),
-            );
+            ).then((_) => _fetchPrescriptions(showSpinner: false));
           } else {
             Navigator.push(
               context,
@@ -617,7 +619,7 @@ class _DoctorEPrescriptionsScreenState
                   isDoctorView: true,
                 ),
               ),
-            );
+            ).then((_) => _fetchPrescriptions(showSpinner: false));
           }
         },
         child: Padding(
@@ -792,6 +794,52 @@ class _DoctorEPrescriptionsScreenState
                         ),
                         const SizedBox(width: 8),
                       ],
+                      // Edit Prescription Button
+                      Builder(
+                        builder: (context) {
+                          final aptId = rx['appointmentId']?.toString() ?? '';
+                          final bool isRxWindowOpen = aptId.isEmpty || PrescriptionWindowHelper.isWindowOpen(appointmentId: aptId);
+
+                          return ElevatedButton.icon(
+                            onPressed: () {
+                              if (!isRxWindowOpen) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Prescription editing window has expired (allowed up to 5 minutes after consultation end).'),
+                                    backgroundColor: Color(0xFFDC2626),
+                                  ),
+                                );
+                                return;
+                              }
+                              showPrescriptionEditorModal(
+                                context,
+                                patientName: patientName,
+                                existingPrescription: rx,
+                                prescriptionId: rxId,
+                                appointmentId: aptId,
+                                onPrescriptionSaved: (_) => _fetchPrescriptions(showSpinner: false),
+                              );
+                            },
+                            icon: Icon(
+                              isRxWindowOpen ? Icons.edit_note_rounded : Icons.lock_clock_outlined,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              isRxWindowOpen ? 'Edit' : 'Locked',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isRxWindowOpen ? const Color(0xFF0F766E) : const Color(0xFF64748B),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
                       const Text(
                         'View Details',
                         style: TextStyle(

@@ -5,10 +5,12 @@ import '../constants/app_state.dart';
 import '../models/my_appointments_model.dart';
 import '../models/chat_model.dart';
 import '../services/video_call_service.dart';
+import '../services/appointment_service.dart';
 import 'login_screen.dart';
 import 'appointment_detail_screen.dart';
 import 'chat_screen.dart';
 import 'video_call_screen.dart';
+import '../services/appointment_chat_helper.dart';
 
 class MyAppointmentsScreen extends StatefulWidget {
   const MyAppointmentsScreen({super.key});
@@ -77,8 +79,9 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
 
   void _showCancelDialog(UserAppointmentItem apt) {
     final TextEditingController reasonController = TextEditingController();
-    String selectedReason = 'Personal reason issue';
+    String selectedReason = 'Cannot make it to the appointment';
     final List<String> commonReasons = [
+      'Cannot make it to the appointment',
       'Personal reason issue',
       'Change of plans',
       'Feeling better / Not needed',
@@ -105,48 +108,66 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                   ),
                 ],
               ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Are you sure you want to cancel appointment with ${apt.doctorName != null && apt.doctorName!.isNotEmpty ? 'Dr. ${apt.doctorName!}' : 'the doctor'}?',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedReason,
-                      decoration: InputDecoration(
-                        labelText: 'Cancellation Reason',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Are you sure you want to cancel appointment with ${apt.doctorName != null && apt.doctorName!.isNotEmpty ? 'Dr. ${apt.doctorName!}' : 'the doctor'}?',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textDark,
                         ),
                       ),
-                      items: commonReasons.map((reason) {
-                        return DropdownMenuItem<String>(
-                          value: reason,
-                          child: Text(
-                            reason,
-                            style: const TextStyle(fontSize: 13),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedReason,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Cancellation Reason',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          setDialogState(() {
-                            selectedReason = val;
-                          });
-                        }
-                      },
-                    ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
+                        selectedItemBuilder: (BuildContext context) {
+                          return commonReasons.map<Widget>((String reason) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                reason,
+                                style: const TextStyle(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            );
+                          }).toList();
+                        },
+                        items: commonReasons.map((reason) {
+                          return DropdownMenuItem<String>(
+                            value: reason,
+                            child: Text(
+                              reason,
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setDialogState(() {
+                              selectedReason = val;
+                            });
+                          }
+                        },
+                      ),
                     if (selectedReason == 'Other') ...[
                       const SizedBox(height: 12),
                       TextField(
@@ -161,10 +182,33 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                         ),
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade300),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Colors.amber.shade900),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Cancellations at least 2 hours before the appointment are eligible for 100% refund. Cancellations within 2 hours are non-refundable.',
+                              style: TextStyle(fontSize: 11, color: Colors.amber.shade900, height: 1.3),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
-              actions: [
+            ),
+            actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text(
@@ -182,7 +226,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                   onPressed: () async {
                     final reason = selectedReason == 'Other'
                         ? (reasonController.text.trim().isEmpty
-                              ? 'Personal reason issue'
+                              ? 'Cannot make it to the appointment'
                               : reasonController.text.trim())
                         : selectedReason;
 
@@ -238,12 +282,17 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
     if (response.success) {
+      final refundMsg = response.refundMessage;
+      final baseMsg = response.message ?? 'Appointment cancelled successfully';
+      final displayMsg = (refundMsg != null && refundMsg.isNotEmpty)
+          ? '$baseMsg\n$refundMsg'
+          : baseMsg;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            response.message ?? 'Appointment cancelled successfully',
-          ),
-          backgroundColor: Colors.green,
+          content: Text(displayMsg),
+          backgroundColor: response.refundEligible == false ? Colors.orange.shade800 : Colors.green,
+          duration: const Duration(seconds: 4),
         ),
       );
       _refresh();
@@ -252,6 +301,332 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
         SnackBar(
           content: Text(response.message ?? 'Failed to cancel appointment'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  void _showRescheduleDialog(UserAppointmentItem apt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parsedDate = AppointmentService.parseAppointmentDate(apt.appointmentDate);
+    DateTime selectedDate = parsedDate.isBefore(today) ? today : parsedDate;
+    final timeParsed = AppointmentService.parseAppointmentHourMinute(
+      timeStr: apt.appointmentTime,
+      dateStr: apt.appointmentDate,
+    );
+    TimeOfDay selectedTime = TimeOfDay(hour: timeParsed.hour, minute: timeParsed.minute);
+    final TextEditingController reasonController = TextEditingController();
+    String selectedReason = 'Personal emergency, need to reschedule';
+    final List<String> commonReasons = [
+      'Personal emergency, need to reschedule',
+      'Conflicting schedule',
+      'Doctor unavailable',
+      'Health condition changed',
+      'Other',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            String formattedDate =
+                '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+            final h12 = selectedTime.hourOfPeriod == 0 ? 12 : selectedTime.hourOfPeriod;
+            final period = selectedTime.period == DayPeriod.pm ? 'PM' : 'AM';
+            String formattedTime =
+                '${h12.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} $period';
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.event_repeat, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Reschedule Appointment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: Color(0xFF1D4ED8)),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Reschedule Policy',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '• Maximum 2 reschedules allowed per booking.\n• Free rescheduling is only allowed up to 2 hours before the appointment.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF1E40AF), height: 1.3),
+                            ),
+                            if (apt.rescheduleCount != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Reschedules used: ${apt.rescheduleCount}/2',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Text(
+                        'Select a new date and time:',
+                        style: TextStyle(fontSize: 13, color: AppColors.textDark, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Date picker
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate.isBefore(today) ? today : selectedDate,
+                            firstDate: today,
+                            lastDate: today.add(const Duration(days: 365)),
+                          );
+                          if (picked != null) {
+                            setDialogState(() => selectedDate = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFF2563EB)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today, color: Color(0xFF2563EB), size: 18),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Date', style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                                  Text(
+                                    formattedDate,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              const Icon(Icons.chevron_right, color: AppColors.textLight),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Time picker
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: selectedTime,
+                          );
+                          if (picked != null) {
+                            setDialogState(() => selectedTime = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFF2563EB)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.access_time, color: Color(0xFF2563EB), size: 18),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Time', style: TextStyle(fontSize: 11, color: AppColors.textLight)),
+                                  Text(
+                                    formattedTime,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              const Icon(Icons.chevron_right, color: AppColors.textLight),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Reason dropdown
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedReason,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          labelText: 'Reason for Rescheduling',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        selectedItemBuilder: (BuildContext context) {
+                          return commonReasons.map<Widget>((String reason) {
+                            return Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                reason,
+                                style: const TextStyle(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            );
+                          }).toList();
+                        },
+                        items: commonReasons.map((reason) {
+                          return DropdownMenuItem<String>(
+                            value: reason,
+                            child: Text(
+                              reason,
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => selectedReason = val);
+                        },
+                      ),
+                      if (selectedReason == 'Other') ...[
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: reasonController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            hintText: 'Type your reason...',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.all(10),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel', style: TextStyle(color: AppColors.textLight)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    final reason = selectedReason == 'Other'
+                        ? (reasonController.text.trim().isEmpty ? 'Personal emergency, need to reschedule' : reasonController.text.trim())
+                        : selectedReason;
+
+                    final dateFormatted =
+                        '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+                    final time24 =
+                        '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+
+                    Navigator.pop(context);
+                    _handleRescheduleAppointment(
+                      apt.id,
+                      dateFormatted,
+                      time24,
+                      reason,
+                    );
+                  },
+                  child: const Text('Confirm Reschedule', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _handleRescheduleAppointment(
+    String appointmentId,
+    String newAppointmentDate,
+    String newAppointmentTime,
+    String reason,
+  ) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text('Rescheduling appointment...'),
+          ],
+        ),
+        duration: Duration(seconds: 10),
+      ),
+    );
+
+    final response = await _appState.rescheduleAppointment(
+      appointmentId: appointmentId,
+      newAppointmentDate: newAppointmentDate,
+      newAppointmentTime: newAppointmentTime,
+      reason: reason,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (response.success) {
+      final infoMsg = response.rescheduleInfo?.message;
+      final baseMsg = response.message ?? 'Appointment rescheduled successfully';
+      final displayMsg = (infoMsg != null && infoMsg.isNotEmpty)
+          ? '$baseMsg\n$infoMsg'
+          : baseMsg;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(displayMsg),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      _refresh();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message ?? 'Failed to reschedule appointment'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -373,7 +748,27 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                     child: CircularProgressIndicator(color: AppColors.primary),
                   );
                 }
-                final threads = snapshot.data?.threads ?? [];
+                final rawThreads = snapshot.data?.threads ?? [];
+                final threads = rawThreads.where((t) {
+                  final matched = _appState.myAppointments.firstWhere(
+                    (a) => a.id == t.appointmentId,
+                    orElse: () => UserAppointmentItem(
+                      id: '',
+                      appointmentDate: '',
+                      durationMinutes: 0,
+                      consultationType: '',
+                      status: '',
+                      paymentStatus: '',
+                      consultationFee: '',
+                      patientName: '',
+                    ),
+                  );
+                  if (matched.id.isNotEmpty &&
+                      AppointmentChatHelper.isConsultationCompleted(matched.status)) {
+                    return false;
+                  }
+                  return true;
+                }).toList();
                 return Column(
                   children: [
                     Container(
@@ -1043,6 +1438,51 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                     ),
                   ],
 
+                  if (apt.rescheduleCount != null && apt.rescheduleCount! > 0) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.event_repeat,
+                          size: 14,
+                          color: Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Rescheduled: ${apt.rescheduleCount} time(s)',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF2563EB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  if (apt.cancelReason?.isNotEmpty == true) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.cancel_outlined,
+                          size: 14,
+                          color: Colors.red.shade700,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Cancelled: ${apt.cancelReason}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
                   if (apt.patientName.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Row(
@@ -1179,59 +1619,157 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                           ],
                         ],
 
-                        // ── Chat Now — shown for all non-cancelled (including completed) ──
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  appointmentId: apt.id,
-                                  recipientName:
-                                      apt.doctorName != null &&
-                                          apt.doctorName!.isNotEmpty
-                                      ? 'Dr. ${apt.doctorName}'
-                                      : 'Doctor',
-                                  recipientSubtitle:
-                                      apt.doctorSpecialty ??
-                                      'Ayush Specialist',
-                                  recipientAvatar: apt.displayDoctorPhoto,
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          label: const Text(
-                            'Chat Now',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                             ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
+                        // ── Chat Now — ONLY for active / non-completed consultations ──
+                        if (!AppointmentChatHelper.isConsultationCompleted(apt.status))
+                          Builder(
+                            builder: (context) {
+                              final bool canPatientChat = AppointmentChatHelper.canPatientAccessChat(
+                                status: apt.status,
+                                appointmentDate: apt.appointmentDate,
+                                appointmentTime: apt.appointmentTime,
+                                appointmentId: apt.id,
+                              );
 
-                        // ── Cancel — only for confirmed / in-progress ──
-                        if (statusNorm.contains('confirm') ||
-                            statusNorm.contains('progress') ||
-                            statusNorm == 'approved' ||
-                            statusNorm == 'active')
+                              if (canPatientChat) {
+                                return ElevatedButton.icon(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ChatScreen(
+                                          appointmentId: apt.id,
+                                          recipientName: apt.doctorName != null && apt.doctorName!.isNotEmpty
+                                              ? 'Dr. ${apt.doctorName}'
+                                              : 'Doctor',
+                                          recipientSubtitle: apt.doctorSpecialty ?? 'Ayush Specialist',
+                                          recipientAvatar: apt.displayDoctorPhoto,
+                                          appointmentDate: apt.appointmentDate,
+                                          appointmentTime: apt.appointmentTime,
+                                          appointmentStatus: apt.status,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                  label: const Text(
+                                    'Chat Now',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                // Before meeting time & doctor hasn't sent message yet
+                                return ElevatedButton.icon(
+                                  onPressed: () {
+                                    final reason = AppointmentChatHelper.getPatientChatDisabledReason(
+                                      status: apt.status,
+                                      appointmentDate: apt.appointmentDate,
+                                      appointmentTime: apt.appointmentTime,
+                                      appointmentId: apt.id,
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(reason),
+                                        backgroundColor: Colors.orange,
+                                        duration: const Duration(seconds: 3),
+                                      ),
+                                    );
+                                  },
+                                  icon: Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 14,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                  label: Text(
+                                    AppointmentChatHelper.getSecondsUntilMeeting(
+                                              appointmentDate: apt.appointmentDate,
+                                              appointmentTime: apt.appointmentTime,
+                                            ) >
+                                            600
+                                        ? 'Chat (Opens 10m)'
+                                        : 'Doctor initiating...',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFF1F5F9),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    elevation: 0,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+
+                        // ── Reschedule — for active, pending, confirmed appointments ──
+                        if (!statusNorm.contains('cancel') &&
+                            !statusNorm.contains('complet') &&
+                            !statusNorm.contains('reject') &&
+                            !statusNorm.contains('progress'))
+                          OutlinedButton.icon(
+                            onPressed: () => _showRescheduleDialog(apt),
+                            icon: const Icon(
+                              Icons.event_repeat,
+                              size: 14,
+                              color: Color(0xFF2563EB),
+                            ),
+                            label: const Text(
+                              'Reschedule',
+                              style: TextStyle(
+                                color: Color(0xFF2563EB),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF2563EB)),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+
+                        // ── Cancel — only for pending / confirmed / in-progress ──
+                        if (!statusNorm.contains('cancel') &&
+                            !statusNorm.contains('complet') &&
+                            !statusNorm.contains('reject'))
                           OutlinedButton.icon(
                             onPressed: () => _showCancelDialog(apt),
                             icon: const Icon(
@@ -1250,7 +1788,7 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Colors.red),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                                horizontal: 10,
                                 vertical: 6,
                               ),
                               minimumSize: Size.zero,

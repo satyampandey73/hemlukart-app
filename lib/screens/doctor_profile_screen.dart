@@ -571,33 +571,26 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                       const SizedBox(width: 10),
                       if (!_appState.isDoctorLoggedIn)
                         ElevatedButton(
-                          onPressed: (!_hasAvailableSlotInWeek || _getLeaveForDate(_selectedSlotDate) != null)
-                              ? null
-                              : () async {
-                                  final currentContext = context;
-                                  if (await LoginScreen.checkAndNavigate(
-                                    currentContext,
-                                  )) {
-                                    if (!mounted) return;
-                                    if (currentContext.mounted) {
-                                      Navigator.push(
-                                        currentContext,
-                                        MaterialPageRoute(
-                                          builder: (_) => BookAppointmentScreen(
-                                            doctor: doc,
-                                            initialDate: _selectedSlotDate,
-                                            initialSlotTime: _selectedSchedule?.startTime,
-                                            initialSchedule: _selectedSchedule,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
+                          onPressed: () async {
+                            final currentContext = context;
+                            if (await LoginScreen.checkAndNavigate(
+                              currentContext,
+                            )) {
+                              if (!mounted) return;
+                              if (currentContext.mounted) {
+                                Navigator.push(
+                                  currentContext,
+                                  MaterialPageRoute(
+                                    builder: (_) => BookAppointmentScreen(
+                                      doctor: doc,
+                                    ),
+                                  ),
+                                );
+                              }
+                            }
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
-                            disabledBackgroundColor: Colors.grey.shade300,
-                            disabledForegroundColor: Colors.grey.shade600,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 12,
@@ -606,18 +599,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: FittedBox(
+                          child: const FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              _getLeaveForDate(_selectedSlotDate) != null
-                                  ? 'Doctor On Leave'
-                                  : (!_hasAvailableSlotInWeek
-                                      ? 'No Slots Available'
-                                      : 'Book Appointment'),
+                              'Book Appointment',
                               style: TextStyle(
-                                color: (!_hasAvailableSlotInWeek || _getLeaveForDate(_selectedSlotDate) != null)
-                                    ? Colors.grey.shade600
-                                    : Colors.white,
+                                color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -699,14 +686,6 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                   ),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Consultation availability and appointment slots
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: _buildShiftSlotsCard(),
             ),
 
             const SizedBox(height: 16),

@@ -7,6 +7,7 @@ import '../screens/appointment_detail_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/video_call_screen.dart';
 import '../services/video_call_service.dart';
+import '../services/appointment_chat_helper.dart';
 
 class TodayAppointmentBannerCard extends StatefulWidget {
   final UserAppointmentItem appointment;
@@ -224,17 +225,28 @@ class TodayAppointmentBannerCard extends StatefulWidget {
     return curMinutes >= windowStart;
   }
 
-  /// Chat option enables once appointment is confirmed or in-progress
-  static bool canChat(UserAppointmentItem apt) {
-    final s = normalizeStatus(apt.status);
-    if (s.contains('cancel') ||
-        s.contains('complet') ||
-        s.contains('reject') ||
-        s.contains('ended') ||
-        s.contains('expire')) {
+  /// Chat option rules:
+  /// - 10 minutes before meeting: only doctor can initiate; patient can only if doctor sent a message
+  /// - Meeting time arrived: both can chat
+  /// - Consultation completed: chat disabled / hidden completely
+  static bool canChat(UserAppointmentItem apt, {bool isDoctor = false}) {
+    if (AppointmentChatHelper.isConsultationCompleted(apt.status)) {
       return false;
     }
-    return isConfirmed(apt) || isInProgress(apt);
+    if (isDoctor) {
+      return AppointmentChatHelper.canDoctorAccessChat(
+        status: apt.status,
+        appointmentDate: apt.appointmentDate,
+        appointmentTime: apt.appointmentTime,
+      );
+    } else {
+      return AppointmentChatHelper.canPatientAccessChat(
+        status: apt.status,
+        appointmentDate: apt.appointmentDate,
+        appointmentTime: apt.appointmentTime,
+        appointmentId: apt.id,
+      );
+    }
   }
 
   /// Video call meeting button enables 10 minutes before scheduled time (or if in-progress)
@@ -495,10 +507,18 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
   }
 
   void _openChat(BuildContext context) {
-    if (!TodayAppointmentBannerCard.canChat(widget.appointment)) {
+    if (!TodayAppointmentBannerCard.canChat(widget.appointment, isDoctor: widget.isDoctor)) {
+      final msg = widget.isDoctor
+          ? 'Chat enables 10 minutes before scheduled meeting time for doctor to initiate.'
+          : AppointmentChatHelper.getPatientChatDisabledReason(
+              status: widget.appointment.status,
+              appointmentDate: widget.appointment.appointmentDate,
+              appointmentTime: widget.appointment.appointmentTime,
+              appointmentId: widget.appointment.id,
+            );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Chat will be available once the appointment is confirmed'),
+        SnackBar(
+          content: Text(msg),
           backgroundColor: Colors.orange,
         ),
       );
@@ -532,6 +552,9 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
           recipientName: recipientName,
           recipientSubtitle: recipientSubtitle,
           recipientAvatar: recipientAvatar,
+          appointmentDate: widget.appointment.appointmentDate,
+          appointmentTime: widget.appointment.appointmentTime,
+          appointmentStatus: widget.appointment.status,
         ),
       ),
     ).then((_) => widget.onRefresh?.call());
@@ -690,7 +713,8 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
         ? TodayAppointmentBannerCard.canJoinVideoCall(widget.appointment)
         : _hasActiveCall;
 
-    final chatActive = TodayAppointmentBannerCard.canChat(widget.appointment);
+    final bool isConsultationEnded = AppointmentChatHelper.isConsultationCompleted(widget.appointment.status);
+    final chatActive = TodayAppointmentBannerCard.canChat(widget.appointment, isDoctor: widget.isDoctor);
 
     // Video call button visibility
     final bool showVideoCallButton = isVideoCall &&
@@ -1017,7 +1041,7 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
                         Expanded(
                           child: Text(
                             pending
-                                ? 'Awaiting confirmation. Call & chat activate once confirmed.'
+                                ? 'Awaiting doctor confirmation. Chat is active now.'
                                 : (widget.isDoctor
                                     ? (within10Mins
                                         ? 'Video call ready to start now'
@@ -1105,8 +1129,8 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
                     const SizedBox(width: 6),
                   ],
 
-                  // 2. Chat Button
-                  if (chatActive || !showVideoCallButton) ...[
+                  // 2. Chat Button — completely removed once consultation completes
+                  if (!isConsultationEnded && (chatActive || !showVideoCallButton)) ...[
                     Expanded(
                       flex: showVideoCallButton ? 2 : 3,
                       child: ElevatedButton.icon(
@@ -1123,7 +1147,9 @@ class _TodayAppointmentBannerCardState extends State<TodayAppointmentBannerCard>
                         label: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            showVideoCallButton ? 'Chat' : 'Chat Now',
+                            chatActive
+                                ? (showVideoCallButton ? 'Chat' : 'Chat Now')
+                                : (widget.isDoctor ? 'Chat (Opens 10m)' : 'Doctor initiating...'),
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,

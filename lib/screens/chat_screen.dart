@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
 import '../models/chat_model.dart';
+import '../services/appointment_chat_helper.dart';
 
 class ChatScreen extends StatefulWidget {
   final String appointmentId;
   final String recipientName;
   final String? recipientSubtitle;
   final String? recipientAvatar;
+  final String? appointmentDate;
+  final String? appointmentTime;
+  final String? appointmentStatus;
 
   const ChatScreen({
     super.key,
@@ -16,6 +20,9 @@ class ChatScreen extends StatefulWidget {
     required this.recipientName,
     this.recipientSubtitle,
     this.recipientAvatar,
+    this.appointmentDate,
+    this.appointmentTime,
+    this.appointmentStatus,
   });
 
   @override
@@ -72,6 +79,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final pendingTemp = _messages.where((m) => m.id.startsWith('temp_')).toList();
       final List<ChatMessageModel> merged = List.from(res.messages);
 
+      // Register doctor messages with helper
+      AppointmentChatHelper.registerMessages(
+        appointmentId: widget.appointmentId,
+        messages: res.messages,
+      );
+
       for (final temp in pendingTemp) {
         final alreadyInServer = res.messages.any((m) =>
             m.senderType == temp.senderType &&
@@ -102,10 +115,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _msgController.text.trim();
     if (text.isEmpty || _isSending) return;
 
+    final isDoctorLoggedIn = _appState.isDoctorLoggedIn;
+    if (isDoctorLoggedIn) {
+      AppointmentChatHelper.recordDoctorSentMessage(widget.appointmentId);
+    }
+
     _msgController.clear();
 
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final isDoctorLoggedIn = _appState.isDoctorLoggedIn;
+    //final isDoctorLoggedIn = _appState.isDoctorLoggedIn;
     final currentUserId = isDoctorLoggedIn
         ? (_appState.currentDoctorProfile?.id ?? _appState.currentUser?.id ?? 'doctor')
         : (_appState.currentUser?.id ?? 'user');
@@ -174,6 +192,26 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isDoctorLoggedIn = _appState.isDoctorLoggedIn;
+    final bool isCompleted = AppointmentChatHelper.isConsultationCompleted(widget.appointmentStatus);
+
+    final bool hasDocSentMsg = _messages.any((m) {
+      final s = m.senderType.toLowerCase();
+      return s == 'doctor' || s.contains('doc');
+    }) || AppointmentChatHelper.isDoctorSentMessageCached(widget.appointmentId);
+
+    final bool canPatientSend = !isDoctorLoggedIn
+        ? AppointmentChatHelper.canPatientAccessChat(
+            status: widget.appointmentStatus,
+            appointmentDate: widget.appointmentDate ?? '',
+            appointmentTime: widget.appointmentTime,
+            appointmentId: widget.appointmentId,
+            hasDoctorSentMessage: hasDocSentMsg,
+          )
+        : true;
+
+    final bool isChatDisabled = isCompleted || (!isDoctorLoggedIn && !canPatientSend);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -225,6 +263,53 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          // Banner 1: Consultation completed — chat closed
+          if (isCompleted)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              color: const Color(0xFFFEE2E2),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock_clock_rounded, size: 16, color: Color(0xFFDC2626)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Consultation completed. Chat has been ended.',
+                      style: TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          // Banner 2: Patient view waiting for doctor to initiate chat (within 10m window)
+          else if (!isDoctorLoggedIn && !canPatientSend)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              color: const Color(0xFFFEF3C7),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFD97706)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Doctor will initiate chat first. Once doctor sends a message or meeting time arrives, you can chat.',
+                      style: TextStyle(
+                        color: Color(0xFF92400E),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Chat Messages List
           Expanded(
             child: _isLoading
@@ -259,7 +344,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Start the conversation with ${widget.recipientName}!',
+                                  isDoctorLoggedIn
+                                      ? 'You can initiate chat with ${widget.recipientName} now.'
+                                      : 'Waiting for doctor to initiate chat.',
                                   style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                 ),
                               ],
@@ -271,7 +358,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             itemCount: _messages.length,
                             itemBuilder: (context, index) {
                               final msg = _messages[index];
-                              final bool isDoctorLoggedIn = _appState.isDoctorLoggedIn;
                               final bool isMe = (isDoctorLoggedIn && msg.senderType.toLowerCase() == 'doctor') ||
                                   (!isDoctorLoggedIn && msg.senderType.toLowerCase() == 'user');
 
@@ -299,12 +385,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   Expanded(
                     child: TextField(
                       controller: _msgController,
+                      enabled: !isChatDisabled,
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: null,
                       decoration: InputDecoration(
-                        hintText: 'Type your message...',
+                        hintText: isCompleted
+                            ? 'Chat closed (consultation completed)'
+                            : (!isDoctorLoggedIn && !canPatientSend)
+                                ? 'Waiting for doctor to initiate chat...'
+                                : 'Type your message...',
                         hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                        fillColor: const Color(0xFFF1F5F9),
+                        fillColor: isChatDisabled ? const Color(0xFFE2E8F0) : const Color(0xFFF1F5F9),
                         filled: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         border: OutlineInputBorder(
@@ -312,13 +403,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           borderSide: BorderSide.none,
                         ),
                       ),
-                      onSubmitted: (_) => _handleSendMessage(),
+                      onSubmitted: isChatDisabled ? null : (_) => _handleSendMessage(),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
+                    decoration: BoxDecoration(
+                      color: isChatDisabled ? Colors.grey.shade400 : AppColors.primary,
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
@@ -329,7 +420,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
                           : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                      onPressed: _handleSendMessage,
+                      onPressed: isChatDisabled ? null : _handleSendMessage,
                     ),
                   ),
                 ],

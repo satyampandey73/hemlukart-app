@@ -137,8 +137,6 @@ class PatientDetailScreen extends StatelessWidget {
   // ── Info grid ────────────────────────────────────────────────────────────────
   Widget _buildInfoGrid() {
     final items = [
-      {'icon': Icons.phone_outlined, 'label': 'Phone', 'value': patient['phone'] ?? 'N/A'},
-      {'icon': Icons.email_outlined, 'label': 'Email', 'value': patient['email'] ?? 'N/A'},
       {'icon': Icons.bloodtype_outlined, 'label': 'Blood Group', 'value': patient['bloodGroup'] ?? 'N/A'},
       {'icon': Icons.medical_information_outlined, 'label': 'Consultation', 'value': _formatConsultationType(patient['specialty']?.toString())},
       {'icon': Icons.local_hospital_outlined, 'label': 'Diagnosis', 'value': patient['diagnosis'] ?? 'N/A'},
