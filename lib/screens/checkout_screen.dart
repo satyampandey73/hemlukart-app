@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
+import '../models/order_model.dart';
 import '../services/delivery_charge_service.dart';
 import 'order_placed_screen.dart';
 import 'shipping_addresses_screen.dart';
@@ -24,9 +26,17 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final AppState _appState = AppState();
-  String _selectedPaymentMethod = 'COD'; // COD, UPI, Card, NetBanking
+  String _selectedPaymentMethod = 'UPI'; // UPI, Card, NetBanking, COD
   bool _isPlacingOrder = false;
   late double _deliveryFee;
+
+  late Razorpay _razorpay;
+  String? _pendingBackendOrderId;
+  CheckoutApiResponse? _pendingCheckoutResponse;
+  List<CartItem> _pendingCartItems = [];
+  ShippingAddressModel? _pendingSelectedAddress;
+  double _pendingTotal = 0.0;
+  String? _currentRazorpayOrderId;
 
   final TextEditingController _cardNumberController = TextEditingController();
   final TextEditingController _expiryController = TextEditingController();
@@ -37,6 +47,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     _deliveryFee = widget.deliveryFee;
+
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handleRazorpayPaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handleRazorpayPaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleRazorpayExternalWallet);
+
     _appState.addListener(_onStateChanged);
     if (_appState.isLoggedIn) {
       _appState.fetchShippingAddresses();
@@ -45,6 +61,127 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _couponController.text = _appState.appliedCoupon!.code;
     }
     _verifyDeliveryCharge();
+  }
+
+  void _handleRazorpayPaymentSuccess(PaymentSuccessResponse response) async {
+    final orderId = _pendingBackendOrderId;
+    if (orderId == null) return;
+
+    setState(() => _isPlacingOrder = true);
+
+    debugPrint('┌── [Razorpay Payment Success] ──');
+    debugPrint('│ Order ID: $orderId');
+    debugPrint('│ Razorpay Payment ID: ${response.paymentId}');
+    debugPrint('│ Razorpay Order ID: ${response.orderId}');
+    debugPrint('│ Razorpay Signature: ${response.signature}');
+    debugPrint('└──');
+
+    final verifyRes = await _appState.verifyOrderPayment(
+      orderId: orderId,
+      razorpayOrderId: response.orderId ?? _currentRazorpayOrderId ?? '',
+      razorpayPaymentId: response.paymentId ?? '',
+      razorpaySignature: response.signature ?? '',
+    );
+
+    if (!mounted) return;
+    setState(() => _isPlacingOrder = false);
+
+    if (verifyRes.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment verified & Order placed successfully!'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+
+      final selectedAddress = _pendingSelectedAddress;
+      final checkoutResp = _pendingCheckoutResponse;
+      final finalOrderNo = (checkoutResp?.data?.order.orderNo != null &&
+              checkoutResp!.data!.order.orderNo.isNotEmpty)
+          ? checkoutResp.data!.order.orderNo
+          : (checkoutResp?.data?.order.id != null &&
+                  checkoutResp!.data!.order.id.isNotEmpty
+              ? checkoutResp.data!.order.id
+              : 'OD${DateTime.now().millisecondsSinceEpoch}');
+
+      final String formattedAddr = selectedAddress != null
+          ? [
+              selectedAddress.addressLine,
+              selectedAddress.city,
+              selectedAddress.state,
+              selectedAddress.pincode
+            ].where((s) => s.isNotEmpty).join(', ')
+          : '';
+
+      final placedOrder = Order(
+        id: checkoutResp?.data?.order.id ?? finalOrderNo,
+        orderNo: finalOrderNo,
+        items: _pendingCartItems.isNotEmpty
+            ? _pendingCartItems
+            : (checkoutResp?.data != null
+                ? checkoutResp!.data!.toOrder(_appState.apiProducts).items
+                : []),
+        totalAmount: (checkoutResp?.data?.order.totalAmount != null &&
+                checkoutResp!.data!.order.totalAmount > 0)
+            ? checkoutResp.data!.order.totalAmount
+            : _pendingTotal,
+        discount: (checkoutResp?.data?.order.discountAmount != null &&
+                checkoutResp!.data!.order.discountAmount > 0)
+            ? checkoutResp.data!.order.discountAmount
+            : widget.discount,
+        shippingCharge: (checkoutResp?.data?.order.shippingCharge != null &&
+                checkoutResp!.data!.order.shippingCharge > 0)
+            ? checkoutResp.data!.order.shippingCharge
+            : _deliveryFee,
+        status: 'Placed',
+        orderDate: 'Just now',
+        paymentMode: 'Online (Razorpay)',
+        deliveryAddress: formattedAddr,
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderPlacedScreen(order: placedOrder),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            verifyRes.message.isNotEmpty
+                ? verifyRes.message
+                : 'Payment verification failed. Please contact support.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  void _handleRazorpayPaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
+    setState(() => _isPlacingOrder = false);
+    debugPrint('❌ [Razorpay Error] code: ${response.code}, message: ${response.message}');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          response.message != null && response.message!.isNotEmpty
+              ? 'Payment failed: ${response.message}'
+              : 'Payment was cancelled or failed.',
+        ),
+        backgroundColor: AppColors.error,
+      ),
+    );
+  }
+
+  void _handleRazorpayExternalWallet(ExternalWalletResponse response) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Selected external wallet: ${response.walletName}'),
+      ),
+    );
   }
 
   Future<void> _verifyDeliveryCharge() async {
@@ -58,6 +195,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    _razorpay.clear();
     _appState.removeListener(_onStateChanged);
     _cardNumberController.dispose();
     _expiryController.dispose();
@@ -71,6 +209,183 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() {});
     });
+  }
+
+  Future<void> _processOrderPlacement(double total, double effectiveDiscount) async {
+    if (_appState.cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cart is empty. Cannot place order.')),
+      );
+      return;
+    }
+
+    final selectedAddress = _appState.selectedShippingAddress;
+    if (selectedAddress == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select or add a shipping address first.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isPlacingOrder = true);
+
+    final isCod = _selectedPaymentMethod.toUpperCase() == 'COD';
+    final paymentMode = isCod ? 'cod' : 'online';
+    final paymentStatus = 'pending';
+    final enteredCoupon = _couponController.text.trim();
+    final String? effectiveCoupon = enteredCoupon.isNotEmpty ? enteredCoupon : _appState.appliedCoupon?.code;
+    final cartItemsBeforeCheckout = List<CartItem>.from(_appState.cart);
+
+    // Step 1: Create Order (Checkout)
+    final response = await _appState.checkoutOrder(
+      shippingAddressId: selectedAddress.id,
+      paymentMode: paymentMode,
+      paymentStatus: paymentStatus,
+      paymentProvider: isCod ? null : 'razorpay',
+      couponCode: effectiveCoupon,
+      clearCartOnSuccess: isCod,
+    );
+
+    if (!mounted) return;
+
+    if (!response.success || response.data == null) {
+      setState(() => _isPlacingOrder = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            response.message.isNotEmpty
+                ? response.message
+                : 'Failed to create order. Please try again.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final orderId = response.data!.order.id;
+
+    if (isCod) {
+      setState(() => _isPlacingOrder = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response.message.isNotEmpty ? response.message : 'Order created successfully'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+
+      final String finalOrderNo = (response.data?.order.orderNo != null && response.data!.order.orderNo.isNotEmpty)
+          ? response.data!.order.orderNo
+          : (response.data?.order.id != null && response.data!.order.id.isNotEmpty
+              ? response.data!.order.id
+              : 'OD${DateTime.now().millisecondsSinceEpoch}');
+
+      final String formattedAddr = [
+        selectedAddress.addressLine,
+        selectedAddress.city,
+        selectedAddress.state,
+        selectedAddress.pincode
+      ].where((s) => s.isNotEmpty).join(', ');
+
+      final placedOrder = Order(
+        id: response.data?.order.id ?? finalOrderNo,
+        orderNo: finalOrderNo,
+        items: cartItemsBeforeCheckout.isNotEmpty
+            ? cartItemsBeforeCheckout
+            : response.data!.toOrder(_appState.apiProducts).items,
+        totalAmount: (response.data?.order.totalAmount != null && response.data!.order.totalAmount > 0)
+            ? response.data!.order.totalAmount
+            : total,
+        discount: (response.data?.order.discountAmount != null && response.data!.order.discountAmount > 0)
+            ? response.data!.order.discountAmount
+            : widget.discount,
+        shippingCharge: (response.data?.order.shippingCharge != null && response.data!.order.shippingCharge > 0)
+            ? response.data!.order.shippingCharge
+            : _deliveryFee,
+        status: response.data?.order.orderStatus ?? 'placed',
+        orderDate: (response.data?.order.createdAt != null && response.data!.order.createdAt.isNotEmpty)
+            ? response.data!.order.createdAt
+            : 'Just now',
+        paymentMode: 'Cash on Delivery',
+        deliveryAddress: formattedAddr,
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderPlacedScreen(order: placedOrder),
+        ),
+      );
+      return;
+    }
+
+    // Step 2: Initiate Razorpay Payment for Online Payment
+    final initiateRes = await _appState.initiateOrderPayment(orderId);
+    if (!mounted) return;
+
+    if (!initiateRes.success || initiateRes.payment == null) {
+      setState(() => _isPlacingOrder = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            initiateRes.message.isNotEmpty
+                ? 'Payment initiation failed: ${initiateRes.message}'
+                : 'Unable to initiate Razorpay payment. Please try again.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Step 3: Open Razorpay Modal
+    _pendingBackendOrderId = orderId;
+    _pendingCheckoutResponse = response;
+    _pendingCartItems = cartItemsBeforeCheckout;
+    _pendingSelectedAddress = selectedAddress;
+    _pendingTotal = total;
+    _currentRazorpayOrderId = initiateRes.payment?.orderId;
+
+    final payment = initiateRes.payment!;
+    final num amountInPaise = payment.amount > 0 ? payment.amount : (total * 100).round();
+    final String keyId = payment.keyId.isNotEmpty ? payment.keyId : 'rzp_live_TvCFkhbaRgqo6M';
+    final user = _appState.currentUser;
+
+    final options = {
+      'key': keyId,
+      'amount': amountInPaise,
+      'currency': payment.currency.isNotEmpty ? payment.currency : 'INR',
+      'name': 'Chikitsakart',
+      'description': 'Order Payment',
+      if (payment.orderId.isNotEmpty) 'order_id': payment.orderId,
+      'prefill': {
+        'name': (user?.fullName != null && user!.fullName.isNotEmpty)
+            ? user.fullName
+            : selectedAddress.fullName,
+        'email': (user?.email != null && user!.email.isNotEmpty) ? user.email : 'patient@chikitsakart.com',
+        'contact': (user?.mobile != null && user!.mobile.isNotEmpty)
+            ? user.mobile
+            : selectedAddress.phone,
+      },
+      'theme': {
+        'color': '#2E7D32',
+      },
+    };
+
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      setState(() => _isPlacingOrder = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open Razorpay checkout: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   @override
@@ -558,112 +873,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _isPlacingOrder ? null : () async {
-                        if (_appState.cart.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Cart is empty. Cannot place order.')),
-                          );
-                          return;
-                        }
-
-                        final selectedAddress = _appState.selectedShippingAddress;
-                        if (selectedAddress == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Please select or add a shipping address first.'),
-                              backgroundColor: AppColors.error,
-                            ),
-                          );
-                          return;
-                        }
-
-                        setState(() {
-                          _isPlacingOrder = true;
-                        });
-
-                        final paymentMode = _selectedPaymentMethod.toLowerCase(); // 'cod', 'upi', 'card', 'netbanking'
-                        final paymentStatus = 'pending';
-                        final enteredCoupon = _couponController.text.trim();
-                        final String? effectiveCoupon = enteredCoupon.isNotEmpty ? enteredCoupon : _appState.appliedCoupon?.code;
-
-                        final cartItemsBeforeCheckout = List<CartItem>.from(_appState.cart);
-
-                        final response = await _appState.checkoutOrder(
-                          shippingAddressId: selectedAddress.id,
-                          paymentMode: paymentMode,
-                          paymentStatus: paymentStatus,
-                          couponCode: effectiveCoupon,
-                        );
-
-                        if (!mounted) return;
-
-                        setState(() {
-                          _isPlacingOrder = false;
-                        });
-
-                        if (response.success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(response.message.isNotEmpty ? response.message : 'Order created successfully'),
-                              backgroundColor: AppColors.success,
-                            ),
-                          );
-
-                          final String finalOrderNo = (response.data?.order.orderNo != null && response.data!.order.orderNo.isNotEmpty)
-                              ? response.data!.order.orderNo
-                              : (response.data?.order.id != null && response.data!.order.id.isNotEmpty
-                                  ? response.data!.order.id
-                                  : 'OD${DateTime.now().millisecondsSinceEpoch}');
-
-                          final String formattedAddr = [
-                            selectedAddress.addressLine,
-                            selectedAddress.city,
-                            selectedAddress.state,
-                            selectedAddress.pincode
-                          ].where((s) => s.isNotEmpty).join(', ');
-
-                          final placedOrder = Order(
-                            id: response.data?.order.id ?? finalOrderNo,
-                            orderNo: finalOrderNo,
-                            items: cartItemsBeforeCheckout.isNotEmpty
-                                ? cartItemsBeforeCheckout
-                                : (response.data != null
-                                    ? response.data!.toOrder(_appState.apiProducts).items
-                                    : []),
-                            totalAmount: (response.data?.order.totalAmount != null && response.data!.order.totalAmount > 0)
-                                ? response.data!.order.totalAmount
-                                : total,
-                            discount: (response.data?.order.discountAmount != null && response.data!.order.discountAmount > 0)
-                                ? response.data!.order.discountAmount
-                                : widget.discount,
-                            shippingCharge: (response.data?.order.shippingCharge != null && response.data!.order.shippingCharge > 0)
-                                ? response.data!.order.shippingCharge
-                                : _deliveryFee,
-                            status: response.data?.order.orderStatus ?? 'placed',
-                            orderDate: (response.data?.order.createdAt != null && response.data!.order.createdAt.isNotEmpty)
-                                ? response.data!.order.createdAt
-                                : 'Just now',
-                            paymentMode: _selectedPaymentMethod,
-                            deliveryAddress: formattedAddr,
-                          );
-
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => OrderPlacedScreen(
-                                order: placedOrder,
-                              ),
-                            ),
-                          );
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(response.message.isNotEmpty ? response.message : 'Failed to place order.'),
-                              backgroundColor: AppColors.error,
-                            ),
-                          );
-                        }
-                      },
+                      onPressed: _isPlacingOrder
+                          ? null
+                          : () => _processOrderPlacement(total, effectiveDiscount),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -672,10 +884,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         elevation: 0,
                       ),
                       child: _isPlacingOrder
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                ),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Processing Payment...',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ],
                             )
                           : Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -683,7 +905,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const Icon(Icons.lock_outline, size: 16),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Pay ₹${total.toStringAsFixed(2)} & Place Order',
+                                  _selectedPaymentMethod.toUpperCase() == 'COD'
+                                      ? 'Place Order (COD) • ₹${total.toStringAsFixed(2)}'
+                                      : 'Pay ₹${total.toStringAsFixed(2)} with Razorpay',
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                 ),
                               ],

@@ -18,6 +18,7 @@ import 'clinic_listing_screen.dart';
 import '../services/video_call_service.dart';
 import 'video_call_screen.dart';
 import 'cart_screen.dart';
+import 'wishlist_screen.dart';
 import 'medicine_listing_screen.dart';
 import 'my_orders_screen.dart';
 import 'product_detail_screen.dart';
@@ -645,6 +646,53 @@ class _DoctorDashboardScreenState extends State<DoctorDashboardScreen> {
           icon: const Icon(Icons.refresh_rounded, color: Colors.white),
           onPressed: _fetchDoctorDashboardData,
           tooltip: 'Sync Dashboard',
+        ),
+        // Live Wishlist Button with Badge
+        AnimatedBuilder(
+          animation: AppState(),
+          builder: (context, _) {
+            final wishCount = AppState().wishlistProductIds.length;
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.favorite_border_rounded, color: Colors.white),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const WishlistScreen()),
+                    );
+                  },
+                  tooltip: 'Doctor Wishlist',
+                ),
+                if (wishCount > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '$wishCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
         // Live Cart Button with Quantity Badge
         AnimatedBuilder(

@@ -23,7 +23,41 @@ class ProductQuantitySelector extends StatelessWidget {
     return ListenableBuilder(
       listenable: appState,
       builder: (context, _) {
-        final qty = appState.getProductQuantity(product.id, packSize: product.packSize);
+        final bool isOutOfStock = product.isOutOfStock || product.stockQuantity <= 0;
+        final qty = appState.getProductQuantity(
+          product.id,
+          packSize: product.packSize,
+          skuId: product.skuId,
+        );
+
+        if (isOutOfStock) {
+          return GestureDetector(
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('This product / SKU is currently out of stock.'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: const Text(
+                'Out of Stock',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54,
+                ),
+              ),
+            ),
+          );
+        }
 
         if (qty == 0) {
           return GestureDetector(
@@ -90,6 +124,15 @@ class ProductQuantitySelector extends StatelessWidget {
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
+                  if (product.stockQuantity > 0 && qty >= product.stockQuantity) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Only ${product.stockQuantity} items available in stock.'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                    return;
+                  }
                   appState.updateCartQty(product, qty + 1);
                 },
                 child: Padding(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/wishlist_model.dart';
 import 'api_helper.dart';
@@ -7,14 +8,22 @@ class WishlistService {
   static const String baseUrl =
       'https://backend.chikitsakart.com/api/wishlists';
 
-  /// API: POST https://backend.chikitsakart.com/api/wishlists/user/products
-  /// Request Body: {"productId": "bcebcbee-106e-4c54-a575-8f406931b94d"}
-  /// Response: {"success": true, "message": "Added to wishlist"} / {"success": true, "message": "Removed from wishlist"}
+  /// API: POST https://backend.chikitsakart.com/api/wishlists/user/products (or doctor/products)
+  /// Request Body:
+  /// {
+  ///   "productId": "PR260000005",             // Required: Product UUID ya Product Code
+  ///   "skuId": "2a66c9f3-c664-493f-..."       // Selected SKU ID ya SKU Code
+  /// }
+  /// Response: {"success": true, "message": "Added to wishlist", "isWishlisted": true}
   static Future<WishlistActionResponse> toggleWishlist({
     required String productId,
+    String? variantId,
+    String? skuId,
     String? token,
+    bool isDoctor = false,
   }) async {
-    final Uri url = Uri.parse('$baseUrl/user/products');
+    final String path = isDoctor ? '$baseUrl/doctor/products' : '$baseUrl/user/products';
+    final Uri url = Uri.parse(path);
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -24,14 +33,29 @@ class WishlistService {
       headers['Authorization'] = 'Bearer $token';
     }
 
+    final Map<String, dynamic> payload = {
+      'productId': productId.trim(),
+    };
+    if (skuId != null && skuId.trim().isNotEmpty) {
+      payload['skuId'] = skuId.trim();
+    }
+
+    debugPrint('┌── [Wishlist API] POST $url');
+    debugPrint('│ Body: ${jsonEncode(payload)}');
+    debugPrint('│ Auth: ${token != null && token.isNotEmpty ? "Bearer Token Present" : "No Token"}');
+
     try {
       final response = await http
           .post(
             url,
             headers: headers,
-            body: jsonEncode({'productId': productId.trim()}),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 30));
+
+      debugPrint('│ Status: ${response.statusCode}');
+      debugPrint('│ Response: ${response.body}');
+      debugPrint('└──');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -53,6 +77,8 @@ class WishlistService {
         }
       }
     } catch (e) {
+      debugPrint('│ Error: $e');
+      debugPrint('└──');
       return WishlistActionResponse(
         success: false,
         message: ApiHelper.getReadableErrorMessage(
@@ -65,20 +91,40 @@ class WishlistService {
 
   static Future<WishlistActionResponse> addToWishlist({
     required String productId,
+    String? variantId,
+    String? skuId,
     String? token,
-  }) async => toggleWishlist(productId: productId, token: token);
+    bool isDoctor = false,
+  }) async => toggleWishlist(
+        productId: productId,
+        variantId: variantId,
+        skuId: skuId,
+        token: token,
+        isDoctor: isDoctor,
+      );
 
   static Future<WishlistActionResponse> removeFromWishlist({
     required String productId,
+    String? variantId,
+    String? skuId,
     String? token,
-  }) async => toggleWishlist(productId: productId, token: token);
+    bool isDoctor = false,
+  }) async => toggleWishlist(
+        productId: productId,
+        variantId: variantId,
+        skuId: skuId,
+        token: token,
+        isDoctor: isDoctor,
+      );
 
-  /// API: GET https://backend.chikitsakart.com/api/wishlists/user/products
+  /// API: GET https://backend.chikitsakart.com/api/wishlists/user/products (or doctor/products)
   /// Response: {"success": true, "data": [...]}
   static Future<UserWishlistProductsApiResponse> getUserWishlistProducts({
     String? token,
+    bool isDoctor = false,
   }) async {
-    final Uri url = Uri.parse('$baseUrl/user/products');
+    final String path = isDoctor ? '$baseUrl/doctor/products' : '$baseUrl/user/products';
+    final Uri url = Uri.parse(path);
     final Map<String, String> headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -88,10 +134,17 @@ class WishlistService {
       headers['Authorization'] = 'Bearer $token';
     }
 
+    debugPrint('┌── [Wishlist API] GET $url');
+    debugPrint('│ Auth: ${token != null && token.isNotEmpty ? "Bearer Token Present" : "No Token"}');
+
     try {
       final response = await http
           .get(url, headers: headers)
           .timeout(const Duration(seconds: 30));
+
+      debugPrint('│ Status: ${response.statusCode}');
+      debugPrint('│ Response: ${response.body}');
+      debugPrint('└──');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final Map<String, dynamic> body = jsonDecode(response.body);
@@ -104,6 +157,8 @@ class WishlistService {
         );
       }
     } catch (e) {
+      debugPrint('│ Error: $e');
+      debugPrint('└──');
       return UserWishlistProductsApiResponse(
         success: false,
         data: [],

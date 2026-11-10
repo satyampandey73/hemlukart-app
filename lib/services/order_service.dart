@@ -6,6 +6,10 @@ import 'api_helper.dart';
 class OrderService {
   static const String checkoutUrl =
       'https://backend.chikitsakart.com/api/orders/checkout';
+  static const String initiatePaymentUrl =
+      'https://backend.chikitsakart.com/api/orders/payment/initiate';
+  static const String verifyPaymentUrl =
+      'https://backend.chikitsakart.com/api/orders/payment/verify';
   static const String myOrdersUrl =
       'https://backend.chikitsakart.com/api/orders/my';
   static const String orderDetailBaseUrl =
@@ -77,8 +81,10 @@ class OrderService {
     required String shippingAddressId,
     required String paymentMode,
     String paymentStatus = 'pending',
+    String? paymentProvider,
     String? prescription,
     String? couponCode,
+    String? note,
     String? token,
   }) async {
     String? effectiveUrl = prescription;
@@ -91,10 +97,14 @@ class OrderService {
       'shippingAddressId': shippingAddressId.trim(),
       'paymentMode': paymentMode.trim().toLowerCase(),
       'paymentStatus': paymentStatus.trim().toLowerCase(),
+      if (paymentProvider != null && paymentProvider.trim().isNotEmpty)
+        'paymentProvider': paymentProvider.trim().toLowerCase(),
       if (effectiveUrl != null && effectiveUrl.trim().isNotEmpty)
         'prescription': effectiveUrl.trim(),
       if (couponCode != null && couponCode.trim().isNotEmpty)
         'couponCode': couponCode.trim(),
+      if (note != null && note.trim().isNotEmpty)
+        'note': note.trim(),
     };
 
     try {
@@ -110,6 +120,70 @@ class OrderService {
         message: ApiHelper.getReadableErrorMessage(
           e,
           fallback: 'Failed to process checkout',
+        ),
+      );
+    }
+  }
+
+  /// Step 2: Initiate Razorpay Payment
+  /// Endpoint: POST https://backend.chikitsakart.com/api/orders/payment/initiate
+  static Future<InitiatePaymentApiResponse> initiatePayment({
+    required String orderId,
+    String? token,
+  }) async {
+    final Uri url = Uri.parse(initiatePaymentUrl);
+    final Map<String, dynamic> payload = {
+      'orderId': orderId.trim(),
+    };
+
+    try {
+      final response = await http
+          .post(url, headers: _buildHeaders(token), body: jsonEncode(payload))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return InitiatePaymentApiResponse.fromJson(body);
+    } catch (e) {
+      return InitiatePaymentApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to initiate payment',
+        ),
+      );
+    }
+  }
+
+  /// Step 4: Verify Razorpay Payment
+  /// Endpoint: POST https://backend.chikitsakart.com/api/orders/payment/verify
+  static Future<VerifyPaymentApiResponse> verifyPayment({
+    required String orderId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+    String? token,
+  }) async {
+    final Uri url = Uri.parse(verifyPaymentUrl);
+    final Map<String, dynamic> payload = {
+      'orderId': orderId.trim(),
+      'razorpayOrderId': razorpayOrderId.trim(),
+      'razorpayPaymentId': razorpayPaymentId.trim(),
+      'razorpaySignature': razorpaySignature.trim(),
+    };
+
+    try {
+      final response = await http
+          .post(url, headers: _buildHeaders(token), body: jsonEncode(payload))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      return VerifyPaymentApiResponse.fromJson(body);
+    } catch (e) {
+      return VerifyPaymentApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Failed to verify payment',
         ),
       );
     }

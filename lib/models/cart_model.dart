@@ -16,6 +16,9 @@ class CartItemData {
   final String? skuCode;
   final String? skuName;
   final double mrp;
+  final double price;
+  final String? image;
+  final List<String> images;
 
   CartItemData({
     required this.id,
@@ -35,35 +38,96 @@ class CartItemData {
     this.skuCode,
     this.skuName,
     this.mrp = 0.0,
+    this.price = 0.0,
+    this.image,
+    this.images = const [],
   });
 
   factory CartItemData.fromJson(Map<String, dynamic> json) {
+    // 1. Resolve nested product or sku maps if returned by backend
+    final productMap = json['product'] is Map<String, dynamic> ? json['product'] as Map<String, dynamic> : null;
+    final skuMap = json['sku'] is Map<String, dynamic> ? json['sku'] as Map<String, dynamic> : null;
+
+    // 2. Resolve images
+    List<String> imgList = [];
+    if (json['images'] is List) {
+      imgList = (json['images'] as List).map((i) => i.toString().trim()).where((i) => i.isNotEmpty).toList();
+    } else if (skuMap != null && skuMap['images'] is List) {
+      imgList = (skuMap['images'] as List).map((i) => i.toString().trim()).where((i) => i.isNotEmpty).toList();
+    } else if (productMap != null && productMap['images'] is List) {
+      imgList = (productMap['images'] as List).map((i) => i.toString().trim()).where((i) => i.isNotEmpty).toList();
+    }
+
+    String? singleImg = json['image']?.toString();
+    if (singleImg == null || singleImg.isEmpty) {
+      singleImg = skuMap?['image']?.toString() ?? productMap?['image']?.toString();
+    }
+    if ((singleImg == null || singleImg.isEmpty) && imgList.isNotEmpty) {
+      singleImg = imgList.first;
+    }
+
+    // 3. Resolve MRP
+    double parsedMrp = 0.0;
+    final rawMrp = json['mrp'] ?? skuMap?['mrp'] ?? productMap?['mrp'] ?? json['priceAtAdd'];
+    if (rawMrp != null) {
+      parsedMrp = rawMrp is num ? rawMrp.toDouble() : double.tryParse(rawMrp.toString()) ?? 0.0;
+    }
+
+    // 4. Resolve discount percentage
+    double parsedDiscount = 0.0;
+    final rawDisc = json['discount'] ?? json['discountAtAdd'] ?? skuMap?['consumerDiscount'] ?? skuMap?['doctorDiscount'];
+    if (rawDisc != null) {
+      parsedDiscount = rawDisc is num ? rawDisc.toDouble() : double.tryParse(rawDisc.toString()) ?? 0.0;
+    }
+
+    // 5. Resolve Selling Price
+    double parsedPrice = 0.0;
+    final rawPrice = json['price'] ?? skuMap?['price'];
+    if (rawPrice != null) {
+      parsedPrice = rawPrice is num ? rawPrice.toDouble() : double.tryParse(rawPrice.toString()) ?? 0.0;
+    }
+    final double rawPriceAtAdd = json['priceAtAdd'] is num
+        ? (json['priceAtAdd'] as num).toDouble()
+        : double.tryParse(json['priceAtAdd']?.toString() ?? '0.0') ?? 0.0;
+
+    if (parsedPrice <= 0) {
+      final double base = parsedMrp > 0 ? parsedMrp : rawPriceAtAdd;
+      if (parsedDiscount > 0 && base > 0) {
+        parsedPrice = (base - (base * parsedDiscount / 100.0)).clamp(0.0, base);
+      } else {
+        parsedPrice = base;
+      }
+    }
+
+    final pName = json['productName']?.toString() ??
+        productMap?['productName']?.toString() ??
+        productMap?['name']?.toString();
+    final sName = json['skuName']?.toString() ?? skuMap?['skuName']?.toString();
+    final sCode = json['skuCode']?.toString() ?? skuMap?['skuCode']?.toString();
+
     return CartItemData(
       id: json['id']?.toString() ?? '',
       cartId: json['cartId']?.toString() ?? '',
-      productId: json['productId']?.toString() ?? '',
-      skuId: json['skuId']?.toString(),
-      sellerId: json['sellerId']?.toString(),
+      productId: json['productId']?.toString() ?? productMap?['id']?.toString() ?? '',
+      skuId: json['skuId']?.toString() ?? skuMap?['id']?.toString(),
+      sellerId: json['sellerId']?.toString() ?? skuMap?['sellerId']?.toString() ?? productMap?['sellerId']?.toString(),
       quantity: json['quantity'] is int
           ? json['quantity']
           : int.tryParse(json['quantity']?.toString() ?? '1') ?? 1,
       buyerTypeAtAdd: json['buyerTypeAtAdd']?.toString(),
-      priceAtAdd: json['priceAtAdd'] is num
-          ? (json['priceAtAdd'] as num).toDouble()
-          : double.tryParse(json['priceAtAdd']?.toString() ?? '0.0') ?? 0.0,
-      discountAtAdd: json['discountAtAdd'] is num
-          ? (json['discountAtAdd'] as num).toDouble()
-          : double.tryParse(json['discountAtAdd']?.toString() ?? '0.0') ?? 0.0,
+      priceAtAdd: rawPriceAtAdd > 0 ? rawPriceAtAdd : parsedPrice,
+      discountAtAdd: parsedDiscount,
+      mrp: parsedMrp,
+      price: parsedPrice,
       savedForLater: json['savedForLater'] == true,
-      isActive: json['isActive'] == true,
+      isActive: json['isActive'] != false,
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
-      productName: json['productName']?.toString(),
-      skuCode: json['skuCode']?.toString(),
-      skuName: json['skuName']?.toString(),
-      mrp: json['mrp'] is num
-          ? (json['mrp'] as num).toDouble()
-          : double.tryParse(json['mrp']?.toString() ?? '0.0') ?? 0.0,
+      productName: pName,
+      skuCode: sCode,
+      skuName: sName,
+      image: singleImg,
+      images: imgList,
     );
   }
 
@@ -86,6 +150,9 @@ class CartItemData {
       if (skuCode != null) 'skuCode': skuCode,
       if (skuName != null) 'skuName': skuName,
       'mrp': mrp,
+      'price': price,
+      if (image != null) 'image': image,
+      'images': images,
     };
   }
 }

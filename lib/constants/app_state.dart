@@ -31,16 +31,28 @@ import '../models/chat_model.dart';
 import '../services/chat_service.dart';
 
 class ProductVariant {
-  final String id;
+  final String id; // Unique SKU ID / UUID
   final String packSize;
   final double _basePrice;
   final double originalPrice;
   final String? skuCode;
+  final String? skuName;
+  final String? variantId;
+  final String? variantName;
+  final int stockQuantity;
+  final String? unitOfMeasure;
+  final String? typeOfPacking;
+  final String? packingMaterial;
+  final String? batchNumber;
+  final String? expiryDate;
+  final String? storageConditions;
+  final List<String> images;
   final bool isOutOfStock;
   final double? doctorDiscount;
   final bool? doctorActive;
   final double? consumerDiscount;
   final bool? consumerActive;
+  final String? sellerId;
 
   const ProductVariant({
     required this.id,
@@ -48,11 +60,23 @@ class ProductVariant {
     required double price,
     required this.originalPrice,
     this.skuCode,
+    this.skuName,
+    this.variantId,
+    this.variantName,
+    this.stockQuantity = 0,
+    this.unitOfMeasure,
+    this.typeOfPacking,
+    this.packingMaterial,
+    this.batchNumber,
+    this.expiryDate,
+    this.storageConditions,
+    this.images = const [],
     this.isOutOfStock = false,
     this.doctorDiscount,
     this.doctorActive,
     this.consumerDiscount,
     this.consumerActive,
+    this.sellerId,
   }) : _basePrice = price;
 
   double get basePrice => _basePrice;
@@ -94,8 +118,27 @@ class ProductVariant {
   }
 }
 
+class ProductVariantGroup {
+  final String id;
+  final String variantName;
+  final String strength;
+  final String dosageForm;
+  final String description;
+  final List<ProductVariant> skus;
+
+  const ProductVariantGroup({
+    required this.id,
+    required this.variantName,
+    this.strength = '',
+    this.dosageForm = '',
+    this.description = '',
+    required this.skus,
+  });
+}
+
 class Product {
   final String id;
+  final String? productId; // UUID from backend
   final String name;
   final String brand;
   final String image;
@@ -115,11 +158,34 @@ class Product {
   final double? _consumerDiscount;
   final bool? _consumerActive;
   final List<ProductVariant> variants;
+  final List<ProductVariantGroup> variantGroups;
   // Selected variant's SKU ID — sent to backend when adding to cart
   final String? skuId;
+  final String? skuCode;
+  final String? skuName;
+  final String? selectedVariantId;
+  final String? selectedVariantName;
+  final int stockQuantity;
+  final String? unitOfMeasure;
+  final String? typeOfPacking;
+  final String? packingMaterial;
+  final String? batchNumber;
+  final String? expiryDate;
+  final String? storageConditions;
+  final List<String> images;
+  final String? keyIngredients;
+  final String? therapeuticUse;
+  final String? contraindications;
+  final String? sideEffects;
+  final String? dosage;
+  final List<String> descriptionList;
+  final String? termsAndConditions;
+  final String? manufacturerAddress;
+  final String? sellerId;
 
   const Product({
     required this.id,
+    this.productId,
     required this.name,
     required this.brand,
     required this.image,
@@ -131,15 +197,37 @@ class Product {
     this.isOutOfStock = false,
     required this.category,
     required this.description,
-    this.potency = '500mg',
-    this.packSize = '60 Tabs',
-    this.flavour = 'Orange',
+    this.potency = 'Standard',
+    this.packSize = '1 Unit',
+    this.flavour = 'Standard',
     double? doctorDiscount,
     bool? doctorActive,
     double? consumerDiscount,
     bool? consumerActive,
     this.variants = const [],
+    this.variantGroups = const [],
     this.skuId,
+    this.skuCode,
+    this.skuName,
+    this.selectedVariantId,
+    this.selectedVariantName,
+    this.stockQuantity = 0,
+    this.unitOfMeasure,
+    this.typeOfPacking,
+    this.packingMaterial,
+    this.batchNumber,
+    this.expiryDate,
+    this.storageConditions,
+    this.images = const [],
+    this.keyIngredients,
+    this.therapeuticUse,
+    this.contraindications,
+    this.sideEffects,
+    this.dosage,
+    this.descriptionList = const [],
+    this.termsAndConditions,
+    this.manufacturerAddress,
+    this.sellerId,
   })  : _basePrice = price,
         _doctorDiscount = doctorDiscount,
         _doctorActive = doctorActive,
@@ -161,8 +249,6 @@ class Product {
         final docP = (originalPrice - docDiscountAmount).clamp(0.0, originalPrice);
         return docP > 0 ? docP : bp;
       }
-      // If doctor is logged in and doctor discount not explicitly specified,
-      // apply 15% professional doctor role discount.
       final docP = (originalPrice * 0.85).roundToDouble();
       return (docP < bp) ? docP : bp;
     }
@@ -223,11 +309,12 @@ class Product {
 
     return [
       ProductVariant(
-        id: id,
+        id: (skuId != null && skuId!.isNotEmpty) ? skuId! : id,
         packSize: packSize.trim().isNotEmpty ? packSize : '1 Unit',
         price: price,
         originalPrice: originalPrice,
         isOutOfStock: isOutOfStock,
+        stockQuantity: stockQuantity,
         doctorDiscount: _doctorDiscount,
         doctorActive: _doctorActive,
         consumerDiscount: _consumerDiscount,
@@ -237,21 +324,22 @@ class Product {
   }
 
   /// Creates a copy of this product with the selected variant's attributes.
-  /// Stores variant.id as skuId ONLY if it differs from productId.
-  /// When the dummy fallback variant (id==productId) is used, skuId stays null
-  /// so CartService doesn't send a redundant/wrong skuId to the backend.
   Product copyWithVariant(ProductVariant variant) {
+    final effectiveImages = variant.images.isNotEmpty ? variant.images : images;
+    final effectiveImage = effectiveImages.isNotEmpty ? effectiveImages.first : image;
+
     return Product(
       id: id,
+      productId: productId,
       name: name,
       brand: brand,
-      image: image,
+      image: effectiveImage,
       price: variant.price,
       originalPrice: variant.originalPrice,
       rating: rating,
       reviewsCount: reviewsCount,
       isPrescriptionRequired: isPrescriptionRequired,
-      isOutOfStock: variant.isOutOfStock,
+      isOutOfStock: variant.stockQuantity <= 0 || variant.isOutOfStock,
       category: category,
       description: description,
       potency: potency,
@@ -262,10 +350,78 @@ class Product {
       consumerDiscount: variant.consumerDiscount ?? _consumerDiscount,
       consumerActive: variant.consumerActive ?? _consumerActive,
       variants: variants,
-      // Only store skuId if variant has a real/distinct ID (not the dummy fallback)
-      skuId: variant.id.isNotEmpty && variant.id != id
-          ? variant.id
-          : (skuId != null && skuId!.isNotEmpty && skuId != id ? skuId : null),
+      variantGroups: variantGroups,
+      skuId: variant.id.isNotEmpty ? variant.id : skuId,
+      skuCode: variant.skuCode ?? skuCode,
+      skuName: variant.skuName ?? skuName,
+      selectedVariantId: variant.variantId ?? selectedVariantId,
+      selectedVariantName: variant.variantName ?? selectedVariantName,
+      stockQuantity: variant.stockQuantity,
+      unitOfMeasure: variant.unitOfMeasure ?? unitOfMeasure,
+      typeOfPacking: variant.typeOfPacking ?? typeOfPacking,
+      packingMaterial: variant.packingMaterial ?? packingMaterial,
+      batchNumber: variant.batchNumber ?? batchNumber,
+      expiryDate: variant.expiryDate ?? expiryDate,
+      storageConditions: variant.storageConditions ?? storageConditions,
+      images: effectiveImages,
+      keyIngredients: keyIngredients,
+      therapeuticUse: therapeuticUse,
+      contraindications: contraindications,
+      sideEffects: sideEffects,
+      dosage: dosage,
+      descriptionList: descriptionList,
+      termsAndConditions: termsAndConditions,
+      manufacturerAddress: manufacturerAddress,
+      sellerId: variant.sellerId ?? sellerId,
+    );
+  }
+
+  Product copyWithImage(String newImage) {
+    return Product(
+      id: id,
+      productId: productId,
+      name: name,
+      brand: brand,
+      image: newImage,
+      price: price,
+      originalPrice: originalPrice,
+      rating: rating,
+      reviewsCount: reviewsCount,
+      isPrescriptionRequired: isPrescriptionRequired,
+      isOutOfStock: isOutOfStock,
+      category: category,
+      description: description,
+      potency: potency,
+      packSize: packSize,
+      flavour: flavour,
+      doctorDiscount: _doctorDiscount,
+      doctorActive: _doctorActive,
+      consumerDiscount: _consumerDiscount,
+      consumerActive: _consumerActive,
+      variants: variants,
+      variantGroups: variantGroups,
+      skuId: skuId,
+      skuCode: skuCode,
+      skuName: skuName,
+      selectedVariantId: selectedVariantId,
+      selectedVariantName: selectedVariantName,
+      stockQuantity: stockQuantity,
+      unitOfMeasure: unitOfMeasure,
+      typeOfPacking: typeOfPacking,
+      packingMaterial: packingMaterial,
+      batchNumber: batchNumber,
+      expiryDate: expiryDate,
+      storageConditions: storageConditions,
+      images: images.isNotEmpty ? images : [newImage],
+      keyIngredients: keyIngredients,
+      therapeuticUse: therapeuticUse,
+      contraindications: contraindications,
+      sideEffects: sideEffects,
+      dosage: dosage,
+      descriptionList: descriptionList,
+      termsAndConditions: termsAndConditions,
+      manufacturerAddress: manufacturerAddress,
+      sellerId: sellerId,
     );
   }
 }
@@ -475,16 +631,18 @@ class Doctor {
 
     List<DoctorConsultationFee> cFees = apiDoc.consultationFees ?? [];
     double dynamicFee = 500.0;
+    bool foundInFees = false;
     if (cFees.isNotEmpty) {
       for (final f in cFees) {
         final parsed = double.tryParse(f.fee);
         if (parsed != null && parsed > 0) {
           dynamicFee = parsed;
+          foundInFees = true;
           break;
         }
       }
     }
-    if (dynamicFee == 500.0 &&
+    if (!foundInFees &&
         apiDoc.schedules != null &&
         apiDoc.schedules!.isNotEmpty) {
       for (final s in apiDoc.schedules!) {
@@ -927,10 +1085,11 @@ class AppState extends ChangeNotifier {
 
   List<CartItem> get cart => _cart;
 
-  int getProductQuantity(String productId, {String? packSize}) {
+  int getProductQuantity(String productId, {String? packSize, String? skuId}) {
     final idx = _cart.indexWhere((item) =>
         item.product.id == productId &&
-        (packSize == null || item.product.packSize == packSize));
+        (skuId != null && item.product.skuId != null && item.product.skuId == skuId ||
+            (skuId == null && (packSize == null || item.product.packSize == packSize))));
     return idx != -1 ? _cart[idx].quantity : 0;
   }
 
@@ -1161,7 +1320,7 @@ class AppState extends ChangeNotifier {
     if (response.success) {
       final activeApiProds = response.products
           .where((p) => p.isActive && !p.isDeleted)
-          .map((p) => p.toProduct())
+          .expand((p) => p.toProductList())
           .toList();
 
       if (response.pagination != null) {
@@ -1421,80 +1580,100 @@ class AppState extends ChangeNotifier {
 
       List<CartItem> updatedCart = [];
       for (final itemData in serverItems) {
-        final existingProd = _apiProducts.firstWhere(
-          (p) => p.id == itemData.productId,
-          orElse: () => Product(
-            id: itemData.productId,
-            name: itemData.productName ?? 'Product',
-            brand: itemData.skuName ?? '',
-            image: 'assets/img2.png',
-            price: itemData.priceAtAdd,
-            originalPrice: itemData.mrp > 0
-                ? itemData.mrp
-                : itemData.priceAtAdd,
-            rating: 4.5,
-            reviewsCount: 10,
-            category: 'General',
-            description: '',
-          ),
-        );
+        // 1. Check existing local cart item (preserves high-res image and selected variant)
+        final localCartItem = _cart.where((c) =>
+            (itemData.id.isNotEmpty && c.itemId == itemData.id) ||
+            (itemData.skuId != null && itemData.skuId!.isNotEmpty && c.product.skuId == itemData.skuId) ||
+            (c.product.productId != null && c.product.productId == itemData.productId) ||
+            c.product.id == itemData.productId
+        ).firstOrNull;
 
-        final localIdx = _cart.indexWhere(
-          (c) => c.product.id == itemData.productId,
-        );
-        final String? localPrescription = localIdx != -1
-            ? _cart[localIdx].prescriptionFile
-            : null;
-
-        Product resolvedProd = existingProd;
+        // 2. Search across _apiProducts
+        Product? apiProd;
         if (itemData.skuId != null && itemData.skuId!.isNotEmpty) {
-          // Level 1: match by skuId (most precise)
-          ProductVariant? matchedVariant = existingProd.variants.where(
+          apiProd = _apiProducts.where((p) =>
+              p.skuId == itemData.skuId ||
+              p.variants.any((v) => v.id == itemData.skuId)
+          ).firstOrNull;
+        }
+        if (apiProd == null && itemData.productId.isNotEmpty) {
+          apiProd = _apiProducts.where((p) =>
+              p.productId == itemData.productId ||
+              p.id == itemData.productId
+          ).firstOrNull;
+        }
+        if (apiProd == null && itemData.skuCode != null && itemData.skuCode!.isNotEmpty) {
+          apiProd = _apiProducts.where((p) =>
+              p.skuCode == itemData.skuCode ||
+              p.variants.any((v) => v.skuCode == itemData.skuCode)
+          ).firstOrNull;
+        }
+
+        // 3. Determine base Product
+        Product baseProd;
+        if (localCartItem != null) {
+          baseProd = localCartItem.product;
+        } else if (apiProd != null) {
+          baseProd = apiProd;
+        } else {
+          // Fallback constructed with accurate price and image from itemData
+          final double effectivePrice = itemData.price > 0
+              ? itemData.price
+              : (itemData.priceAtAdd > 0 && itemData.discountAtAdd > 0
+                  ? (itemData.priceAtAdd - (itemData.priceAtAdd * itemData.discountAtAdd / 100.0)).clamp(0.0, itemData.priceAtAdd)
+                  : itemData.priceAtAdd);
+          final double effectiveMrp = itemData.mrp > 0
+              ? itemData.mrp
+              : (itemData.priceAtAdd > 0 ? itemData.priceAtAdd : effectivePrice);
+
+          final String effectiveImg = itemData.image != null && itemData.image!.isNotEmpty
+              ? itemData.image!
+              : (itemData.images.isNotEmpty ? itemData.images.first : 'assets/p1.png');
+
+          baseProd = Product(
+            id: itemData.productId,
+            productId: itemData.productId,
+            name: itemData.productName?.isNotEmpty == true
+                ? itemData.productName!
+                : (itemData.skuName?.isNotEmpty == true ? itemData.skuName! : 'Product'),
+            brand: itemData.skuName?.isNotEmpty == true ? itemData.skuName! : 'Healthcare',
+            image: effectiveImg,
+            price: effectivePrice,
+            originalPrice: effectiveMrp,
+            rating: 4.8,
+            reviewsCount: 15,
+            category: 'Healthcare',
+            description: '',
+            skuId: itemData.skuId,
+            skuCode: itemData.skuCode,
+            skuName: itemData.skuName,
+            sellerId: itemData.sellerId,
+          );
+        }
+
+        // 4. Resolve SKU variant
+        Product resolvedProd = baseProd;
+        if (itemData.skuId != null && itemData.skuId!.isNotEmpty) {
+          ProductVariant? matchedVariant = baseProd.variants.where(
             (v) => v.id == itemData.skuId,
           ).firstOrNull;
 
-          if (matchedVariant != null) {
-            resolvedProd = existingProd.copyWithVariant(matchedVariant);
-            debugPrint('│   ✓ Variant matched by skuId=${itemData.skuId} → packSize=${matchedVariant.packSize}');
-          } else {
-            // Level 2: match by skuCode
-            if (itemData.skuCode != null && itemData.skuCode!.isNotEmpty) {
-              matchedVariant = existingProd.variants.where(
-                (v) => v.skuCode != null && v.skuCode == itemData.skuCode,
-              ).firstOrNull;
-              if (matchedVariant != null) {
-                resolvedProd = existingProd.copyWithVariant(matchedVariant);
-                debugPrint('│   ✓ Variant matched by skuCode=${itemData.skuCode} → packSize=${matchedVariant.packSize}');
-              }
-            }
-
-            // Level 3: match by priceAtAdd
-            if (matchedVariant == null && itemData.priceAtAdd > 0) {
-              matchedVariant = existingProd.variants.where(
-                (v) => v.price == itemData.priceAtAdd,
-              ).firstOrNull;
-              if (matchedVariant != null) {
-                resolvedProd = existingProd.copyWithVariant(matchedVariant);
-                debugPrint('│   ✓ Variant matched by priceAtAdd=₹${itemData.priceAtAdd} → packSize=${matchedVariant.packSize}');
-              }
-            }
-
-            // Level 4: match by skuName == packSize
-            if (matchedVariant == null && itemData.skuName != null && itemData.skuName!.isNotEmpty) {
-              matchedVariant = existingProd.variants.where(
-                (v) => v.packSize.trim().toLowerCase() == itemData.skuName!.trim().toLowerCase(),
-              ).firstOrNull;
-              if (matchedVariant != null) {
-                resolvedProd = existingProd.copyWithVariant(matchedVariant);
-                debugPrint('│   ✓ Variant matched by skuName=${itemData.skuName} → packSize=${matchedVariant.packSize}');
-              }
-            }
-
-            if (matchedVariant == null) {
-              debugPrint('│   ⚠ Variant NOT matched for skuId=${itemData.skuId} in product=${existingProd.name} (all 4 levels tried)');
-              debugPrint('│     Available variants: ${existingProd.variants.map((v) => "id=${v.id} pack=${v.packSize} price=₹${v.price}").join(" | ")}');
-            }
+          if (matchedVariant == null && itemData.skuCode != null && itemData.skuCode!.isNotEmpty) {
+            matchedVariant = baseProd.variants.where(
+              (v) => v.skuCode == itemData.skuCode,
+            ).firstOrNull;
           }
+
+          if (matchedVariant != null) {
+            resolvedProd = baseProd.copyWithVariant(matchedVariant);
+          }
+        }
+
+        // 5. Ensure image is not placeholder if itemData has a real network image
+        if ((resolvedProd.image.isEmpty || resolvedProd.image == 'assets/img2.png' || resolvedProd.image == 'assets/p1.png') &&
+            itemData.image != null &&
+            itemData.image!.isNotEmpty) {
+          resolvedProd = resolvedProd.copyWithImage(itemData.image!);
         }
 
         updatedCart.add(
@@ -1502,7 +1681,7 @@ class AppState extends ChangeNotifier {
             product: resolvedProd,
             quantity: itemData.quantity,
             itemId: itemData.id,
-            prescriptionFile: localPrescription,
+            prescriptionFile: localCartItem?.prescriptionFile,
           ),
         );
       }
@@ -1528,17 +1707,27 @@ class AppState extends ChangeNotifier {
   }
 
   Future<AddToCartApiResponse> addToCart(Product product, {int qty = 1}) async {
+    final effectiveProductId = (product.productId != null && product.productId!.isNotEmpty)
+        ? product.productId!
+        : product.id;
+    final effectiveSkuId = (product.skuId != null && product.skuId!.isNotEmpty)
+        ? product.skuId!
+        : (product.variants.isNotEmpty ? product.variants.first.id : null);
+
     debugPrint('┌─────────────────────────────────────────────');
     debugPrint('│ [CART] ADD TO CART');
     debugPrint('│ Product : ${product.name}');
-    debugPrint('│ ProductId: ${product.id}');
-    debugPrint('│ SkuId   : ${product.skuId ?? "null (no variant selected)"}');
+    debugPrint('│ ProductId: $effectiveProductId (id=${product.id})');
+    debugPrint('│ SkuId   : ${effectiveSkuId ?? "null (no variant selected)"}');
     debugPrint('│ PackSize: ${product.packSize}');
     debugPrint('│ Price   : ₹${product.price}');
+    debugPrint('│ Stock   : ${product.stockQuantity}');
     debugPrint('│ Qty     : $qty');
 
     final existingIdx = _cart.indexWhere(
-      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
+      (item) => item.product.id == product.id &&
+          ((effectiveSkuId != null && item.product.skuId == effectiveSkuId) ||
+              item.product.packSize == product.packSize),
     );
     if (existingIdx != -1) {
       _cart[existingIdx].quantity += qty;
@@ -1563,12 +1752,22 @@ class AppState extends ChangeNotifier {
     debugPrint('│ TokenType: $tokenType');
     debugPrint('│ Token    : $token');
 
+    final effectivePrice = product.price;
+    final effectiveMrp = product.originalPrice > 0 ? product.originalPrice : product.price;
+    final effectiveDiscount = product.effectiveDiscountPercent.toDouble();
+    final effectiveSellerId = product.sellerId ??
+        (product.variants.isNotEmpty ? product.variants.first.sellerId : null);
+
     debugPrint('│ → Calling API: POST /api/cart');
-    debugPrint('│   Body: { productId: ${product.id}, skuId: ${product.skuId ?? ""}, quantity: $qty }');
+    debugPrint('│   Body: { productId: $effectiveProductId, skuId: ${effectiveSkuId ?? ""}, quantity: $qty, sellerId: $effectiveSellerId, price: $effectivePrice, mrp: $effectiveMrp, discount: $effectiveDiscount }');
 
     final response = await CartService.addToCart(
-      productId: product.id,
-      skuId: product.skuId,
+      productId: effectiveProductId,
+      skuId: effectiveSkuId,
+      sellerId: effectiveSellerId,
+      price: effectivePrice,
+      mrp: effectiveMrp,
+      discount: effectiveDiscount,
       quantity: qty,
       token: token,
     );
@@ -1580,7 +1779,9 @@ class AppState extends ChangeNotifier {
       final newItemId = response.data!.id;
       debugPrint('│ ✓ Server itemId assigned: $newItemId');
       final idx = _cart.indexWhere((item) =>
-          item.product.id == product.id && item.product.packSize == product.packSize);
+          item.product.id == product.id &&
+          ((effectiveSkuId != null && item.product.skuId == effectiveSkuId) ||
+              item.product.packSize == product.packSize));
       if (idx != -1) {
         _cart[idx].itemId = newItemId;
         debugPrint('│ ✓ Local cart itemId updated');
@@ -1606,15 +1807,18 @@ class AppState extends ChangeNotifier {
     debugPrint('┌─────────────────────────────────────────────');
     debugPrint('│ [CART] UPDATE QUANTITY');
     debugPrint('│ Product : ${product.name}');
+    debugPrint('│ SkuId   : ${product.skuId ?? "null"}');
     debugPrint('│ PackSize: ${product.packSize}');
     debugPrint('│ New Qty : $newQty');
 
     int idx = _cart.indexWhere(
-      (item) => item.product.id == product.id && item.product.packSize == product.packSize,
+      (item) => item.product.id == product.id &&
+          ((product.skuId != null && item.product.skuId == product.skuId) ||
+              item.product.packSize == product.packSize),
     );
     if (idx == -1) {
       idx = _cart.indexWhere((item) => item.product.id == product.id);
-      if (idx != -1) debugPrint('│ ⚠ Matched by productId only (packSize mismatch)');
+      if (idx != -1) debugPrint('│ ⚠ Matched by productId only (packSize/skuId mismatch)');
     }
 
     if (idx == -1) {
@@ -1812,25 +2016,123 @@ class AppState extends ChangeNotifier {
   }
 
   // Wishlist Operations
-  Future<WishlistActionResponse> toggleProductWishlist(String productId) async {
-    final bool wasInWishlist = _wishlistProductIds.contains(productId);
+  bool isProductWishlisted(
+    String id, [
+    String? productId,
+    String? skuId,
+    String? variantId,
+  ]) {
+    // 1. If card/item has a specific skuId, wishlist status MUST strictly match skuId.
+    // Do NOT fall back to variantId or productId, ensuring individual SKUs are isolated.
+    if (skuId != null && skuId.isNotEmpty) {
+      return _wishlistProductIds.contains(skuId);
+    }
+
+    // 2. If card has a variantId (and no skuId), check variantId
+    final String? effVarId = (variantId != null && variantId.isNotEmpty)
+        ? variantId
+        : (id.isNotEmpty && id != productId ? id : null);
+    if (effVarId != null && effVarId.isNotEmpty) {
+      return _wishlistProductIds.contains(effVarId);
+    }
+
+    // 3. Fallback to productId ONLY IF card does NOT have a specific skuId or variantId
+    if (productId != null && productId.isNotEmpty) {
+      return _wishlistProductIds.contains(productId);
+    }
+    if (id.isNotEmpty) {
+      return _wishlistProductIds.contains(id);
+    }
+
+    return false;
+  }
+
+  Future<WishlistActionResponse> toggleProductWishlist(
+    String id, [
+    String? baseProductId,
+    String? skuId,
+    String? variantId,
+  ]) async {
+    // Effective Product ID: Required by backend
+    final String effProductId = (baseProductId != null && baseProductId.isNotEmpty)
+        ? baseProductId
+        : id;
+
+    // Effective Variant ID
+    final String? effVariantId = (variantId != null && variantId.isNotEmpty)
+        ? variantId
+        : (id.isNotEmpty && id != effProductId ? id : null);
+
+    // Effective SKU ID: Optional/Recommended
+    final String? effSkuId = (skuId != null && skuId.isNotEmpty) ? skuId : null;
+
+    final bool wasInWishlist = isProductWishlisted(id, effProductId, effSkuId, effVariantId);
+
+    // Track locally using STRICT specificity:
+    // If SKU exists, ONLY track skuId (do not add parent variantId or productId).
+    final Set<String> targetKeys = {};
+    if (effSkuId != null && effSkuId.isNotEmpty) {
+      targetKeys.add(effSkuId);
+    } else if (effVariantId != null && effVariantId.isNotEmpty) {
+      targetKeys.add(effVariantId);
+    } else if (effProductId.isNotEmpty) {
+      targetKeys.add(effProductId);
+    }
+
+    void removeWishlistLocal() {
+      for (final k in targetKeys) {
+        _wishlistProductIds.remove(k);
+      }
+      _userWishlistItems.removeWhere((item) {
+        if (effSkuId != null && effSkuId.isNotEmpty) {
+          return item.skuId == effSkuId;
+        }
+        if (effVariantId != null && effVariantId.isNotEmpty) {
+          return item.variantId == effVariantId;
+        }
+        return item.productId == effProductId || item.id == id;
+      });
+    }
+
+    void addWishlistLocal() {
+      for (final k in targetKeys) {
+        if (!_wishlistProductIds.contains(k)) {
+          _wishlistProductIds.add(k);
+        }
+      }
+    }
+
     if (wasInWishlist) {
-      _wishlistProductIds.remove(productId);
+      removeWishlistLocal();
     } else {
-      _wishlistProductIds.add(productId);
+      addWishlistLocal();
     }
     notifyListeners();
 
+    final String? token = isDoctorLoggedIn
+        ? _doctorToken
+        : ((_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken);
+
     final response = await WishlistService.toggleWishlist(
-      productId: productId,
-      token: _authToken,
+      productId: effProductId,
+      variantId: effVariantId,
+      skuId: effSkuId,
+      token: token,
+      isDoctor: isDoctorLoggedIn,
     );
 
-    if (!response.success) {
-      if (wasInWishlist) {
-        _wishlistProductIds.add(productId);
+    if (response.success && response.isWishlisted != null) {
+      if (response.isWishlisted == true) {
+        addWishlistLocal();
       } else {
-        _wishlistProductIds.remove(productId);
+        removeWishlistLocal();
+      }
+      notifyListeners();
+    } else if (!response.success) {
+      if (wasInWishlist) {
+        addWishlistLocal();
+      } else {
+        removeWishlistLocal();
       }
       notifyListeners();
     }
@@ -1838,25 +2140,51 @@ class AppState extends ChangeNotifier {
     return response;
   }
 
-  Future<WishlistActionResponse> addToWishlistApi(String productId) async {
+  Future<WishlistActionResponse> addToWishlistApi(
+    String productId, [
+    String? skuId,
+    String? variantId,
+  ]) async {
+    final String? token = isDoctorLoggedIn
+        ? _doctorToken
+        : ((_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken);
     final response = await WishlistService.addToWishlist(
       productId: productId,
-      token: _authToken,
+      variantId: variantId,
+      skuId: skuId,
+      token: token,
+      isDoctor: isDoctorLoggedIn,
     );
-    if (response.success && !_wishlistProductIds.contains(productId)) {
-      _wishlistProductIds.add(productId);
+    final effectiveKey = (skuId != null && skuId.isNotEmpty)
+        ? skuId
+        : (variantId != null && variantId.isNotEmpty ? variantId : productId);
+    if (response.success && !_wishlistProductIds.contains(effectiveKey)) {
+      _wishlistProductIds.add(effectiveKey);
       notifyListeners();
     }
     return response;
   }
 
-  Future<WishlistActionResponse> removeFromWishlistApi(String productId) async {
+  Future<WishlistActionResponse> removeFromWishlistApi(
+    String productId, [
+    String? skuId,
+    String? variantId,
+  ]) async {
+    final String? token = isDoctorLoggedIn
+        ? _doctorToken
+        : ((_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken);
     final response = await WishlistService.removeFromWishlist(
       productId: productId,
-      token: _authToken,
+      variantId: variantId,
+      skuId: skuId,
+      token: token,
+      isDoctor: isDoctorLoggedIn,
     );
-    if (response.success && _wishlistProductIds.contains(productId)) {
-      _wishlistProductIds.remove(productId);
+    final effectiveKey = (skuId != null && skuId.isNotEmpty)
+        ? skuId
+        : (variantId != null && variantId.isNotEmpty ? variantId : productId);
+    if (response.success && _wishlistProductIds.contains(effectiveKey)) {
+      _wishlistProductIds.remove(effectiveKey);
       notifyListeners();
     }
     return response;
@@ -1866,8 +2194,13 @@ class AppState extends ChangeNotifier {
     _isLoadingWishlist = true;
     notifyListeners();
 
+    final String? token = isDoctorLoggedIn
+        ? _doctorToken
+        : ((_authToken != null && _authToken!.isNotEmpty) ? _authToken : _doctorToken);
+
     final response = await WishlistService.getUserWishlistProducts(
-      token: _authToken,
+      token: token,
+      isDoctor: isDoctorLoggedIn,
     );
     _isLoadingWishlist = false;
 
@@ -1875,8 +2208,11 @@ class AppState extends ChangeNotifier {
       _userWishlistItems = response.data;
       _wishlistProductIds.clear();
       for (final item in response.data) {
-        if (item.productId.isNotEmpty &&
-            !_wishlistProductIds.contains(item.productId)) {
+        if (item.skuId != null && item.skuId!.isNotEmpty) {
+          _wishlistProductIds.add(item.skuId!);
+        } else if (item.variantId != null && item.variantId!.isNotEmpty) {
+          _wishlistProductIds.add(item.variantId!);
+        } else if (item.productId.isNotEmpty) {
           _wishlistProductIds.add(item.productId);
         }
       }
@@ -2132,8 +2468,11 @@ class AppState extends ChangeNotifier {
     required String shippingAddressId,
     required String paymentMode,
     String paymentStatus = 'pending',
+    String? paymentProvider,
     String? prescription,
     String? couponCode,
+    String? note,
+    bool clearCartOnSuccess = true,
   }) async {
     String? effectivePrescription = prescription;
     if (effectivePrescription == null || effectivePrescription.trim().isEmpty) {
@@ -2155,8 +2494,10 @@ class AppState extends ChangeNotifier {
       shippingAddressId: shippingAddressId,
       paymentMode: paymentMode,
       paymentStatus: paymentStatus,
+      paymentProvider: paymentProvider,
       prescription: effectivePrescription,
       couponCode: effectiveCouponCode,
+      note: note,
       token: activeToken,
     );
 
@@ -2188,8 +2529,10 @@ class AppState extends ChangeNotifier {
 
       _orders.add(orderWithItems);
       _appliedCoupon = null;
-      await clearCart();
-      await fetchMyOrders();
+      if (clearCartOnSuccess) {
+        await clearCart();
+        await fetchMyOrders();
+      }
 
       if (_orders.isNotEmpty) {
         final lastIndex = _orders.length - 1;
@@ -2217,6 +2560,36 @@ class AppState extends ChangeNotifier {
       }
 
       notifyListeners();
+    }
+    return response;
+  }
+
+  /// Initiates Razorpay payment for a given backend order
+  Future<InitiatePaymentApiResponse> initiateOrderPayment(String orderId) async {
+    return await OrderService.initiatePayment(
+      orderId: orderId,
+      token: activeToken,
+    );
+  }
+
+  /// Verifies Razorpay payment for an order and updates local order status
+  Future<VerifyPaymentApiResponse> verifyOrderPayment({
+    required String orderId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    final response = await OrderService.verifyPayment(
+      orderId: orderId,
+      razorpayOrderId: razorpayOrderId,
+      razorpayPaymentId: razorpayPaymentId,
+      razorpaySignature: razorpaySignature,
+      token: activeToken,
+    );
+
+    if (response.success) {
+      await clearCart();
+      await fetchMyOrders();
     }
     return response;
   }

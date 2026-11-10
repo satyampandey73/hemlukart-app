@@ -475,13 +475,23 @@ class _CartScreenState extends State<CartScreen> {
                   color: AppColors.backgroundLight.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: (prod.image.startsWith('http://') ||
-                        prod.image.startsWith('https://'))
-                    ? Image.network(prod.image, fit: BoxFit.contain)
-                    : Image.asset(
-                        prod.image.isNotEmpty ? prod.image : 'assets/img2.png',
-                        fit: BoxFit.contain,
-                      ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: (prod.image.startsWith('http://') ||
+                          prod.image.startsWith('https://'))
+                      ? Image.network(
+                          prod.image,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Image.asset(
+                            'assets/p1.png',
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Image.asset(
+                          prod.image.isNotEmpty ? prod.image : 'assets/p1.png',
+                          fit: BoxFit.contain,
+                        ),
+                ),
               ),
               const SizedBox(width: 12),
 
@@ -507,7 +517,20 @@ class _CartScreenState extends State<CartScreen> {
                       spacing: 4,
                       runSpacing: 4,
                       children: [
-                        if (prod.isPrescriptionRequired) ...[
+                        if (prod.skuName != null || prod.packSize.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              border: Border.all(color: Colors.grey[300]!, width: 0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              prod.skuName ?? prod.packSize,
+                              style: TextStyle(color: Colors.grey[800], fontSize: 8.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        if (prod.isPrescriptionRequired)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -519,19 +542,8 @@ class _CartScreenState extends State<CartScreen> {
                               'Prescription Required',
                               style: TextStyle(color: Colors.blue[700], fontSize: 8, fontWeight: FontWeight.bold),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF14B8A6),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'In Stock',
-                              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ] else ...[
+                          )
+                        else
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -551,19 +563,29 @@ class _CartScreenState extends State<CartScreen> {
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[50],
-                              border: Border.all(color: Colors.grey[300]!, width: 0.8),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'Only 2 left',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 8, fontWeight: FontWeight.bold),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (prod.isOutOfStock || prod.stockQuantity <= 0)
+                                ? const Color(0xFFFEE2E2)
+                                : (prod.stockQuantity <= 10 ? const Color(0xFFFEF3C7) : const Color(0xFFDCFCE7)),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            (prod.isOutOfStock || prod.stockQuantity <= 0)
+                                ? 'Out of Stock'
+                                : (prod.stockQuantity <= 10
+                                    ? 'Only ${prod.stockQuantity} left'
+                                    : 'In Stock (${prod.stockQuantity})'),
+                            style: TextStyle(
+                              color: (prod.isOutOfStock || prod.stockQuantity <= 0)
+                                  ? const Color(0xFFDC2626)
+                                  : (prod.stockQuantity <= 10 ? const Color(0xFFB45309) : const Color(0xFF15803D)),
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ],
+                        ),
                       ],
                     ),
                   ],
@@ -698,7 +720,18 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => _appState.updateCartQty(prod, item.quantity + 1),
+                      onTap: () {
+                        if (prod.stockQuantity > 0 && item.quantity >= prod.stockQuantity) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Only ${prod.stockQuantity} items available in stock.'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                          return;
+                        }
+                        _appState.updateCartQty(prod, item.quantity + 1);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         child: const Icon(Icons.add, size: 14, color: AppColors.textDark),
@@ -715,7 +748,12 @@ class _CartScreenState extends State<CartScreen> {
                   children: [
                     OutlinedButton.icon(
                       onPressed: () {
-                        _appState.toggleProductWishlist(prod.id);
+                        _appState.toggleProductWishlist(
+                          prod.id,
+                          prod.productId,
+                          prod.skuId,
+                          prod.selectedVariantId,
+                        );
                         _appState.removeFromCart(prod);
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Moved to Wishlist.')),

@@ -84,6 +84,7 @@ Future<void> showPrescriptionEditorModal(
     String quantity = '14',
     bool refillable = false,
     String? productId,
+    String? skuId,
     Product? product,
   }) {
     return {
@@ -98,6 +99,7 @@ Future<void> showPrescriptionEditorModal(
       "quantity": TextEditingController(text: quantity),
       "refillable": refillable,
       "productId": productId,
+      "skuId": skuId,
       "selectedProduct": product,
       "searchCtrl": TextEditingController(text: name),
       "searchResults": <Product>[],
@@ -113,6 +115,7 @@ Future<void> showPrescriptionEditorModal(
     for (final m in rawMeds) {
       if (m is Map) {
         final pId = PrescriptionProductHelper.extractProductId(m);
+        final sId = PrescriptionProductHelper.extractSkuId(m);
         medications.add(makeMedItem(
           name: m['name']?.toString() ?? '',
           strength: m['strength']?.toString() ?? '500mg',
@@ -125,6 +128,7 @@ Future<void> showPrescriptionEditorModal(
           quantity: m['quantity']?.toString() ?? '14',
           refillable: m['refillable'] == true,
           productId: pId,
+          skuId: sId,
         ));
       }
     }
@@ -170,7 +174,7 @@ Future<void> showPrescriptionEditorModal(
             try {
               final res = await ProductService.getProducts(search: query.trim(), limit: 8);
               if (res.success) {
-                final prods = res.products.map((p) => p.toProduct()).toList();
+                final prods = res.products.expand((p) => p.toProductList()).toList();
                 setStateModal(() {
                   med['searchResults'] = prods;
                   med['isSearching'] = false;
@@ -190,17 +194,20 @@ Future<void> showPrescriptionEditorModal(
           });
         }
 
-        void selectProduct(Map<String, dynamic> med, Product prod) {
-          PrescriptionProductHelper.cacheProduct(prod);
+        void selectProduct(Map<String, dynamic> med, Product prod, [ProductVariant? chosenVariant]) {
+          final effectiveVariant = chosenVariant ?? (prod.variants.isNotEmpty ? prod.variants.first : null);
+          final effectiveProd = effectiveVariant != null ? prod.copyWithVariant(effectiveVariant) : prod;
+          PrescriptionProductHelper.cacheProduct(effectiveProd);
           setStateModal(() {
-            med['productId'] = prod.id;
-            med['selectedProduct'] = prod;
-            (med['name'] as TextEditingController).text = prod.name;
-            (med['searchCtrl'] as TextEditingController).text = prod.name;
+            med['productId'] = effectiveProd.productId ?? effectiveProd.id;
+            med['skuId'] = effectiveVariant?.id ?? effectiveProd.skuId;
+            med['selectedProduct'] = effectiveProd;
+            (med['name'] as TextEditingController).text = effectiveProd.name;
+            (med['searchCtrl'] as TextEditingController).text = effectiveProd.name;
             med['showSuggestions'] = false;
             med['searchResults'] = <Product>[];
-            if (prod.potency.isNotEmpty && prod.potency != 'Standard') {
-              (med['strength'] as TextEditingController).text = prod.potency;
+            if (effectiveProd.potency.isNotEmpty && effectiveProd.potency != 'Standard') {
+              (med['strength'] as TextEditingController).text = effectiveProd.potency;
             }
           });
         }
@@ -208,6 +215,7 @@ Future<void> showPrescriptionEditorModal(
         void selectCustomMedicine(Map<String, dynamic> med, String customName) {
           setStateModal(() {
             med['productId'] = null;
+            med['skuId'] = null;
             med['selectedProduct'] = null;
             (med['name'] as TextEditingController).text = customName.trim();
             (med['searchCtrl'] as TextEditingController).text = customName.trim();
@@ -219,6 +227,7 @@ Future<void> showPrescriptionEditorModal(
         void unlinkProduct(Map<String, dynamic> med) {
           setStateModal(() {
             med['productId'] = null;
+            med['skuId'] = null;
             med['selectedProduct'] = null;
             (med['searchCtrl'] as TextEditingController).clear();
             med['showSuggestions'] = false;
@@ -667,14 +676,101 @@ Future<void> showPrescriptionEditorModal(
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
-                                            if (selProduct != null)
+                                            if (selProduct != null) ...[
+                                              const SizedBox(height: 2),
                                               Text(
-                                                '₹${selProduct.price} • ${selProduct.brand}',
+                                                '₹${selProduct.price.toInt()} • ${selProduct.brand}',
                                                 style: const TextStyle(fontSize: 11, color: Color(0xFF047857), fontWeight: FontWeight.w500),
                                               ),
+                                              const SizedBox(height: 3),
+                                              Wrap(
+                                                spacing: 6,
+                                                runSpacing: 4,
+                                                children: [
+                                                  if (selProduct.skuName != null || selProduct.packSize.isNotEmpty)
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        border: Border.all(color: const Color(0xFFA7F3D0)),
+                                                      ),
+                                                      child: Text(
+                                                        selProduct.skuName ?? selProduct.packSize,
+                                                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+                                                      ),
+                                                    ),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: (selProduct.stockQuantity > 0 && !selProduct.isOutOfStock)
+                                                          ? const Color(0xFFDCFCE7)
+                                                          : const Color(0xFFFEE2E2),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      (selProduct.stockQuantity > 0 && !selProduct.isOutOfStock)
+                                                          ? 'Stock: ${selProduct.stockQuantity}'
+                                                          : 'Out of stock',
+                                                      style: TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: (selProduct.stockQuantity > 0 && !selProduct.isOutOfStock)
+                                                            ? const Color(0xFF16A34A)
+                                                            : const Color(0xFFDC2626),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
+                                      if (selProduct != null && selProduct.variants.length > 1)
+                                        PopupMenuButton<ProductVariant>(
+                                          tooltip: 'Switch SKU / Pack',
+                                          icon: const Icon(Icons.tune, size: 20, color: Color(0xFF0F766E)),
+                                          onSelected: (chosenVariant) {
+                                            selectProduct(med, selProduct, chosenVariant);
+                                          },
+                                          itemBuilder: (ctx) => selProduct.variants.map((v) {
+                                            final isCurrent = v.id == med['skuId'] || v.id == selProduct.skuId;
+                                            return PopupMenuItem<ProductVariant>(
+                                              value: v,
+                                              child: Row(
+                                                children: [
+                                                  if (isCurrent)
+                                                    const Icon(Icons.check, size: 14, color: Color(0xFF10B981))
+                                                  else
+                                                    const SizedBox(width: 14),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          v.skuName ?? '${v.variantName} ${v.packSize}',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          '₹${v.price.toInt()} • Stock: ${v.stockQuantity}',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            color: v.stockQuantity > 0 ? const Color(0xFF16A34A) : Colors.red,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
                                       TextButton(
                                         onPressed: () => unlinkProduct(med),
                                         style: TextButton.styleFrom(
@@ -1249,6 +1345,7 @@ Future<void> showPrescriptionEditorModal(
                                   final qtyCtrl = m['quantity'] as TextEditingController;
                                   final String? prodId = m['productId'];
                                   final Product? selProd = m['selectedProduct'];
+                                  final String? skuId = m['skuId'] ?? selProd?.skuId;
 
                                   final payload = {
                                     "name": nameCtrl.text.isEmpty ? "Medication" : nameCtrl.text.trim(),
@@ -1265,10 +1362,20 @@ Future<void> showPrescriptionEditorModal(
                                   if (prodId != null && prodId.isNotEmpty) {
                                     payload["productId"] = prodId;
                                   }
+                                  if (skuId != null && skuId.isNotEmpty) {
+                                    payload["skuId"] = skuId;
+                                  }
+                                  if (selProd?.skuCode != null && selProd!.skuCode!.isNotEmpty) {
+                                    payload["skuCode"] = selProd.skuCode;
+                                  }
+                                  if (selProd?.skuName != null && selProd!.skuName!.isNotEmpty) {
+                                    payload["skuName"] = selProd.skuName;
+                                  }
                                   if (selProd != null) {
                                     payload["productPrice"] = selProd.price;
                                     payload["productImage"] = selProd.image;
                                     payload["productBrand"] = selProd.brand;
+                                    payload["stockQuantity"] = selProd.stockQuantity;
                                   }
                                   return payload;
                                 }).toList();

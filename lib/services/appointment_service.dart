@@ -251,6 +251,9 @@ class AppointmentService {
     String? symptoms,
     String? notes,
     dynamic consultationFee,
+    String? paymentStatus,
+    String? paymentId,
+    String? paymentMode,
     String? token,
   }) async {
     final Uri url = Uri.parse('$baseUrl/book');
@@ -280,11 +283,17 @@ class AppointmentService {
       'durationMinutes': durationMinutes ?? 30,
       'consultationType': consultationType,
       'patientName': patientName.trim(),
-      'patientAge': ?patientAge,
+      'patientAge': patientAge,
       'patientMobile': patientMobile.trim(),
       'symptoms': symptoms ?? '',
       'notes': notes ?? '',
-      'consultationFee': ?feeNum,
+      'consultationFee': feeNum,
+      if (paymentStatus != null && paymentStatus.isNotEmpty)
+        'paymentStatus': paymentStatus,
+      if (paymentId != null && paymentId.isNotEmpty)
+        'paymentId': paymentId,
+      if (paymentMode != null && paymentMode.isNotEmpty)
+        'paymentMode': paymentMode,
     };
 
     try {
@@ -310,6 +319,110 @@ class AppointmentService {
         message: ApiHelper.getReadableErrorMessage(
           e,
           fallback: 'Error connecting to booking service',
+        ),
+      );
+    }
+  }
+
+  /// Step 2: POST https://backend.chikitsakart.com/api/appointments/initiate-payment
+  /// Initiates Razorpay payment for a booked appointment.
+  static Future<InitiateAppointmentPaymentApiResponse> initiatePayment({
+    required String appointmentId,
+    String currency = 'INR',
+    String? token,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/initiate-payment');
+
+    final Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    final Map<String, dynamic> bodyData = {
+      'appointmentId': appointmentId.trim(),
+      'currency': currency,
+    };
+
+    try {
+      final response = await http
+          .post(url, headers: headers, body: jsonEncode(bodyData))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return InitiateAppointmentPaymentApiResponse.fromJson(body);
+      } else {
+        return InitiateAppointmentPaymentApiResponse(
+          success: false,
+          message: body['message'] as String? ??
+              'Payment initiation failed with status code: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      return InitiateAppointmentPaymentApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error connecting to payment initiation service',
+        ),
+      );
+    }
+  }
+
+  /// Step 3: POST https://backend.chikitsakart.com/api/appointments/verify-payment
+  /// Verifies Razorpay payment for an appointment.
+  static Future<VerifyAppointmentPaymentApiResponse> verifyPayment({
+    required String appointmentId,
+    required String razorpayPaymentId,
+    required String razorpayOrderId,
+    required String razorpaySignature,
+    String? token,
+  }) async {
+    final Uri url = Uri.parse('$baseUrl/verify-payment');
+
+    final Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    final Map<String, dynamic> bodyData = {
+      'appointmentId': appointmentId.trim(),
+      'razorpayPaymentId': razorpayPaymentId.trim(),
+      'razorpayOrderId': razorpayOrderId.trim(),
+      'razorpaySignature': razorpaySignature.trim(),
+    };
+
+    try {
+      final response = await http
+          .post(url, headers: headers, body: jsonEncode(bodyData))
+          .timeout(const Duration(seconds: 30));
+
+      final Map<String, dynamic> body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return VerifyAppointmentPaymentApiResponse.fromJson(body);
+      } else {
+        return VerifyAppointmentPaymentApiResponse(
+          success: false,
+          message: body['message'] as String? ??
+              'Payment verification failed with status code: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      return VerifyAppointmentPaymentApiResponse(
+        success: false,
+        message: ApiHelper.getReadableErrorMessage(
+          e,
+          fallback: 'Error connecting to payment verification service',
         ),
       );
     }

@@ -1357,7 +1357,12 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
   }
 
   Widget _buildHorizontalProductCard(Product prod) {
-    final isWish = _appState.wishlistProductIds.contains(prod.id);
+    final isWish = _appState.isProductWishlisted(
+      prod.id,
+      prod.productId,
+      prod.skuId,
+      prod.selectedVariantId,
+    );
     final discountPct = prod.effectiveDiscountPercent;
 
     return GestureDetector(
@@ -1404,7 +1409,12 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                     child: GestureDetector(
                       onTap: () {
                         setState(
-                          () => _appState.toggleProductWishlist(prod.id),
+                          () => _appState.toggleProductWishlist(
+                            prod.id,
+                            prod.productId,
+                            prod.skuId,
+                            prod.selectedVariantId,
+                          ),
                         );
                       },
                       child: Icon(
@@ -1414,54 +1424,58 @@ class _MedicineListingScreenState extends State<MedicineListingScreen> {
                       ),
                     ),
                   ),
-                  if (prod.isPrescriptionRequired)
-                    Positioned(
-                      top: 2,
-                      left: 2,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[700],
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Rx',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 7,
-                            fontWeight: FontWeight.bold,
+                  // Top Left badges (Discount % OFF + Rx)
+                  Positioned(
+                    top: 2,
+                    left: 2,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (discountPct > 0) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _appState.isDoctorLoggedIn ? const Color(0xFF0D9488) : Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _appState.isDoctorLoggedIn
+                                  ? (prod.roleDiscountLabel.isNotEmpty ? prod.roleDiscountLabel : 'Dr. $discountPct% OFF')
+                                  : '$discountPct% OFF',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 7,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                  if (discountPct > 0)
-                    Positioned(
-                      bottom: 2,
-                      left: 2,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _appState.isDoctorLoggedIn ? const Color(0xFF0D9488) : Colors.green[700],
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          _appState.isDoctorLoggedIn
-                              ? (prod.roleDiscountLabel.isNotEmpty ? prod.roleDiscountLabel : 'Dr. $discountPct% OFF')
-                              : '$discountPct% OFF',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 7,
-                            fontWeight: FontWeight.bold,
+                          const SizedBox(width: 3),
+                        ],
+                        if (prod.isPrescriptionRequired)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[700],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Rx',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 7,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),

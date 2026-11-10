@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_state.dart';
@@ -44,22 +43,86 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   late List<ProductVariant> _variants;
   late ProductVariant _selectedVariant;
+  ProductVariantGroup? _selectedGroup;
 
   void _initVariants() {
     _variants = _currentProduct.availableVariants;
-    if (_variants.isEmpty) {
-      _selectedVariant = ProductVariant(
-        id: _currentProduct.id,
-        packSize: _currentProduct.packSize.isNotEmpty
-            ? _currentProduct.packSize
-            : '1 Unit',
-        price: _currentProduct.price,
-        originalPrice: _currentProduct.originalPrice,
-        isOutOfStock: _currentProduct.isOutOfStock,
-      );
+    if (_currentProduct.variantGroups.isNotEmpty) {
+      if (_currentProduct.selectedVariantId != null &&
+          _currentProduct.selectedVariantId!.isNotEmpty) {
+        _selectedGroup = _currentProduct.variantGroups.firstWhere(
+          (g) => g.id == _currentProduct.selectedVariantId,
+          orElse: () => _currentProduct.variantGroups.first,
+        );
+      } else if (_selectedGroup == null ||
+          !_currentProduct.variantGroups.any((g) => g.id == _selectedGroup!.id)) {
+        _selectedGroup = _currentProduct.variantGroups.first;
+      }
+      final groupSkus = _selectedGroup!.skus;
+      if (groupSkus.isNotEmpty) {
+        _selectedVariant = groupSkus.firstWhere(
+          (s) => (_currentProduct.skuId != null && s.id == _currentProduct.skuId) ||
+                 (_currentProduct.skuCode != null && s.skuCode == _currentProduct.skuCode),
+          orElse: () => groupSkus.firstWhere(
+            (s) => s.stockQuantity > 0,
+            orElse: () => groupSkus.first,
+          ),
+        );
+      } else if (_variants.isNotEmpty) {
+        _selectedVariant = _variants.firstWhere(
+          (v) => (_currentProduct.skuId != null && v.id == _currentProduct.skuId) ||
+                 (_currentProduct.skuCode != null && v.skuCode == _currentProduct.skuCode),
+          orElse: () => _variants.firstWhere(
+            (v) => v.stockQuantity > 0,
+            orElse: () => _variants.first,
+          ),
+        );
+      } else {
+        _selectedVariant = _fallbackVariant();
+        _variants = [_selectedVariant];
+      }
+    } else if (_variants.isEmpty) {
+      _selectedVariant = _fallbackVariant();
       _variants = [_selectedVariant];
     } else {
-      _selectedVariant = matchInitialVariant(_variants, _currentProduct.packSize);
+      _selectedVariant = _variants.firstWhere(
+        (v) => (_currentProduct.skuId != null && v.id == _currentProduct.skuId) ||
+               (_currentProduct.skuCode != null && v.skuCode == _currentProduct.skuCode),
+        orElse: () => _variants.firstWhere(
+          (v) => v.stockQuantity > 0,
+          orElse: () => matchInitialVariant(_variants, _currentProduct.packSize),
+        ),
+      );
+    }
+    _syncGalleryImages();
+  }
+
+  ProductVariant _fallbackVariant() {
+    return ProductVariant(
+      id: _currentProduct.skuId ?? _currentProduct.id,
+      packSize: _currentProduct.packSize.isNotEmpty
+          ? _currentProduct.packSize
+          : '1 Unit',
+      price: _currentProduct.price,
+      originalPrice: _currentProduct.originalPrice,
+      stockQuantity: _currentProduct.stockQuantity,
+      isOutOfStock: _currentProduct.isOutOfStock,
+    );
+  }
+
+  void _syncGalleryImages() {
+    if (_selectedVariant.images.isNotEmpty) {
+      _galleryImages = _selectedVariant.images;
+      _selectedImage = _galleryImages.first;
+    } else if (_currentProduct.images.isNotEmpty) {
+      _galleryImages = _currentProduct.images;
+      _selectedImage = _galleryImages.first;
+    } else if (_currentProduct.image.isNotEmpty) {
+      _galleryImages = [_currentProduct.image];
+      _selectedImage = _currentProduct.image;
+    } else {
+      _galleryImages = ['assets/p1.png'];
+      _selectedImage = 'assets/p1.png';
     }
   }
 
@@ -265,7 +328,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       // Schedule after frame so we don't call setState during build
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncQtyFromCart());
     }
-    final isWish = _appState.wishlistProductIds.contains(prod.id);
+    final isWish = _appState.isProductWishlisted(
+      prod.id,
+      prod.productId,
+      prod.skuId,
+      prod.selectedVariantId,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -295,7 +363,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
             onPressed: () {
               setState(() {
-                _appState.toggleProductWishlist(prod.id);
+                _appState.toggleProductWishlist(
+                  prod.id,
+                  prod.productId,
+                  prod.skuId,
+                  prod.selectedVariantId,
+                );
               });
             },
           ),
@@ -517,183 +590,147 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
 
-                  // Attributes from API (Bottle Type / Pack Size, Potency, Category)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Bottle Type / Pack Size',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: AppColors.textDark,
-                        ),
+                  // Stock Status Banner
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _activeProduct.stockQuantity > 0
+                          ? const Color(0xFFF0FDF4)
+                          : const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _activeProduct.stockQuantity > 0
+                            ? const Color(0xFF86EFAC)
+                            : const Color(0xFFFECACA),
                       ),
-                      if (_variants.length > 1)
-                        Text(
-                          '${_variants.length} available',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textLight,
-                            fontWeight: FontWeight.w500,
-                          ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _activeProduct.stockQuantity > 0
+                              ? Icons.check_circle_rounded
+                              : Icons.cancel_rounded,
+                          size: 20,
+                          color: _activeProduct.stockQuantity > 0
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFFDC2626),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: _variants.map((v) {
-                      final isSelected = v.packSize.toLowerCase() ==
-                          _selectedVariant.packSize.toLowerCase();
-                      final int disc = v.effectiveDiscountPercent;
-                      final displayPack = formatPackText(v.packSize);
-
-                      return InkWell(
-                        onTap: () {
-                          setState(() {
-                            _selectedVariant = v;
-                            _qty = _cartItem?.quantity ?? 1;
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(14),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.06)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : const Color(0xFFE2E8F0),
-                              width: isSelected ? 1.8 : 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: isSelected
-                                    ? AppColors.primary.withValues(alpha: 0.12)
-                                    : Colors.black.withValues(alpha: 0.03),
-                                blurRadius: isSelected ? 8 : 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 18,
-                                    height: 18,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: isSelected
-                                          ? AppColors.primary
-                                          : Colors.transparent,
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? AppColors.primary
-                                            : const Color(0xFFCBD5E1),
-                                        width: isSelected ? 2 : 1.5,
-                                      ),
-                                    ),
-                                    child: isSelected
-                                        ? const Center(
-                                            child: Icon(
-                                              Icons.check,
-                                              size: 11,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : null,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    displayPack,
-                                    style: TextStyle(
-                                      fontSize: 13.5,
-                                      fontWeight: isSelected
-                                          ? FontWeight.w700
-                                          : FontWeight.w600,
-                                      color: isSelected
-                                          ? AppColors.primary
-                                          : const Color(0xFF1E293B),
-                                    ),
-                                  ),
-                                ],
+                              Text(
+                                _activeProduct.stockQuantity > 0
+                                    ? 'In Stock (${_activeProduct.stockQuantity} units available)'
+                                    : 'Currently Out of Stock',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: _activeProduct.stockQuantity > 0
+                                      ? const Color(0xFF15803D)
+                                      : const Color(0xFFB91C1C),
+                                ),
                               ),
-                              const SizedBox(height: 6),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '₹${v.price.toInt()}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: isSelected
-                                          ? AppColors.primary
-                                          : const Color(0xFF0F172A),
-                                    ),
+                              if (_selectedVariant.skuName != null &&
+                                  _selectedVariant.skuName!.isNotEmpty)
+                                Text(
+                                  _selectedVariant.skuName!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF64748B),
                                   ),
-                                  if (v.originalPrice > v.price) ...[
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '₹${v.originalPrice.toInt()}',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF94A3B8),
-                                        decoration: TextDecoration.lineThrough,
-                                      ),
-                                    ),
-                                  ],
-                                  if (disc > 0) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 5,
-                                        vertical: 1.5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _appState.isDoctorLoggedIn
-                                            ? const Color(0xFF0D9488).withValues(alpha: 0.12)
-                                            : const Color(0xFFDCFCE7),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        _appState.isDoctorLoggedIn
-                                            ? 'Dr. $disc% OFF'
-                                            : '$disc% OFF',
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          color: _appState.isDoctorLoggedIn
-                                              ? const Color(0xFF0D9488)
-                                              : const Color(0xFF16A34A),
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                                ),
                             ],
                           ),
                         ),
-                      );
-                    }).toList(),
+                        if (_selectedVariant.skuCode != null &&
+                            _selectedVariant.skuCode!.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Text(
+                              _selectedVariant.skuCode!,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF334155),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
+
+
+
+                  // 3. Selected SKU Specifications Card
+                  if (_selectedVariant.skuCode != null && _selectedVariant.skuCode!.isNotEmpty ||
+                      _selectedVariant.batchNumber != null && _selectedVariant.batchNumber!.isNotEmpty ||
+                      _selectedVariant.expiryDate != null && _selectedVariant.expiryDate!.isNotEmpty ||
+                      _selectedVariant.typeOfPacking != null && _selectedVariant.typeOfPacking!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.primary),
+                              SizedBox(width: 6),
+                              Text(
+                                'SKU Specifications',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12.5,
+                                  color: AppColors.textDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 6,
+                            children: [
+                              if (_selectedVariant.skuCode != null && _selectedVariant.skuCode!.isNotEmpty)
+                                _buildSkuSpecChip('Code', _selectedVariant.skuCode!),
+                              if (_selectedVariant.typeOfPacking != null && _selectedVariant.typeOfPacking!.isNotEmpty)
+                                _buildSkuSpecChip('Packaging', _selectedVariant.typeOfPacking!),
+                              if (_selectedVariant.unitOfMeasure != null && _selectedVariant.unitOfMeasure!.isNotEmpty)
+                                _buildSkuSpecChip('Unit', _selectedVariant.unitOfMeasure!),
+                              if (_selectedVariant.batchNumber != null && _selectedVariant.batchNumber!.isNotEmpty)
+                                _buildSkuSpecChip('Batch', _selectedVariant.batchNumber!),
+                              if (_selectedVariant.expiryDate != null && _selectedVariant.expiryDate!.isNotEmpty)
+                                _buildSkuSpecChip('Expiry', _selectedVariant.expiryDate!),
+                              if (_selectedVariant.storageConditions != null && _selectedVariant.storageConditions!.isNotEmpty)
+                                _buildSkuSpecChip('Storage', _selectedVariant.storageConditions!),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
                   const SizedBox(height: 20),
                   const Text(
                     'Variant / Potency',
@@ -804,124 +841,158 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 24),
                   // Qty adjust and Add to cart
-                  Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.remove, size: 18),
-                              color: const Color(0xFF475569),
-                              onPressed: () {
-                                if (_qty > 1) {
-                                  setState(() => _qty--);
-                                  // If already in cart, update immediately
-                                  if (_cartItem != null) {
-                                    _appState.updateCartQty(prod, _qty);
-                                  }
-                                }
-                              },
+                  Builder(
+                    builder: (context) {
+                      final bool isOutOfStock = prod.isOutOfStock || prod.stockQuantity <= 0;
+                      return Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove, size: 18),
+                                  color: const Color(0xFF475569),
+                                  onPressed: isOutOfStock
+                                      ? null
+                                      : () {
+                                          if (_qty > 1) {
+                                            setState(() => _qty--);
+                                            // If already in cart, update immediately
+                                            if (_cartItem != null) {
+                                              _appState.updateCartQty(prod, _qty);
+                                            }
+                                          }
+                                        },
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: Text(
+                                    '$_qty',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: isOutOfStock ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add, size: 18),
+                                  color: isOutOfStock ? const Color(0xFF94A3B8) : AppColors.primary,
+                                  onPressed: isOutOfStock
+                                      ? null
+                                      : () {
+                                          if (prod.stockQuantity > 0 && _qty >= prod.stockQuantity) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Only ${prod.stockQuantity} items available in stock.',
+                                                ),
+                                                duration: const Duration(seconds: 2),
+                                              ),
+                                            );
+                                            return;
+                                          }
+                                          setState(() => _qty++);
+                                          // If already in cart, update immediately
+                                          if (_cartItem != null) {
+                                            _appState.updateCartQty(prod, _qty);
+                                          }
+                                        },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isOutOfStock ? Colors.grey.shade400 : AppColors.primary,
+                                foregroundColor: Colors.white,
+                                elevation: isOutOfStock ? 0 : 2,
+                                shadowColor: isOutOfStock ? Colors.transparent : AppColors.primary.withValues(alpha: 0.35),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              onPressed: isOutOfStock
+                                  ? () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Selected variant / SKU is currently out of stock.',
+                                          ),
+                                          backgroundColor: AppColors.error,
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  : () async {
+                                      // Capture context-dependent objects BEFORE any await
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      final navigator = Navigator.of(context);
+                                      if (_cartItem != null) {
+                                        // Already in cart — just sync quantity
+                                        await _appState.updateCartQty(prod, _qty);
+                                        if (!mounted) return;
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Cart updated: $_qty x ${prod.name}',
+                                            ),
+                                            action: SnackBarAction(
+                                              label: 'View Cart',
+                                              textColor: Colors.amber,
+                                              onPressed: () {
+                                                navigator.push(MaterialPageRoute(
+                                                  builder: (_) => const CartScreen(),
+                                                ));
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      } else {
+                                        // Not in cart yet — add it
+                                        _appState.addToCart(prod, qty: _qty);
+                                        if (!mounted) return;
+                                        messenger.showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Added $_qty x ${prod.name} to cart!',
+                                            ),
+                                            action: SnackBarAction(
+                                              label: 'View Cart',
+                                              textColor: Colors.amber,
+                                              onPressed: () {
+                                                navigator.push(MaterialPageRoute(
+                                                  builder: (_) => const CartScreen(),
+                                                ));
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
                               child: Text(
-                                '$_qty',
+                                isOutOfStock
+                                    ? 'Out of Stock'
+                                    : (_cartItem != null ? 'Update Cart' : 'Add to Cart'),
                                 style: const TextStyle(
+                                  color: Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Color(0xFF0F172A),
+                                  fontSize: 15,
                                 ),
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.add, size: 18),
-                              color: AppColors.primary,
-                              onPressed: () {
-                                setState(() => _qty++);
-                                // If already in cart, update immediately
-                                if (_cartItem != null) {
-                                  _appState.updateCartQty(prod, _qty);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            elevation: 2,
-                            shadowColor: AppColors.primary.withValues(alpha: 0.35),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
-                          onPressed: () async {
-                            // Capture context-dependent objects BEFORE any await
-                            final messenger = ScaffoldMessenger.of(context);
-                            final navigator = Navigator.of(context);
-                            if (_cartItem != null) {
-                              // Already in cart — just sync quantity
-                              await _appState.updateCartQty(prod, _qty);
-                              if (!mounted) return;
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Cart updated: $_qty x ${prod.name}',
-                                  ),
-                                  action: SnackBarAction(
-                                    label: 'View Cart',
-                                    textColor: Colors.amber,
-                                    onPressed: () {
-                                      navigator.push(MaterialPageRoute(
-                                        builder: (_) => const CartScreen(),
-                                      ));
-                                    },
-                                  ),
-                                ),
-                              );
-                            } else {
-                              // Not in cart yet — add it
-                              _appState.addToCart(prod, qty: _qty);
-                              if (!mounted) return;
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Added $_qty x ${prod.name} to cart!',
-                                  ),
-                                  action: SnackBarAction(
-                                    label: 'View Cart',
-                                    textColor: Colors.amber,
-                                    onPressed: () {
-                                      navigator.push(MaterialPageRoute(
-                                        builder: (_) => const CartScreen(),
-                                      ));
-                                    },
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Text(
-                            _cartItem != null ? 'Update Cart' : 'Add to Cart',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -1031,48 +1102,120 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ),
                       ),
                     ),
-                  const Divider(height: 1),
-                  _buildCollapsibleHeader(
-                    'Key Benefits',
-                    _benefitsExpanded,
-                    (val) => setState(() => _benefitsExpanded = val),
-                  ),
-                  if (_benefitsExpanded)
+                  // Therapeutic Use / Key Uses
+                  if (prod.therapeuticUse != null && prod.therapeuticUse!.trim().isNotEmpty) ...[
+                    const Divider(height: 1),
+                    _buildCollapsibleHeader(
+                      'Therapeutic Use & Indications',
+                      _benefitsExpanded,
+                      (val) => setState(() => _benefitsExpanded = val),
+                    ),
+                    if (_benefitsExpanded)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Text(
+                          prod.therapeuticUse!,
+                          style: const TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                  ],
+
+                  // Key Ingredients
+                  if (prod.keyIngredients != null && prod.keyIngredients!.trim().isNotEmpty) ...[
+                    const Divider(height: 1),
+                    _buildCollapsibleHeader(
+                      'Key Ingredients',
+                      _ingredientsExpanded,
+                      (val) => setState(() => _ingredientsExpanded = val),
+                    ),
+                    if (_ingredientsExpanded)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Text(
+                          prod.keyIngredients!,
+                          style: const TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                  ],
+
+                  // Dosage & Usage
+                  if (prod.dosage != null && prod.dosage!.trim().isNotEmpty) ...[
+                    const Divider(height: 1),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          _BenefitRow(
-                            'Provides natural energy enhancement without caffeine crashes.',
+                        children: [
+                          const Text(
+                            'Dosage & Application',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                              color: AppColors.textDark,
+                            ),
                           ),
-                          _BenefitRow(
-                            'Fortifies daily immunity defense with traditional Ayurvedic antioxidants.',
-                          ),
-                          _BenefitRow(
-                            'Supports gut metabolism and healthy nutrient absorption levels.',
+                          const SizedBox(height: 4),
+                          Text(
+                            prod.dosage!,
+                            style: const TextStyle(
+                              color: AppColors.textLight,
+                              fontSize: 12.5,
+                              height: 1.4,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  const Divider(height: 1),
-                  _buildCollapsibleHeader(
-                    'Ingredients',
-                    _ingredientsExpanded,
-                    (val) => setState(() => _ingredientsExpanded = val),
-                  ),
-                  if (_ingredientsExpanded)
+                  ],
+
+                  // Safety / Contraindications / Side Effects
+                  if ((prod.contraindications != null && prod.contraindications!.trim().isNotEmpty) ||
+                      (prod.sideEffects != null && prod.sideEffects!.trim().isNotEmpty)) ...[
+                    const Divider(height: 1),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      child: Text(
-                        'Pure extracts of ${prod.name.split(' ').first}, Organic Cellulose, Plant Stearates, Silica, Minerals.',
-                        style: const TextStyle(
-                          color: AppColors.textLight,
-                          fontSize: 13,
-                          height: 1.5,
-                        ),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Safety & Precautions',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (prod.contraindications != null && prod.contraindications!.trim().isNotEmpty)
+                            Text(
+                              'Contraindications: ${prod.contraindications}',
+                              style: const TextStyle(
+                                color: Color(0xFFDC2626),
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          if (prod.sideEffects != null && prod.sideEffects!.trim().isNotEmpty)
+                            Text(
+                              'Side effects: ${prod.sideEffects}',
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                  ],
                   const Divider(height: 1),
                   // _buildCollapsibleHeader(
                   //   'Customer Questions & Answers',
@@ -2399,6 +2542,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildSkuSpecChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF0F172A),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

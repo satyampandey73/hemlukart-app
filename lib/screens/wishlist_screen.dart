@@ -4,6 +4,7 @@ import '../constants/app_state.dart';
 import '../services/doctor_service.dart';
 import 'product_detail_screen.dart';
 import 'doctor_profile_screen.dart';
+import 'cart_screen.dart';
 import '../widgets/product_quantity_selector.dart';
 
 class WishlistScreen extends StatefulWidget {
@@ -92,10 +93,23 @@ class _WishlistScreenState extends State<WishlistScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Gather wishlist items
-    final wishProducts = _appState.products
-        .where((p) => _appState.wishlistProductIds.contains(p.id))
-        .toList();
+    // Gather wishlist items from backend items and catalog products
+    final Map<String, Product> productMap = {};
+
+    for (final item in _appState.userWishlistItems) {
+      final p = item.toProduct();
+      final key = (p.skuId != null && p.skuId!.isNotEmpty) ? p.skuId! : p.id;
+      productMap[key] = p;
+    }
+
+    for (final p in _appState.products) {
+      if (_appState.isProductWishlisted(p.id, p.productId, p.skuId, p.selectedVariantId)) {
+        final key = (p.skuId != null && p.skuId!.isNotEmpty) ? p.skuId! : p.id;
+        productMap[key] = p;
+      }
+    }
+
+    final wishProducts = productMap.values.toList();
     final wishDoctors = _loadedDoctors
         .where((d) => _appState.wishlistDoctorIds.contains(d.id))
         .toList();
@@ -109,6 +123,66 @@ class _WishlistScreenState extends State<WishlistScreen>
         ),
         backgroundColor: AppColors.primary,
         automaticallyImplyLeading: false,
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        actions: [
+          AnimatedBuilder(
+            animation: _appState,
+            builder: (context, _) {
+              final cartCount = _appState.cart.fold<int>(
+                0,
+                (sum, i) => sum + i.quantity,
+              );
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.shopping_cart_outlined,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CartScreen()),
+                      );
+                    },
+                    tooltip: 'Cart',
+                  ),
+                  if (cartCount > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$cartCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -233,7 +307,12 @@ class _WishlistScreenState extends State<WishlistScreen>
                     child: GestureDetector(
                       onTap: () {
                         setState(() {
-                          _appState.toggleProductWishlist(prod.id);
+                          _appState.toggleProductWishlist(
+                            prod.id,
+                            prod.productId,
+                            prod.skuId,
+                            prod.selectedVariantId,
+                          );
                         });
                       },
                       child: const Icon(

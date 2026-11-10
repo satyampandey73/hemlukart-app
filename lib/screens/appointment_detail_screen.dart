@@ -2538,7 +2538,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
               try {
                 final res = await ProductService.getProducts(search: query.trim(), limit: 8);
                 if (res.success) {
-                  final prods = res.products.map((p) => p.toProduct()).toList();
+                  final prods = res.products.expand((p) => p.toProductList()).toList();
                   setStateModal(() {
                     med['searchResults'] = prods;
                     med['isSearching'] = false;

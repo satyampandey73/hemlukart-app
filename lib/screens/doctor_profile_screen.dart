@@ -197,6 +197,36 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
     return false;
   }
 
+  double get _displayConsultationFee {
+    final cType = _selectedSchedule?.consultationType;
+    final fee = _docState.getFeeForType(cType);
+    if (fee > 0) return fee;
+    final wFee = widget.doctor.getFeeForType(cType);
+    if (wFee > 0) return wFee;
+
+    if (_selectedSchedule != null) {
+      final parsed = double.tryParse(_selectedSchedule!.consultationFee);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    if (_doctorSchedules.isNotEmpty) {
+      final parsed = double.tryParse(_doctorSchedules.first.consultationFee);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return _docState.consultationFee > 0 ? _docState.consultationFee : 500.0;
+  }
+
+  double _getScheduleFee(DoctorSchedule sch) {
+    if (_docState.consultationFees.isNotEmpty || widget.doctor.consultationFees.isNotEmpty) {
+      final fee = _docState.getFeeForType(sch.consultationType);
+      if (fee > 0) return fee;
+      final wFee = widget.doctor.getFeeForType(sch.consultationType);
+      if (wFee > 0) return wFee;
+    }
+    final parsed = double.tryParse(sch.consultationFee);
+    if (parsed != null && parsed > 0) return parsed;
+    return _displayConsultationFee;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -553,11 +583,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                _selectedSchedule != null
-                                    ? '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')} / session'
-                                    : (_doctorSchedules.isNotEmpty
-                                        ? '₹${_doctorSchedules.first.consultationFee.replaceAll('.00', '')} / session'
-                                        : '₹${doc.consultationFee.toInt()} / session'),
+                                '₹${_displayConsultationFee.toInt()} / session',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 18,
@@ -1328,7 +1354,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                       const Icon(Icons.verified, size: 12, color: Color(0xFF10B981)),
                       const SizedBox(width: 4),
                       Text(
-                        '₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')}',
+                        '₹${_getScheduleFee(_selectedSchedule!).toInt()}',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -1903,7 +1929,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                         : (!_hasAvailableSlotInWeek
                             ? 'No Slots Available This Week'
                             : (_selectedSchedule != null
-                                ? 'Book Slot (${_formatTime12h(_selectedSchedule!.startTime)} • ₹${_selectedSchedule!.consultationFee.replaceAll('.00', '')})'
+                                ? 'Book Slot (${_formatTime12h(_selectedSchedule!.startTime)} • ₹${_getScheduleFee(_selectedSchedule!).toInt()})'
                                 : 'Book Appointment with this Doctor')),
                     style: TextStyle(
                       color: !canBook ? Colors.grey.shade600 : Colors.white,
@@ -1995,7 +2021,7 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                 (_selectedSchedule?.startTime == sch.startTime &&
                     _selectedSchedule?.dayOfWeek == sch.dayOfWeek);
             final timeDisplay = _formatTime12h(sch.startTime);
-            final feeDisplay = '₹${sch.consultationFee.replaceAll('.00', '')}';
+            final feeDisplay = '₹${_getScheduleFee(sch).toInt()}';
 
             return GestureDetector(
               onTap: canSelect

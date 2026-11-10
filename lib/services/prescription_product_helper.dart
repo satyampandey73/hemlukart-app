@@ -74,10 +74,30 @@ class PrescriptionProductHelper {
     return false;
   }
 
+  /// Extracts the SKU ID from a medication map if present
+  static String? extractSkuId(dynamic med) {
+    if (med == null) return null;
+    if (med is Map) {
+      dynamic skuId = med['skuId'] ??
+          med['sku_id'] ??
+          med['skuUuid'] ??
+          med['productSkuId'] ??
+          med['sellerSkuId'];
+      if (skuId != null) {
+        final str = skuId.toString().trim();
+        if (str.isNotEmpty && str.toLowerCase() != 'null' && str.toLowerCase() != 'undefined') {
+          return str;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Resolve product from a medication map or object
   static Future<Product?> getProductFromMed(dynamic med) async {
     final pid = extractProductId(med);
     if (pid == null) return null;
+    final skuId = extractSkuId(med);
     final name = med is Map ? med['name']?.toString() : null;
     final price = med is Map
         ? (med['price'] is num
@@ -88,13 +108,23 @@ class PrescriptionProductHelper {
         ? (med['image']?.toString() ?? med['imageUrl']?.toString())
         : null;
     final dosage = med is Map ? (med['dosage']?.toString() ?? med['dosageForm']?.toString()) : null;
-    return getOrFetchProduct(
+    final product = await getOrFetchProduct(
       productId: pid,
       fallbackName: name,
       fallbackPrice: price,
       fallbackImage: img,
       fallbackDosageForm: dosage,
     );
+    if (product != null && skuId != null && product.variants.isNotEmpty) {
+      final matchingVariant = product.variants.cast<ProductVariant?>().firstWhere(
+            (v) => v?.id == skuId || v?.skuCode == skuId,
+            orElse: () => null,
+          );
+      if (matchingVariant != null) {
+        return product.copyWithVariant(matchingVariant);
+      }
+    }
+    return product;
   }
 
   /// Retrieves a product from memory cache or fetches it from API
@@ -115,7 +145,7 @@ class PrescriptionProductHelper {
     try {
       final res = await ProductService.getProductById(trimmedId);
       if (res.success && res.product != null) {
-        final prod = res.product!.toProduct();
+        final prod = res.product!.toProduct(trimmedId);
         _productCache[trimmedId] = prod;
         return prod;
       }

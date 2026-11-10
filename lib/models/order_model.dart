@@ -647,3 +647,97 @@ class CancelOrderApiResponse {
     );
   }
 }
+
+class RazorpayPaymentDetails {
+  final String keyId;
+  final String orderId;
+  final num amount;
+  final String currency;
+  final String? receipt;
+
+  RazorpayPaymentDetails({
+    required this.keyId,
+    required this.orderId,
+    required this.amount,
+    required this.currency,
+    this.receipt,
+  });
+
+  factory RazorpayPaymentDetails.fromJson(Map<String, dynamic> json) {
+    num parsedAmount = 0;
+    if (json['amount'] is num) {
+      parsedAmount = json['amount'] as num;
+    } else if (json['amount'] != null) {
+      parsedAmount = num.tryParse(json['amount'].toString()) ?? 0;
+    }
+
+    return RazorpayPaymentDetails(
+      keyId: json['keyId']?.toString() ?? '',
+      orderId: json['orderId']?.toString() ?? '',
+      amount: parsedAmount,
+      currency: json['currency']?.toString() ?? 'INR',
+      receipt: json['receipt']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'keyId': keyId,
+      'orderId': orderId,
+      'amount': amount,
+      'currency': currency,
+      'receipt': receipt,
+    };
+  }
+}
+
+class InitiatePaymentApiResponse {
+  final bool success;
+  final String message;
+  final RazorpayPaymentDetails? payment;
+
+  InitiatePaymentApiResponse({
+    required this.success,
+    required this.message,
+    this.payment,
+  });
+
+  factory InitiatePaymentApiResponse.fromJson(Map<String, dynamic> json) {
+    RazorpayPaymentDetails? payment;
+    if (json['data'] is Map && json['data']['payment'] is Map) {
+      payment = RazorpayPaymentDetails.fromJson(
+        Map<String, dynamic>.from(json['data']['payment'] as Map),
+      );
+    } else if (json['data'] is Map) {
+      payment = RazorpayPaymentDetails.fromJson(
+        Map<String, dynamic>.from(json['data'] as Map),
+      );
+    }
+
+    return InitiatePaymentApiResponse(
+      success: json['success'] == true,
+      message: json['message']?.toString() ?? '',
+      payment: payment,
+    );
+  }
+}
+
+class VerifyPaymentApiResponse {
+  final bool success;
+  final String message;
+  final dynamic data;
+
+  VerifyPaymentApiResponse({
+    required this.success,
+    required this.message,
+    this.data,
+  });
+
+  factory VerifyPaymentApiResponse.fromJson(Map<String, dynamic> json) {
+    return VerifyPaymentApiResponse(
+      success: json['success'] == true,
+      message: json['message']?.toString() ?? '',
+      data: json['data'],
+    );
+  }
+}

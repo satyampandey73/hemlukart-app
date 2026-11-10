@@ -821,7 +821,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         final res = await ProductService.getProducts(search: query.trim(), limit: 6);
         if (mounted) {
           setState(() {
-            _storeProductSuggestions = res.products.map((p) => p.toProduct()).toList();
+            _storeProductSuggestions = res.products.expand((p) => p.toProductList()).toList();
             _isSearchingProducts = false;
           });
         }

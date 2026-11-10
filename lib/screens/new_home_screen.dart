@@ -10,6 +10,7 @@ import 'doctor_profile_screen.dart';
 import 'book_appointment_screen.dart';
 import 'order_tracking_screen.dart';
 import 'cart_screen.dart';
+import 'wishlist_screen.dart';
 import 'login_screen.dart';
 import 'product_catalog_screen.dart';
 import '../models/category_model.dart';
@@ -530,54 +531,112 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
   }
 
-  Widget _buildCartIconBtn() {
-    int count = 0;
-    for (var item in _appState.cart) {
-      count += item.quantity;
-    }
-    return GestureDetector(
-      onTap: () async {
-        if (await LoginScreen.checkAndNavigate(context)) {
-          if (mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CartScreen()),
-            );
-          }
-        }
-      },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          const Icon(
-            Icons.shopping_cart_outlined,
-            color: Colors.white,
-            size: 22,
-          ),
-          if (count > 0)
-            Positioned(
-              right: -4,
-              top: -4,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: const BoxDecoration(
-                  color: AppColors.error,
-                  shape: BoxShape.circle,
-                ),
-                constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                alignment: Alignment.center,
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
+  Widget _buildWishlistIconBtn() {
+    return ListenableBuilder(
+      listenable: _appState,
+      builder: (context, _) {
+        final count = _appState.wishlistProductIds.length;
+        return GestureDetector(
+          onTap: () async {
+            if (await LoginScreen.checkAndNavigate(context)) {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WishlistScreen()),
+                );
+              }
+            }
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(
+                Icons.favorite_border_rounded,
+                color: Colors.white,
+                size: 23,
+              ),
+              if (count > 0)
+                Positioned(
+                  right: -5,
+                  top: -5,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCartIconBtn() {
+    return ListenableBuilder(
+      listenable: _appState,
+      builder: (context, _) {
+        int count = 0;
+        for (var item in _appState.cart) {
+          count += item.quantity;
+        }
+        return GestureDetector(
+          onTap: () async {
+            if (await LoginScreen.checkAndNavigate(context)) {
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CartScreen()),
+                );
+              }
+            }
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(
+                Icons.shopping_cart_outlined,
+                color: Colors.white,
+                size: 22,
               ),
-            ),
-        ],
-      ),
+              if (count > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: AppColors.error,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -846,8 +905,8 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     ),
                     Row(
                       children: [
-                        
-                        const SizedBox(width: 12),
+                        _buildWishlistIconBtn(),
+                        const SizedBox(width: 16),
                         _buildCartIconBtn(),
                       ],
                     ),
@@ -2999,7 +3058,10 @@ class _FeaturedProductCardState extends State<FeaturedProductCard> {
       );
       _variants = [_selectedVariant];
     } else {
-      _selectedVariant = _variants.first;
+      _selectedVariant = _variants.firstWhere(
+        (v) => !v.isOutOfStock && v.stockQuantity > 0,
+        orElse: () => _variants.first,
+      );
     }
   }
 
@@ -3025,7 +3087,12 @@ class _FeaturedProductCardState extends State<FeaturedProductCard> {
     return ListenableBuilder(
       listenable: appState,
       builder: (context, _) {
-        final isWish = appState.wishlistProductIds.contains(activeProd.id);
+        final isWish = appState.isProductWishlisted(
+          activeProd.id,
+          activeProd.productId,
+          activeProd.skuId,
+          activeProd.selectedVariantId,
+        );
 
         return GestureDetector(
           onTap: () {
@@ -3075,7 +3142,12 @@ class _FeaturedProductCardState extends State<FeaturedProductCard> {
                         right: 4,
                         child: GestureDetector(
                           onTap: () {
-                            appState.toggleProductWishlist(activeProd.id);
+                            appState.toggleProductWishlist(
+                              activeProd.id,
+                              activeProd.productId,
+                              activeProd.skuId,
+                              activeProd.selectedVariantId,
+                            );
                           },
                           child: Icon(
                             isWish ? Icons.favorite : Icons.favorite_border,

@@ -1447,7 +1447,10 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
 
   void _initVariants() {
     _variants = widget.product.availableVariants;
-    _selectedVariant = _variants.first;
+    _selectedVariant = _variants.firstWhere(
+      (v) => !v.isOutOfStock && v.stockQuantity > 0,
+      orElse: () => _variants.first,
+    );
   }
 
   Product get _activeProd => widget.product.copyWithVariant(_selectedVariant);
@@ -1468,7 +1471,12 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
       listenable: widget.appState,
       builder: (context, _) {
         final prod = _activeProd;
-        final isWish = widget.appState.wishlistProductIds.contains(prod.id);
+        final isWish = widget.appState.isProductWishlisted(
+          prod.id,
+          prod.productId,
+          prod.skuId,
+          prod.selectedVariantId,
+        );
         final discountPct = prod.effectiveDiscountPercent;
 
         return GestureDetector(
@@ -1522,8 +1530,12 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
                         top: 4,
                         right: 4,
                         child: GestureDetector(
-                          onTap: () =>
-                              widget.appState.toggleProductWishlist(prod.id),
+                          onTap: () => widget.appState.toggleProductWishlist(
+                            prod.id,
+                            prod.productId,
+                            prod.skuId,
+                            prod.selectedVariantId,
+                          ),
                           child: Container(
                             padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
@@ -1539,49 +1551,51 @@ class _CatalogGridProductCardState extends State<CatalogGridProductCard> {
                           ),
                         ),
                       ),
-                      // Rx tag
-                      if (prod.isPrescriptionRequired)
-                        Positioned(
-                          top: 4,
-                          left: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 2),
-                            decoration: BoxDecoration(
-                                color: Colors.blue[700],
-                                borderRadius: BorderRadius.circular(4)),
-                            child: const Text('Rx',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.bold)),
-                          ),
+                      // Top Left badges (Discount % OFF + Rx)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (discountPct > 0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: widget.appState.isDoctorLoggedIn
+                                        ? const Color(0xFF0D9488)
+                                        : Colors.red,
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: Text(
+                                    widget.appState.isDoctorLoggedIn
+                                        ? (prod.roleDiscountLabel.isNotEmpty
+                                            ? prod.roleDiscountLabel
+                                            : 'Dr. $discountPct% OFF')
+                                        : '$discountPct% OFF',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            if (prod.isPrescriptionRequired)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: Colors.blue[700],
+                                    borderRadius: BorderRadius.circular(4)),
+                                child: const Text('Rx',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                          ],
                         ),
-                      // Discount tag
-                      if (discountPct > 0)
-                        Positioned(
-                          bottom: 4,
-                          left: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 2),
-                            decoration: BoxDecoration(
-                                color: widget.appState.isDoctorLoggedIn
-                                    ? const Color(0xFF0D9488)
-                                    : Colors.green[700],
-                                borderRadius: BorderRadius.circular(4)),
-                            child: Text(
-                                widget.appState.isDoctorLoggedIn
-                                    ? (prod.roleDiscountLabel.isNotEmpty
-                                        ? prod.roleDiscountLabel
-                                        : 'Dr. $discountPct% OFF')
-                                    : '$discountPct% OFF',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.bold)),
-                          ),
-                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1719,7 +1733,10 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
 
   void _initVariants() {
     _variants = widget.product.availableVariants;
-    _selectedVariant = _variants.first;
+    _selectedVariant = _variants.firstWhere(
+      (v) => !v.isOutOfStock && v.stockQuantity > 0,
+      orElse: () => _variants.first,
+    );
   }
 
   Product get _activeProd => widget.product.copyWithVariant(_selectedVariant);
@@ -1740,7 +1757,12 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
       listenable: widget.appState,
       builder: (context, _) {
         final prod = _activeProd;
-        final isWish = widget.appState.wishlistProductIds.contains(prod.id);
+        final isWish = widget.appState.isProductWishlisted(
+          prod.id,
+          prod.productId,
+          prod.skuId,
+          prod.selectedVariantId,
+        );
         final discountPct = prod.effectiveDiscountPercent;
 
         return GestureDetector(
@@ -1761,24 +1783,52 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
             child: Row(
               children: [
                 // Image
-                Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    color:
-                        AppColors.backgroundLight.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(8),
-                    image: DecorationImage(
-                      image: (prod.image.startsWith('http://') ||
-                              prod.image.startsWith('https://'))
-                          ? NetworkImage(prod.image) as ImageProvider
-                          : AssetImage(prod.image.isNotEmpty
-                              ? prod.image
-                              : 'assets/img2.png'),
-                      fit: BoxFit.contain,
-                      onError: (_, __) {},
+                Stack(
+                  children: [
+                    Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        color:
+                            AppColors.backgroundLight.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                        image: DecorationImage(
+                          image: (prod.image.startsWith('http://') ||
+                                  prod.image.startsWith('https://'))
+                              ? NetworkImage(prod.image) as ImageProvider
+                              : AssetImage(prod.image.isNotEmpty
+                                  ? prod.image
+                                  : 'assets/img2.png'),
+                          fit: BoxFit.contain,
+                          onError: (_, __) {},
+                        ),
+                      ),
                     ),
-                  ),
+                    if (discountPct > 0)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                              color: widget.appState.isDoctorLoggedIn
+                                  ? const Color(0xFF0D9488)
+                                  : Colors.red,
+                              borderRadius: BorderRadius.circular(4)),
+                          child: Text(
+                              widget.appState.isDoctorLoggedIn
+                                  ? (prod.roleDiscountLabel.isNotEmpty
+                                      ? prod.roleDiscountLabel
+                                      : 'Dr. $discountPct% OFF')
+                                  : '$discountPct% OFF',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1796,8 +1846,12 @@ class _CatalogListProductCardState extends State<CatalogListProductCard> {
                                 fontWeight: FontWeight.bold),
                           ),
                           GestureDetector(
-                            onTap: () => widget.appState
-                                .toggleProductWishlist(prod.id),
+                            onTap: () => widget.appState.toggleProductWishlist(
+                              prod.id,
+                              prod.productId,
+                              prod.skuId,
+                              prod.selectedVariantId,
+                            ),
                             child: Icon(
                               isWish
                                   ? Icons.favorite

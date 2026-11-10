@@ -7,11 +7,23 @@ class CartService {
   static const String baseUrl = 'https://backend.chikitsakart.com/api/cart';
 
   /// API: POST https://backend.chikitsakart.com/api/cart
-  /// Request Body: {"productId": "f80778a9-5988-48e6-8647-4b2a90b719d2", "quantity": 1}
-  /// Response: {"success": true, "message": "Added to cart", "data": {...}}
+  /// Request Body:
+  /// {
+  ///   "productId": "dfae3ed6-b953-4668-9f29-37afe344c62a",
+  ///   "quantity": 1,
+  ///   "skuId": "029a1e05-0926-4b6a-b1f0-ac85577ff1a4",
+  ///   "sellerId": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+  ///   "price": 343.00,
+  ///   "mrp": 350.00,
+  ///   "discount": 2.00
+  /// }
   static Future<AddToCartApiResponse> addToCart({
     required String productId,
     String? skuId,
+    String? sellerId,
+    double? price,
+    double? mrp,
+    double? discount,
     int quantity = 1,
     String? token,
   }) async {
@@ -25,13 +37,14 @@ class CartService {
       headers['Authorization'] = 'Bearer $token';
     }
 
-    // Build request body — include skuId if available so backend adds
-    // only the selected variant, not all variants of the product.
     final Map<String, dynamic> requestBody = {
       'productId': productId.trim(),
       'quantity': quantity,
-      if (skuId != null && skuId.isNotEmpty && skuId != productId)
-        'skuId': skuId.trim(),
+      if (skuId != null && skuId.isNotEmpty) 'skuId': skuId.trim(),
+      if (sellerId != null && sellerId.isNotEmpty) 'sellerId': sellerId.trim(),
+      if (price != null && price > 0) 'price': price,
+      if (mrp != null && mrp > 0) 'mrp': mrp,
+      if (discount != null && discount > 0) 'discount': discount,
     };
 
     try {

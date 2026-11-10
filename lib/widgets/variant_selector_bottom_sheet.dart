@@ -164,10 +164,11 @@ void showVariantSelectorBottomSheet({
                 separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
                   final variant = variants[index];
-                  final isSelected =
+                  final isSelected = variant.id == selectedVariant.id ||
                       variant.packSize.toLowerCase() ==
-                      selectedVariant.packSize.toLowerCase();
+                          selectedVariant.packSize.toLowerCase();
                   final discountPct = variant.effectiveDiscountPercent;
+                  final inStock = variant.stockQuantity > 0 && !variant.isOutOfStock;
 
                   return InkWell(
                     onTap: () {
@@ -225,17 +226,55 @@ void showVariantSelectorBottomSheet({
                                 ),
                                 const SizedBox(width: 10),
                                 Flexible(
-                                  child: Text(
-                                    formatPackText(variant.packSize),
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.w600,
-                                      color: isSelected
-                                          ? AppColors.primary
-                                          : AppColors.textDark,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (variant.variantName != null &&
+                                          variant.variantName!.trim().isNotEmpty &&
+                                          variant.variantName!.toLowerCase() != 'standard')
+                                        Text(
+                                          variant.variantName!,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      Text(
+                                        formatPackText(variant.packSize),
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: isSelected
+                                              ? AppColors.primary
+                                              : AppColors.textDark,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            inStock ? Icons.check_circle : Icons.cancel,
+                                            size: 11,
+                                            color: inStock ? Colors.green.shade700 : Colors.red.shade600,
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            inStock ? 'In Stock (${variant.stockQuantity})' : 'Out of Stock',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: inStock ? Colors.green.shade700 : Colors.red.shade600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],

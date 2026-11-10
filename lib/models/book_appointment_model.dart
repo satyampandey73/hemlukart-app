@@ -133,12 +133,111 @@ class BookAppointmentApiResponse {
   });
 
   factory BookAppointmentApiResponse.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? aptMap;
+    if (json['appointment'] is Map<String, dynamic>) {
+      aptMap = json['appointment'] as Map<String, dynamic>;
+    } else if (json['data'] is Map<String, dynamic>) {
+      final d = json['data'] as Map<String, dynamic>;
+      if (d['appointment'] is Map<String, dynamic>) {
+        aptMap = d['appointment'] as Map<String, dynamic>;
+      } else {
+        aptMap = d;
+      }
+    }
+
     return BookAppointmentApiResponse(
       success: json['success'] as bool? ?? false,
       message: json['message'] as String? ?? '',
-      appointment: json['appointment'] != null && json['appointment'] is Map<String, dynamic>
-          ? BookedAppointment.fromJson(json['appointment'] as Map<String, dynamic>)
-          : null,
+      appointment: aptMap != null ? BookedAppointment.fromJson(aptMap) : null,
+    );
+  }
+}
+
+class AppointmentPaymentDetails {
+  final String keyId;
+  final String orderId;
+  final num amount;
+  final String currency;
+
+  AppointmentPaymentDetails({
+    required this.keyId,
+    required this.orderId,
+    required this.amount,
+    required this.currency,
+  });
+
+  factory AppointmentPaymentDetails.fromJson(Map<String, dynamic> json) {
+    return AppointmentPaymentDetails(
+      keyId: json['keyId']?.toString() ?? '',
+      orderId: json['orderId']?.toString() ?? '',
+      amount: json['amount'] is num
+          ? json['amount'] as num
+          : num.tryParse(json['amount']?.toString() ?? '0') ?? 0,
+      currency: json['currency']?.toString() ?? 'INR',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'keyId': keyId,
+      'orderId': orderId,
+      'amount': amount,
+      'currency': currency,
+    };
+  }
+}
+
+class InitiateAppointmentPaymentApiResponse {
+  final bool success;
+  final String message;
+  final BookedAppointment? appointment;
+  final AppointmentPaymentDetails? payment;
+
+  InitiateAppointmentPaymentApiResponse({
+    required this.success,
+    required this.message,
+    this.appointment,
+    this.payment,
+  });
+
+  factory InitiateAppointmentPaymentApiResponse.fromJson(Map<String, dynamic> json) {
+    final data = json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : null;
+    final aptMap = (data?['appointment'] is Map<String, dynamic>)
+        ? data!['appointment'] as Map<String, dynamic>
+        : (json['appointment'] is Map<String, dynamic> ? json['appointment'] as Map<String, dynamic> : null);
+    final payMap = (data?['payment'] is Map<String, dynamic>)
+        ? data!['payment'] as Map<String, dynamic>
+        : (json['payment'] is Map<String, dynamic> ? json['payment'] as Map<String, dynamic> : null);
+
+    return InitiateAppointmentPaymentApiResponse(
+      success: json['success'] == true,
+      message: json['message']?.toString() ?? '',
+      appointment: aptMap != null ? BookedAppointment.fromJson(aptMap) : null,
+      payment: payMap != null ? AppointmentPaymentDetails.fromJson(payMap) : null,
+    );
+  }
+}
+
+class VerifyAppointmentPaymentApiResponse {
+  final bool success;
+  final String message;
+  final BookedAppointment? appointment;
+
+  VerifyAppointmentPaymentApiResponse({
+    required this.success,
+    required this.message,
+    this.appointment,
+  });
+
+  factory VerifyAppointmentPaymentApiResponse.fromJson(Map<String, dynamic> json) {
+    final aptMap = (json['appointment'] is Map<String, dynamic>)
+        ? json['appointment'] as Map<String, dynamic>
+        : (json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : null);
+
+    return VerifyAppointmentPaymentApiResponse(
+      success: json['success'] == true,
+      message: json['message']?.toString() ?? '',
+      appointment: aptMap != null ? BookedAppointment.fromJson(aptMap) : null,
     );
   }
 }

@@ -26,9 +26,12 @@ class SkuVariantModel {
 
 class ProductSkuModel {
   final String id;
+  final String skuUuid;
   final String productId;
   final String skuCode;
   final String skuName;
+  final String variantId;
+  final String variantName;
   final List<dynamic> description;
   final List<SkuVariantModel> variants;
   final List<String> images;
@@ -37,6 +40,7 @@ class ProductSkuModel {
   final int packSize;
   final String packingMaterial;
   final String mrp;
+  final double masterMrp;
   final String sellerDiscount;
   final String consumerDiscount;
   final bool consumerActive;
@@ -58,12 +62,16 @@ class ProductSkuModel {
   final String? deletedAt;
   final String? createdAt;
   final String? updatedAt;
+  final String? sellerId;
 
   ProductSkuModel({
     required this.id,
+    required this.skuUuid,
     required this.productId,
     required this.skuCode,
     required this.skuName,
+    this.variantId = '',
+    this.variantName = '',
     required this.description,
     required this.variants,
     required this.images,
@@ -72,6 +80,7 @@ class ProductSkuModel {
     required this.packSize,
     required this.packingMaterial,
     required this.mrp,
+    this.masterMrp = 0.0,
     required this.sellerDiscount,
     required this.consumerDiscount,
     required this.consumerActive,
@@ -93,6 +102,7 @@ class ProductSkuModel {
     this.deletedAt,
     this.createdAt,
     this.updatedAt,
+    this.sellerId,
   });
 
   factory ProductSkuModel.fromJson(Map<String, dynamic> json) {
@@ -107,58 +117,71 @@ class ProductSkuModel {
     var rawImages = json['images'];
     List<String> imageList = [];
     if (rawImages is List) {
-      imageList = rawImages.map((i) => i.toString()).toList();
+      imageList = rawImages.map((i) => i.toString().trim()).where((i) => i.isNotEmpty).toList();
     }
 
+    final sId = json['id']?.toString() ?? json['skuUuid']?.toString() ?? '';
+    final sUuid = json['skuUuid']?.toString() ?? sId;
+
     return ProductSkuModel(
-      id: json['id']?.toString() ?? '',
+      id: sId,
+      skuUuid: sUuid,
       productId: json['productId']?.toString() ?? '',
-      skuCode: json['skuCode']?.toString() ?? '',
-      skuName: json['skuName']?.toString() ?? '',
+      skuCode: json['skuCode']?.toString().trim() ?? '',
+      skuName: json['skuName']?.toString().trim() ?? '',
+      variantId: json['variantId']?.toString().trim() ?? '',
+      variantName: json['variantName']?.toString().trim() ?? '',
       description: json['description'] is List ? json['description'] : [],
       variants: variantList,
       images: imageList,
-      unitOfMeasure: json['unitOfMeasure']?.toString() ?? '',
-      typeOfPacking: json['typeOfPacking']?.toString() ?? '',
+      unitOfMeasure: json['unitOfMeasure']?.toString().trim() ?? '',
+      typeOfPacking: json['typeOfPacking']?.toString().trim() ?? '',
       packSize: json['packSize'] is int
           ? json['packSize']
           : int.tryParse(json['packSize']?.toString() ?? '1') ?? 1,
-      packingMaterial: json['packingMaterial']?.toString() ?? '',
+      packingMaterial: json['packingMaterial']?.toString().trim() ?? '',
       mrp: json['mrp']?.toString() ?? '0.00',
+      masterMrp: json['masterMrp'] is num
+          ? (json['masterMrp'] as num).toDouble()
+          : double.tryParse(json['masterMrp']?.toString() ?? '0.0') ?? 0.0,
       sellerDiscount: json['sellerDiscount']?.toString() ?? '0.00',
       consumerDiscount: json['consumerDiscount']?.toString() ?? '0.00',
-      consumerActive: json['consumerActive'] == true,
+      consumerActive: json['consumerActive'] != false,
       doctorDiscount: json['doctorDiscount']?.toString() ?? '0.00',
-      doctorActive: json['doctorActive'] == true,
+      doctorActive: json['doctorActive'] != false,
       stockQuantity: json['stockQuantity'] is int
           ? json['stockQuantity']
           : int.tryParse(json['stockQuantity']?.toString() ?? '0') ?? 0,
-      batchNumber: json['batchNumber']?.toString() ?? '',
-      expiryDate: json['expiryDate']?.toString() ?? '',
-      storageConditions: json['storageConditions']?.toString() ?? '',
+      batchNumber: json['batchNumber']?.toString().trim() ?? '',
+      expiryDate: json['expiryDate']?.toString().trim() ?? '',
+      storageConditions: json['storageConditions']?.toString().trim() ?? '',
       lengthCm: json['lengthCm']?.toString() ?? '0.00',
       widthCm: json['widthCm']?.toString() ?? '0.00',
       heightCm: json['heightCm']?.toString() ?? '0.00',
-      productWeight: json['productWeight']?.toString() ?? '',
-      theoreticalWeight: json['theoreticalWeight']?.toString() ?? '',
-      shipmentWeight: json['shipmentWeight']?.toString() ?? '',
+      productWeight: json['productWeight']?.toString().trim() ?? '',
+      theoreticalWeight: json['theoreticalWeight']?.toString().trim() ?? '',
+      shipmentWeight: json['shipmentWeight']?.toString().trim() ?? '',
       processingTimeDays: json['processingTimeDays'] is int
           ? json['processingTimeDays']
           : int.tryParse(json['processingTimeDays']?.toString() ?? '1') ?? 1,
-      isActive: json['isActive'] == true,
+      isActive: json['isActive'] != false,
       isDeleted: json['isDeleted'] == true,
       deletedAt: json['deletedAt']?.toString(),
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
+      sellerId: json['sellerId']?.toString(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'skuUuid': skuUuid,
       'productId': productId,
       'skuCode': skuCode,
       'skuName': skuName,
+      'variantId': variantId,
+      'variantName': variantName,
       'description': description,
       'variants': variants.map((v) => v.toJson()).toList(),
       'images': images,
@@ -167,6 +190,7 @@ class ProductSkuModel {
       'packSize': packSize,
       'packingMaterial': packingMaterial,
       'mrp': mrp,
+      'masterMrp': masterMrp,
       'sellerDiscount': sellerDiscount,
       'consumerDiscount': consumerDiscount,
       'consumerActive': consumerActive,
@@ -192,8 +216,73 @@ class ProductSkuModel {
   }
 }
 
+class ApiProductVariantModel {
+  final String id;
+  final String variantName;
+  final String strength;
+  final String dosageForm;
+  final String description;
+  final String? createdByRole;
+  final String? sellerId;
+  final String? sellerName;
+  final List<ProductSkuModel> skus;
+
+  ApiProductVariantModel({
+    required this.id,
+    required this.variantName,
+    required this.strength,
+    required this.dosageForm,
+    this.description = '',
+    this.createdByRole,
+    this.sellerId,
+    this.sellerName,
+    required this.skus,
+  });
+
+  factory ApiProductVariantModel.fromJson(Map<String, dynamic> json) {
+    final vId = json['id']?.toString().trim() ?? '';
+    final vName = json['variantName']?.toString().trim() ?? '';
+    var rawSkus = json['skus'];
+    List<ProductSkuModel> skuList = [];
+    if (rawSkus is List) {
+      skuList = rawSkus.map((s) {
+        final Map<String, dynamic> sMap = Map<String, dynamic>.from(s as Map);
+        sMap['variantId'] ??= vId;
+        sMap['variantName'] ??= vName;
+        return ProductSkuModel.fromJson(sMap);
+      }).toList();
+    }
+    return ApiProductVariantModel(
+      id: vId,
+      variantName: vName,
+      strength: json['strength']?.toString().trim() ?? '',
+      dosageForm: json['dosageForm']?.toString().trim() ?? '',
+      description: json['description']?.toString().trim() ?? '',
+      createdByRole: json['createdByRole']?.toString(),
+      sellerId: json['sellerId']?.toString(),
+      sellerName: json['sellerName']?.toString(),
+      skus: skuList,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'variantName': variantName,
+      'strength': strength,
+      'dosageForm': dosageForm,
+      'description': description,
+      'createdByRole': createdByRole,
+      'sellerId': sellerId,
+      'sellerName': sellerName,
+      'skus': skus.map((s) => s.toJson()).toList(),
+    };
+  }
+}
+
 class ApiProductModel {
   final String id;
+  final String productId;
   final String productCode;
   final String productName;
   final String brandName;
@@ -213,11 +302,21 @@ class ApiProductModel {
   final bool isDeleted;
   final String? createdAt;
   final String? updatedAt;
+  final List<ApiProductVariantModel> variants;
   final List<ProductSkuModel> skus;
   final String? createdByName;
+  final String? keyIngredients;
+  final String? therapeuticUse;
+  final String? contraindications;
+  final String? sideEffects;
+  final String? dosage;
+  final List<String> descriptionList;
+  final String? termsAndConditions;
+  final String? manufacturerAddress;
 
   ApiProductModel({
     required this.id,
+    required this.productId,
     required this.productCode,
     required this.productName,
     required this.brandName,
@@ -237,11 +336,34 @@ class ApiProductModel {
     required this.isDeleted,
     this.createdAt,
     this.updatedAt,
+    required this.variants,
     required this.skus,
     this.createdByName,
+    this.keyIngredients,
+    this.therapeuticUse,
+    this.contraindications,
+    this.sideEffects,
+    this.dosage,
+    this.descriptionList = const [],
+    this.termsAndConditions,
+    this.manufacturerAddress,
   });
 
   factory ApiProductModel.fromJson(Map<String, dynamic> json) {
+    // Top-level id & productId
+    final String pId = json['productId']?.toString().trim() ?? json['id']?.toString().trim() ?? '';
+    final String pCode = json['productCode']?.toString().trim() ?? json['id']?.toString().trim() ?? pId;
+
+    // Variants
+    var rawVariants = json['variants'];
+    List<ApiProductVariantModel> variantList = [];
+    if (rawVariants is List) {
+      variantList = rawVariants
+          .map((v) => ApiProductVariantModel.fromJson(v as Map<String, dynamic>))
+          .toList();
+    }
+
+    // SKUs
     var rawSkus = json['skus'];
     List<ProductSkuModel> skuList = [];
     if (rawSkus is List) {
@@ -249,36 +371,62 @@ class ApiProductModel {
           .map((s) => ProductSkuModel.fromJson(s as Map<String, dynamic>))
           .toList();
     }
+    // If top-level skus is empty, collect from variants
+    if (skuList.isEmpty && variantList.isNotEmpty) {
+      for (final v in variantList) {
+        skuList.addAll(v.skus);
+      }
+    }
+
+    // Descriptions
+    List<String> descList = [];
+    var rawDesc = json['description'];
+    if (rawDesc is List) {
+      descList = rawDesc.map((d) => d.toString().trim()).where((d) => d.isNotEmpty).toList();
+    } else if (rawDesc is String && rawDesc.trim().isNotEmpty) {
+      descList = [rawDesc.trim()];
+    }
 
     return ApiProductModel(
-      id: json['id']?.toString() ?? '',
-      productCode: json['productCode']?.toString() ?? '',
-      productName: json['productName']?.toString() ?? '',
-      brandName: json['brandName']?.toString() ?? '',
-      categoryId: json['categoryId']?.toString() ?? '',
-      categoryName: json['categoryName']?.toString() ?? '',
-      categorySlug: json['categorySlug']?.toString() ?? '',
-      subCategory: json['subCategory']?.toString() ?? '',
+      id: pCode.isNotEmpty ? pCode : pId,
+      productId: pId,
+      productCode: pCode,
+      productName: json['productName']?.toString().trim() ?? '',
+      brandName: json['brandName']?.toString().trim() ?? '',
+      categoryId: json['categoryId']?.toString().trim() ?? '',
+      categoryName: json['categoryName']?.toString().trim() ?? '',
+      categorySlug: json['categorySlug']?.toString().trim() ?? '',
+      subCategory: json['subCategory']?.toString().trim() ?? '',
       prescriptionRequired: json['prescriptionRequired'] == true,
-      hsnSacCode: json['hsnSacCode']?.toString() ?? '',
+      hsnSacCode: json['hsnSacCode']?.toString().trim() ?? '',
       taxRate: json['taxRate']?.toString() ?? '0.00',
       gmpCertified: json['gmpCertified'] == true,
-      manufacturerCountry: json['manufacturerCountry']?.toString() ?? 'India',
+      manufacturerCountry: json['manufacturerCountry']?.toString().trim() ?? 'India',
       createdByRole: json['createdByRole']?.toString() ?? 'admin',
       createdBySellerId: json['createdBySellerId']?.toString(),
       createdByAdminId: json['createdByAdminId']?.toString(),
-      isActive: json['isActive'] == true,
+      isActive: json['isActive'] != false,
       isDeleted: json['isDeleted'] == true,
       createdAt: json['createdAt']?.toString(),
       updatedAt: json['updatedAt']?.toString(),
+      variants: variantList,
       skus: skuList,
       createdByName: json['createdByName']?.toString(),
+      keyIngredients: json['keyIngredients']?.toString().trim(),
+      therapeuticUse: json['therapeuticUse']?.toString().trim(),
+      contraindications: json['contraindications']?.toString().trim(),
+      sideEffects: json['sideEffects']?.toString().trim(),
+      dosage: json['dosage']?.toString().trim(),
+      descriptionList: descList,
+      termsAndConditions: json['termsAndConditions']?.toString().trim(),
+      manufacturerAddress: json['manufacturerAddress']?.toString().trim(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'productId': productId,
       'productCode': productCode,
       'productName': productName,
       'brandName': brandName,
@@ -298,135 +446,240 @@ class ApiProductModel {
       'isDeleted': isDeleted,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
+      'variants': variants.map((v) => v.toJson()).toList(),
       'skus': skus.map((s) => s.toJson()).toList(),
       'createdByName': createdByName,
+      'keyIngredients': keyIngredients,
+      'therapeuticUse': therapeuticUse,
+      'contraindications': contraindications,
+      'sideEffects': sideEffects,
+      'dosage': dosage,
+      'description': descriptionList,
+      'termsAndConditions': termsAndConditions,
+      'manufacturerAddress': manufacturerAddress,
     };
   }
 
-  /// Converts this API product model into the standard app [Product]
-  Product toProduct() {
-    final bool hasSku = skus.isNotEmpty;
-    final ProductSkuModel? primarySku = hasSku ? skus.first : null;
+  /// Converts this API product model into a list of [Product] items, one per variant.
+  /// If [variants] is empty, returns a single [Product].
+  List<Product> toProductList() {
+    if (variants.isNotEmpty) {
+      return variants.map((v) => _toProductForVariant(v)).toList();
+    }
+    return [toProduct()];
+  }
 
-    final String img = (primarySku != null && primarySku.images.isNotEmpty)
-        ? primarySku.images.first
-        : 'assets/p1.png';
+  /// Converts this API product model into the standard app [Product].
+  /// If [targetVariantId] is specified, resolves that variant; otherwise the first variant.
+  Product toProduct([String? targetVariantId]) {
+    if (variants.isNotEmpty) {
+      if (targetVariantId != null && targetVariantId.isNotEmpty) {
+        final matching = variants.firstWhere(
+          (v) =>
+              v.id == targetVariantId ||
+              v.variantName.toLowerCase() == targetVariantId.toLowerCase(),
+          orElse: () => variants.first,
+        );
+        return _toProductForVariant(matching);
+      }
+      return _toProductForVariant(variants.first);
+    }
+    return _toProductForVariant(null);
+  }
 
-    final double mrpVal = primarySku != null
-        ? (double.tryParse(primarySku.mrp) ?? 100.0)
-        : 100.0;
+  /// Converts a single variant of this API product into a [Product].
+  /// The resulting product's [variants] list will contain ONLY the SKUs of this variant,
+  /// so that the SKU dropdown/picker presents exactly the SKUs belonging to this variant.
+  Product _toProductForVariant(ApiProductVariantModel? v) {
+    List<ProductVariant> groupSkus = [];
+    final String varId = v?.id ?? '';
+    final String varName = v?.variantName ?? '';
 
-    final double discountVal = primarySku != null
-        ? (double.tryParse(primarySku.consumerDiscount) ?? 0.0)
-        : 0.0;
+    if (v != null && v.skus.isNotEmpty) {
+      for (final sku in v.skus) {
+        groupSkus.add(_convertSkuToProductVariant(sku, v.id, v.variantName));
+      }
+    } else if (skus.isNotEmpty) {
+      for (final sku in skus) {
+        groupSkus.add(_convertSkuToProductVariant(sku, '', ''));
+      }
+    }
 
-    final double doctorDiscountVal = primarySku != null
-        ? (double.tryParse(primarySku.doctorDiscount) ?? 0.0)
-        : 0.0;
+    // Primary SKU: prefer one with stock > 0, otherwise first
+    ProductVariant? primaryVariant;
+    if (groupSkus.isNotEmpty) {
+      primaryVariant = groupSkus.firstWhere(
+        (sku) => sku.stockQuantity > 0,
+        orElse: () => groupSkus.first,
+      );
+    }
 
-    final bool doctorActiveVal = primarySku?.doctorActive ?? true;
-    final bool consumerActiveVal = primarySku?.consumerActive ?? true;
+    final int totalStock = groupSkus.fold<int>(0, (sum, s) => sum + s.stockQuantity);
 
-    // Calculated price after discount (percentage)
-    final double discountAmount = (mrpVal * discountVal / 100.0);
-    final double calculatedPrice = (mrpVal - discountAmount).clamp(0.0, mrpVal);
-    final double finalPrice = calculatedPrice > 0 ? calculatedPrice : mrpVal;
+    // Image resolution: from primary SKU images, variant SKU images, or product fallback
+    String img = 'assets/p1.png';
+    if (primaryVariant != null && primaryVariant.images.isNotEmpty) {
+      img = primaryVariant.images.first;
+    } else if (v != null && v.skus.isNotEmpty) {
+      for (final s in v.skus) {
+        if (s.images.isNotEmpty) {
+          img = s.images.first;
+          break;
+        }
+      }
+    } else if (skus.isNotEmpty && skus.first.images.isNotEmpty) {
+      img = skus.first.images.first;
+    }
 
-    final String brand = brandName.trim().isEmpty ? 'Wellness' : brandName.trim();
+    // Display Name: e.g. "Baby Gentle Body Lotion - Regular Baby Lotion"
+    String displayName = productName.trim();
+    final vTrim = varName.trim();
+    if (vTrim.isNotEmpty && vTrim.toLowerCase() != displayName.toLowerCase()) {
+      if (vTrim.toLowerCase().startsWith(displayName.toLowerCase())) {
+        displayName = vTrim;
+      } else {
+        displayName = '$displayName - $vTrim';
+      }
+    }
+
+    final double mrpVal = primaryVariant?.originalPrice ?? 100.0;
+    final double finalPrice = primaryVariant?.price ?? mrpVal;
+
+    final String brand = brandName.trim().isEmpty ? 'Healthcare' : brandName.trim();
     final String category = categoryName.trim().isEmpty ? 'General' : categoryName.trim();
 
-    final String desc = (primarySku != null && primarySku.storageConditions.isNotEmpty)
-        ? 'Storage: ${primarySku.storageConditions}'
-        : 'Quality certified medical & wellness product.';
-
-    String potency = 'Standard';
-    if (primarySku != null && primarySku.variants.isNotEmpty) {
-      final v = primarySku.variants.first;
-      potency = '${v.type}: ${v.value}';
+    String desc = '';
+    if (descriptionList.isNotEmpty) {
+      desc = descriptionList.join('\n');
+    } else if (v != null && v.description != null && v.description!.isNotEmpty) {
+      desc = v.description!;
+    } else if (primaryVariant != null &&
+        primaryVariant.storageConditions != null &&
+        primaryVariant.storageConditions!.isNotEmpty) {
+      desc = 'Storage: ${primaryVariant.storageConditions}';
+    } else {
+      desc = 'Quality certified medical & wellness product.';
     }
 
-    String pack = '1 Unit';
-    if (primarySku != null) {
-      final String pPacking = primarySku.typeOfPacking.trim();
-      final String pUom = primarySku.unitOfMeasure.trim();
-      if (pPacking.isNotEmpty && pUom.isNotEmpty) {
-        pack = '${primarySku.packSize} ($pUom) $pPacking';
-      } else if (pPacking.isNotEmpty) {
-        pack = '${primarySku.packSize} $pPacking';
-      } else if (pUom.isNotEmpty) {
-        pack = '${primarySku.packSize} $pUom';
-      } else {
-        pack = '${primarySku.packSize} Unit';
-      }
-      pack = _normalizePackDisplay(pack);
-    }
+    final String potencyVal = (v != null && v.strength.isNotEmpty)
+        ? v.strength
+        : ((variants.isNotEmpty && variants.first.strength.isNotEmpty)
+            ? variants.first.strength
+            : 'Standard');
 
-    final bool isStockOut = primarySku != null && primarySku.stockQuantity <= 0;
+    final groups = [
+      ProductVariantGroup(
+        id: varId.isNotEmpty ? varId : id,
+        variantName: vTrim.isNotEmpty ? vTrim : 'Standard',
+        strength: v?.strength ?? '',
+        dosageForm: v?.dosageForm ?? '',
+        description: v?.description ?? '',
+        skus: groupSkus,
+      ),
+    ];
 
-    final List<ProductVariant> variantList = [];
-    if (skus.isNotEmpty) {
-      for (final sku in skus) {
-        final double skuMrp = double.tryParse(sku.mrp) ?? mrpVal;
-        final double skuDisc = double.tryParse(sku.consumerDiscount) ?? 0.0;
-        final double skuDocDisc = double.tryParse(sku.doctorDiscount) ?? 0.0;
-        final double skuDiscAmount = (skuMrp * skuDisc / 100.0);
-        final double skuPrice = (skuMrp - skuDiscAmount).clamp(0.0, skuMrp);
-
-        String packText = '';
-        final String packing = sku.typeOfPacking.trim();
-        final String uom = sku.unitOfMeasure.trim();
-        if (packing.isNotEmpty && uom.isNotEmpty) {
-          packText = '${sku.packSize} ($uom) $packing';
-        } else if (packing.isNotEmpty) {
-          packText = '${sku.packSize} $packing';
-        } else if (uom.isNotEmpty) {
-          packText = '${sku.packSize} $uom';
-        } else if (sku.skuName.trim().isNotEmpty) {
-          packText = _normalizePackDisplay(sku.skuName.trim());
-        } else {
-          packText = '${sku.packSize} Unit';
-        }
-        packText = _normalizePackDisplay(packText);
-
-        variantList.add(
-          ProductVariant(
-            id: sku.id.isNotEmpty ? sku.id : id,
-            packSize: packText.trim().isNotEmpty ? packText : _normalizePackDisplay(sku.skuName),
-            price: skuPrice > 0 ? skuPrice : skuMrp,
-            originalPrice: skuMrp,
-            skuCode: sku.skuCode,
-            isOutOfStock: sku.stockQuantity <= 0,
-            doctorDiscount: skuDocDisc,
-            doctorActive: sku.doctorActive,
-            consumerDiscount: skuDisc,
-            consumerActive: sku.consumerActive,
-          ),
-        );
-      }
-    }
+    final productUniqueId = (varId.isNotEmpty && varId != id) ? varId : id;
 
     return Product(
-      id: id,
-      name: productName,
+      id: productUniqueId,
+      productId: productId.isNotEmpty ? productId : id,
+      name: displayName,
       brand: brand,
       image: img,
       price: finalPrice,
       originalPrice: mrpVal,
-      rating: 4.5,
-      reviewsCount: 42,
+      rating: 4.8,
+      reviewsCount: 15,
       isPrescriptionRequired: prescriptionRequired,
-      isOutOfStock: isStockOut,
+      isOutOfStock: primaryVariant != null ? primaryVariant.stockQuantity <= 0 : totalStock <= 0,
       category: category,
       description: desc,
-      potency: potency,
-      packSize: pack,
-      flavour: 'Natural',
-      doctorDiscount: doctorDiscountVal,
-      doctorActive: doctorActiveVal,
-      consumerDiscount: discountVal,
-      consumerActive: consumerActiveVal,
-      variants: variantList,
-      skuId: (primarySku != null && primarySku.id.isNotEmpty) ? primarySku.id : null,
+      potency: potencyVal,
+      packSize: primaryVariant?.packSize ?? '1 Unit',
+      flavour: 'Standard',
+      doctorDiscount: primaryVariant?.doctorDiscount,
+      doctorActive: primaryVariant?.doctorActive,
+      consumerDiscount: primaryVariant?.consumerDiscount,
+      consumerActive: primaryVariant?.consumerActive,
+      variants: groupSkus,
+      variantGroups: groups,
+      skuId: primaryVariant?.id,
+      skuCode: primaryVariant?.skuCode,
+      skuName: primaryVariant?.skuName,
+      selectedVariantId: varId,
+      selectedVariantName: vTrim,
+      stockQuantity: primaryVariant?.stockQuantity ?? totalStock,
+      unitOfMeasure: primaryVariant?.unitOfMeasure,
+      typeOfPacking: primaryVariant?.typeOfPacking,
+      packingMaterial: primaryVariant?.packingMaterial,
+      batchNumber: primaryVariant?.batchNumber,
+      expiryDate: primaryVariant?.expiryDate,
+      storageConditions: primaryVariant?.storageConditions,
+      images: primaryVariant != null && primaryVariant.images.isNotEmpty
+          ? primaryVariant.images
+          : (img.startsWith('http') ? [img] : []),
+      keyIngredients: keyIngredients,
+      therapeuticUse: therapeuticUse,
+      contraindications: contraindications,
+      sideEffects: sideEffects,
+      dosage: dosage,
+      descriptionList: descriptionList,
+      termsAndConditions: termsAndConditions,
+      manufacturerAddress: manufacturerAddress,
+      sellerId: primaryVariant?.sellerId ?? v?.sellerId ?? createdBySellerId,
+    );
+  }
+
+  static ProductVariant _convertSkuToProductVariant(
+    ProductSkuModel sku,
+    String variantId,
+    String variantName,
+  ) {
+    final double skuMrp = double.tryParse(sku.mrp) ?? 0.0;
+    final double skuDisc = double.tryParse(sku.consumerDiscount) ?? 0.0;
+    final double skuDocDisc = double.tryParse(sku.doctorDiscount) ?? 0.0;
+    final double skuDiscAmount = (skuMrp * skuDisc / 100.0);
+    final double skuPrice = (skuMrp - skuDiscAmount).clamp(0.0, skuMrp);
+
+    String packText = '';
+    final String packing = sku.typeOfPacking.trim();
+    final String uom = sku.unitOfMeasure.trim();
+    if (sku.skuName.trim().isNotEmpty) {
+      packText = sku.skuName.trim();
+    } else if (packing.isNotEmpty && uom.isNotEmpty) {
+      packText = '${sku.packSize} $uom $packing';
+    } else if (packing.isNotEmpty) {
+      packText = '${sku.packSize} $packing';
+    } else if (uom.isNotEmpty) {
+      packText = '${sku.packSize} $uom';
+    } else {
+      packText = '${sku.packSize} Unit';
+    }
+    packText = _normalizePackDisplay(packText);
+
+    return ProductVariant(
+      id: sku.id.isNotEmpty ? sku.id : sku.skuUuid,
+      packSize: packText,
+      price: skuPrice > 0 ? skuPrice : skuMrp,
+      originalPrice: skuMrp,
+      skuCode: sku.skuCode,
+      skuName: sku.skuName,
+      variantId: variantId.isNotEmpty ? variantId : sku.variantId,
+      variantName: variantName.isNotEmpty ? variantName : sku.variantName,
+      stockQuantity: sku.stockQuantity,
+      unitOfMeasure: sku.unitOfMeasure,
+      typeOfPacking: sku.typeOfPacking,
+      packingMaterial: sku.packingMaterial,
+      batchNumber: sku.batchNumber,
+      expiryDate: sku.expiryDate,
+      storageConditions: sku.storageConditions,
+      images: sku.images,
+      isOutOfStock: sku.stockQuantity <= 0,
+      doctorDiscount: skuDocDisc,
+      doctorActive: sku.doctorActive,
+      consumerDiscount: skuDisc,
+      consumerActive: sku.consumerActive,
+      sellerId: sku.sellerId,
     );
   }
 }
@@ -486,13 +739,30 @@ class SingleProductApiResponse {
   });
 
   factory SingleProductApiResponse.fromJson(Map<String, dynamic> json) {
-    if (json['success'] == true && json['product'] is Map<String, dynamic>) {
-      final Map<String, dynamic> prodMap =
-          Map<String, dynamic>.from(json['product'] as Map);
+    if (json['success'] == true) {
+      Map<String, dynamic> prodMap = {};
+      if (json['product'] is Map<String, dynamic>) {
+        prodMap = Map<String, dynamic>.from(json['product'] as Map);
+      } else {
+        prodMap = Map<String, dynamic>.from(json);
+      }
 
-      // Merge skus if provided separately at root level
-      if (json['skus'] is List) {
+      // Merge top-level variants if present and missing in prodMap
+      if (json['variants'] is List &&
+          (prodMap['variants'] == null || (prodMap['variants'] as List).isEmpty)) {
+        prodMap['variants'] = json['variants'];
+      }
+      // Merge top-level skus if present and missing in prodMap
+      if (json['skus'] is List &&
+          (prodMap['skus'] == null || (prodMap['skus'] as List).isEmpty)) {
         prodMap['skus'] = json['skus'];
+      }
+      // Top-level id and productId
+      if (json['id'] != null && prodMap['id'] == null) {
+        prodMap['id'] = json['id'];
+      }
+      if (json['productId'] != null && prodMap['productId'] == null) {
+        prodMap['productId'] = json['productId'];
       }
 
       final parsedProd = ApiProductModel.fromJson(prodMap);
@@ -531,4 +801,3 @@ String _normalizePackDisplay(String raw) {
   }
   return trimmed;
 }
-
